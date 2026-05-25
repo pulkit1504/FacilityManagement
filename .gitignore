@@ -1,0 +1,3 @@
+# Spec Kit agent folders (may contain credentials/tokens)
+.github/
+.roo/

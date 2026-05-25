@@ -1,9 +1,11 @@
 import type {
   ApprovalStep,
+  ApprovalQueueItem,
   AuditActionType,
   ClaimDetail,
   ClaimStatus,
   Employee,
+  FinanceQueueItem,
   ExpenseClaim,
   ExpenseLineItem,
   SubmissionMode
@@ -35,6 +37,13 @@ export interface ClaimRepository {
   appendAuditLog(input: AuditLogInput): Promise<void>;
   getEmployee(employeeId: string): Promise<Employee | null>;
   findManagingDirector(): Promise<Employee | null>;
+  listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
+  listFinanceQueue(): Promise<FinanceQueueItem[]>;
+  getPendingApprovalStep(claimId: string): Promise<ApprovalStep | null>;
+  decideApprovalStep(stepId: string, decision: "Approved" | "Rejected", remarks?: string | null): Promise<void>;
+  rejectClaim(claimId: string, reason: string): Promise<ExpenseClaim>;
+  confirmPhysicalReceipt(claimId: string, confirmedAt: string, confirmedBy: string): Promise<ExpenseClaim>;
+  createFinanceApprovalStep(claimId: string): Promise<void>;
 }
 
 export type ClaimSummary = Pick<

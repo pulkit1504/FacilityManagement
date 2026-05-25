@@ -68,3 +68,21 @@ export const createLineItemSchema = z
 
 export type CreateClaimInput = z.infer<typeof createClaimSchema>;
 export type CreateLineItemInput = z.infer<typeof createLineItemSchema>;
+
+export const approveClaimSchema = z.object({
+  remarks: z.string().trim().max(1000).optional()
+});
+
+export const rejectClaimSchema = z.object({
+  reason: z.string().trim().min(5).max(1000)
+});
+
+export const confirmPhysicalReceiptSchema = z.object({
+  physicalReceiptDate: z.string().date(),
+  physicalReceiptTime: z.string().regex(/^\d{2}:\d{2}$/),
+  receivedByName: z.string().trim().min(2).max(200)
+});
+
+export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
+export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
+export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptSchema>;

@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { notFound } from "../errors/application-error";
 import type {
   ApprovalStep,
+  ApprovalQueueItem,
   ClaimDetail,
   ClaimStatus,
   Employee,
+  FinanceQueueItem,
   ExpenseAttachment,
   ExpenseClaim,
   ExpenseLineItem
@@ -297,6 +299,172 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const employee = data?.[0];
     if (!employee) return null;
     return this.getEmployee(String(employee.employee_id));
+  }
+
+  async listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]> {
+    const db = await getSupabaseAdminClient();
+    let query = db
+      .from("approval_steps")
+      .select("claim_id")
+      .eq("decision", "Pending")
+      .order("step_order");
+
+    if (role !== "Finance" && role !== "FinanceHOD") {
+      query = query.eq("assigned_approver_id", userId);
+    } else {
+      query = query.eq("required_approver_role", "Finance");
+    }
+
+    const { data, error } = await query.limit(50);
+    if (error) throw error;
+
+    const items = await Promise.all(
+      (data ?? []).map(async (step) => {
+        const detail = await this.getClaimDetail(String(step.claim_id));
+        return detail ? this.toApprovalQueueItem(detail) : null;
+      })
+    );
+
+    return items.filter((item): item is ApprovalQueueItem => Boolean(item));
+  }
+
+  async listFinanceQueue(): Promise<FinanceQueueItem[]> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_claims")
+      .select("claim_id")
+      .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed"])
+      .eq("is_deleted", false)
+      .order("updated_at", { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+
+    const items = await Promise.all(
+      (data ?? []).map(async (row) => {
+        const detail = await this.getClaimDetail(String(row.claim_id));
+        if (!detail) return null;
+        const pendingBillingItemCount = detail.lineItems.filter((item) => item.expenseTag === "PendingBilling").length;
+        return {
+          ...this.toApprovalQueueItem(detail),
+          physicalReceiptRequired: true,
+          physicalReceiptConfirmed: Boolean(detail.physicalReceiptConfirmedAt),
+          hasPendingBillingItems: pendingBillingItemCount > 0,
+          pendingBillingItemCount
+        };
+      })
+    );
+
+    return items.filter((item): item is FinanceQueueItem => Boolean(item));
+  }
+
+  async getPendingApprovalStep(claimId: string): Promise<ApprovalStep | null> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("approval_steps")
+      .select("*")
+      .eq("claim_id", claimId)
+      .eq("decision", "Pending")
+      .order("step_order")
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    return {
+      stepId: String(data.step_id),
+      claimId: String(data.claim_id),
+      stepOrder: Number(data.step_order),
+      requiredApproverRole: data.required_approver_role as ApprovalStep["requiredApproverRole"],
+      assignedApproverId: data.assigned_approver_id ? String(data.assigned_approver_id) : null,
+      decision: data.decision as ApprovalStep["decision"],
+      decisionAt: data.decision_at ? String(data.decision_at) : null,
+      remarks: data.remarks ? String(data.remarks) : null
+    };
+  }
+
+  async decideApprovalStep(stepId: string, decision: "Approved" | "Rejected", remarks?: string | null): Promise<void> {
+    const db = await getSupabaseAdminClient();
+    const { error } = await db
+      .from("approval_steps")
+      .update({
+        decision,
+        decision_at: new Date().toISOString(),
+        remarks: remarks ?? null
+      })
+      .eq("step_id", stepId);
+
+    if (error) throw error;
+  }
+
+  async rejectClaim(claimId: string, reason: string): Promise<ExpenseClaim> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_claims")
+      .update({
+        status: "Rejected",
+        rejection_reason: reason,
+        updated_at: new Date().toISOString()
+      })
+      .eq("claim_id", claimId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapClaim(data as ClaimRow);
+  }
+
+  async confirmPhysicalReceipt(claimId: string, confirmedAt: string, confirmedBy: string): Promise<ExpenseClaim> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_claims")
+      .update({
+        physical_receipt_confirmed_at: confirmedAt,
+        physical_receipt_confirmed_by: confirmedBy,
+        updated_at: new Date().toISOString()
+      })
+      .eq("claim_id", claimId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapClaim(data as ClaimRow);
+  }
+
+  async createFinanceApprovalStep(claimId: string): Promise<void> {
+    const db = await getSupabaseAdminClient();
+    const { error } = await db.from("approval_steps").insert({
+      step_id: randomUUID(),
+      claim_id: claimId,
+      step_order: 2,
+      required_approver_role: "Finance",
+      assigned_approver_id: null,
+      decision: "Pending"
+    });
+
+    if (error) throw error;
+  }
+
+  private toApprovalQueueItem(claim: ClaimDetail): ApprovalQueueItem {
+    const submittedAt = claim.updatedAt ?? claim.createdAt;
+    const daysPending = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(submittedAt).getTime()) / 86_400_000)
+    );
+
+    return {
+      claimId: claim.claimId,
+      submittedBy: claim.submitterEmployeeId,
+      submittedByRole: "Claimant",
+      siteName: claim.siteId,
+      totalAmount: claim.totalAmount,
+      lineItemCount: claim.lineItems.length,
+      missingReceiptCount: claim.lineItems.filter((item) => item.missingReceiptFlag).length,
+      submittedAt,
+      daysPending,
+      urgencyLevel: daysPending > 5 ? "Overdue" : daysPending >= 3 ? "Attention" : "Normal"
+    };
   }
 }
 

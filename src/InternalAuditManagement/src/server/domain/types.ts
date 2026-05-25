@@ -124,6 +124,26 @@ export type ClaimDetail = ExpenseClaim & {
   approvalSteps: ApprovalStep[];
 };
 
+export type ApprovalQueueItem = {
+  claimId: string;
+  submittedBy: string;
+  submittedByRole: UserRole;
+  siteName: string | null;
+  totalAmount: number;
+  lineItemCount: number;
+  missingReceiptCount: number;
+  submittedAt: string;
+  daysPending: number;
+  urgencyLevel: "Normal" | "Attention" | "Overdue";
+};
+
+export type FinanceQueueItem = ApprovalQueueItem & {
+  physicalReceiptRequired: boolean;
+  physicalReceiptConfirmed: boolean;
+  hasPendingBillingItems: boolean;
+  pendingBillingItemCount: number;
+};
+
 export function statusLabel(status: ClaimStatus): string {
   const labels: Record<ClaimStatus, string> = {
     Draft: "Draft - not yet submitted",

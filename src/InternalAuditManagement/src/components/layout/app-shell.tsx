@@ -5,6 +5,7 @@ const links = [
   { href: "/", label: "Overview", icon: BarChart3 },
   { href: "/dashboard", label: "MIS Dashboard", icon: ClipboardCheck },
   { href: "/claims/new", label: "New Claim", icon: ReceiptText },
+  { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { href: "/finance", label: "Finance Queue", icon: FileText },
   { href: "/audit", label: "Audit Review", icon: ShieldCheck }
 ];

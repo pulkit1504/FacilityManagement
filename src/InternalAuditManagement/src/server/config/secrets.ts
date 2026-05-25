@@ -1,0 +1,56 @@
+import "server-only";
+import { DefaultAzureCredential } from "@azure/identity";
+import { SecretClient } from "@azure/keyvault-secrets";
+
+type SecretName =
+  | "SUPABASE_URL"
+  | "SUPABASE_SERVICE_ROLE_KEY"
+  | "AZURE_STORAGE_CONNECTION_STRING"
+  | "AZURE_STORAGE_CONTAINER_NAME";
+
+const keyVaultNameMap: Record<SecretName, string> = {
+  SUPABASE_URL: "Supabase--Url",
+  SUPABASE_SERVICE_ROLE_KEY: "Supabase--ServiceRoleKey",
+  AZURE_STORAGE_CONNECTION_STRING: "AzureStorage--ConnectionString",
+  AZURE_STORAGE_CONTAINER_NAME: "AzureStorage--ContainerName"
+};
+
+const cache = new Map<SecretName, Promise<string>>();
+let keyVaultClient: SecretClient | null = null;
+
+export async function getRequiredSecret(name: SecretName): Promise<string> {
+  const cached = cache.get(name);
+  if (cached) {
+    return cached;
+  }
+
+  const secretPromise = resolveSecret(name);
+  cache.set(name, secretPromise);
+  return secretPromise;
+}
+
+async function resolveSecret(name: SecretName): Promise<string> {
+  const keyVaultUrl = process.env.AZURE_KEY_VAULT_URL;
+
+  if (keyVaultUrl) {
+    const secret = await getKeyVaultClient(keyVaultUrl).getSecret(keyVaultNameMap[name]);
+    if (secret.value) {
+      return secret.value;
+    }
+  }
+
+  const fallback = process.env[name];
+  if (fallback) {
+    return fallback;
+  }
+
+  throw new Error(`${name} is not configured in Azure Key Vault or environment variables.`);
+}
+
+function getKeyVaultClient(keyVaultUrl: string) {
+  if (!keyVaultClient) {
+    keyVaultClient = new SecretClient(keyVaultUrl, new DefaultAzureCredential());
+  }
+
+  return keyVaultClient;
+}

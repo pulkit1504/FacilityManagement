@@ -769,6 +769,10 @@ export class SupabaseClaimRepository implements ClaimRepository {
       (data ?? []).map(async (row) => {
         const flag = mapFraudFlag(row);
         const claim = await this.getClaimDetail(flag.primaryClaimId);
+        const relatedClaims = await Promise.all(
+          flag.relatedClaimIds.map(async (claimId) => this.getClaimDetail(claimId))
+        );
+        const claimGroup = [claim, ...relatedClaims].filter((item): item is ClaimDetail => Boolean(item));
         const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(flag.flaggedAt).getTime()) / 86_400_000));
         const ruleText = labels[flag.ruleName];
 
@@ -778,7 +782,8 @@ export class SupabaseClaimRepository implements ClaimRepository {
           ruleDescription: ruleText.description,
           relatedClaimCount: flag.relatedClaimIds.length,
           daysOpen,
-          employeeName: claim?.submitterEmployeeId ?? "Unknown"
+          employeeName: claim?.submitterEmployeeId ?? "Unknown",
+          flaggedLineItems: this.findFlaggedLineItems(flag.ruleName, claimGroup)
         };
       })
     );
@@ -957,6 +962,37 @@ export class SupabaseClaimRepository implements ClaimRepository {
       daysPending,
       urgencyLevel: daysPending > 5 ? "Overdue" : daysPending >= 3 ? "Attention" : "Normal"
     };
+  }
+
+  private findFlaggedLineItems(ruleName: FraudFlag["ruleName"], claims: ClaimDetail[]) {
+    const lines = claims.flatMap((claim) =>
+      claim.lineItems.map((line) => ({
+        claimId: claim.claimId,
+        lineItemId: line.lineItemId,
+        description: line.description,
+        amount: line.amount,
+        transactionDate: line.transactionDate,
+        expenseTag: line.expenseTag,
+        clientInvoiceNumber: line.clientInvoiceNumber,
+        missingReceiptFlag: line.missingReceiptFlag
+      }))
+    );
+
+    if (ruleName === "WeekendOutlier") {
+      return lines.filter((line) => line.expenseTag === "BackendCTC");
+    }
+
+    if (ruleName === "DuplicateVoucher") {
+      const groups = new Map<string, typeof lines>();
+      for (const line of lines) {
+        const key = `${line.transactionDate}|${line.amount.toFixed(2)}`;
+        groups.set(key, [...(groups.get(key) ?? []), line]);
+      }
+
+      return [...groups.values()].find((group) => group.length > 1) ?? lines;
+    }
+
+    return lines;
   }
 }
 

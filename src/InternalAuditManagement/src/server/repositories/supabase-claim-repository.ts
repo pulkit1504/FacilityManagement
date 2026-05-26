@@ -830,7 +830,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       db
         .from("expense_claims")
         .select("claim_id")
-        .in("status", ["FinanceConfirmed", "PaymentReleased"])
+        .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed", "PaymentReleased"])
         .eq("is_deleted", false)
         .limit(500)
     ]);
@@ -850,7 +850,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         if (line.expenseTag === "AlreadyBilled" || line.expenseTag === "PendingBilling") {
           totalBillable += line.amount;
         }
-        if (line.expenseTag === "AlreadyBilled" && line.invoiceValidationStatus === "Valid") {
+        if (line.expenseTag === "AlreadyBilled" && line.clientInvoiceNumber) {
           totalBilled += line.amount;
         }
       }
@@ -872,7 +872,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         db
           .from("expense_claims")
           .select("claim_id")
-          .in("status", ["FinanceConfirmed", "PaymentReleased"])
+          .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed", "PaymentReleased"])
           .eq("is_deleted", false)
           .limit(500),
         db
@@ -900,7 +900,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
       for (const line of claim.lineItems) {
         const isBillable = line.expenseTag === "AlreadyBilled" || line.expenseTag === "PendingBilling";
-        const isBilled = line.expenseTag === "AlreadyBilled" && line.invoiceValidationStatus === "Valid";
+        const isBilled = line.expenseTag === "AlreadyBilled" && Boolean(line.clientInvoiceNumber);
 
         if (isBillable) {
           totalBillableApproved += line.amount;

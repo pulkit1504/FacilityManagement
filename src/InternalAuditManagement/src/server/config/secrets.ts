@@ -8,8 +8,8 @@ type SecretName =
   | "AZURE_STORAGE_CONNECTION_STRING";
 
 const keyVaultNameMap: Record<SecretName, string> = {
-  SUPABASE_URL: "Supabase--Url",
-  SUPABASE_SERVICE_ROLE_KEY: "Supabase--ServiceRoleKey",
+  SUPABASE_URL: "Supabase-Url",
+  SUPABASE_SERVICE_ROLE_KEY: "Supabase-ServiceRoleKey",
   AZURE_STORAGE_CONNECTION_STRING: "fmsstorage-connectionstring"
 };
 

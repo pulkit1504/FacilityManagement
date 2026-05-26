@@ -68,7 +68,11 @@ export function ApprovalQueue() {
               </td>
               <td>{item.siteName ?? "Not linked"}</td>
               <td>Rs {item.totalAmount.toLocaleString("en-IN")}</td>
-              <td>{item.missingReceiptCount} missing</td>
+              <td>
+                <span className={`badge ${item.missingReceiptCount > 0 ? "warning" : "success"}`}>
+                  {item.missingReceiptCount > 0 ? `${item.missingReceiptCount} missing` : "All attached"}
+                </span>
+              </td>
               <td>
                 <span className={`badge ${item.urgencyLevel === "Overdue" ? "danger" : item.urgencyLevel === "Attention" ? "warning" : "success"}`}>
                   {item.daysPending} days

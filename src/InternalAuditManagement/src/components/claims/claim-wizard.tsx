@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Plus, Send } from "lucide-react";
+import { Check, Paperclip, Plus, Send } from "lucide-react";
 
 type LineItemDraft = {
   description: string;
@@ -23,6 +23,7 @@ const emptyLineItem: LineItemDraft = {
 
 export function ClaimWizard() {
   const [claimId, setClaimId] = useState<string | null>(null);
+  const [lastLineItemId, setLastLineItemId] = useState<string | null>(null);
   const [submissionMode, setSubmissionMode] = useState<"SingleVoucher" | "Proforma">("SingleVoucher");
   const [siteId, setSiteId] = useState("site-ansal-a");
   const [lineItem, setLineItem] = useState<LineItemDraft>(emptyLineItem);
@@ -79,6 +80,7 @@ export function ClaimWizard() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail ?? "Could not add line item.");
+      setLastLineItemId(data.lineItemId);
       setLineItem(emptyLineItem);
       setMessage(data.message);
     } catch (error) {
@@ -99,6 +101,27 @@ export function ClaimWizard() {
       setMessage(`${data.message} Assigned to ${data.assignedTo}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not submit claim.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function uploadReceipt(file: File | undefined) {
+    if (!claimId || !lastLineItemId || !file) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch(`/api/v1/claims/${claimId}/line-items/${lastLineItemId}/attachments`, {
+        method: "POST",
+        body: formData
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail ?? "Could not upload receipt.");
+      setMessage(`${data.message} Hash: ${data.contentHash.slice(0, 12)}...`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not upload receipt.");
     } finally {
       setBusy(false);
     }
@@ -169,6 +192,18 @@ export function ClaimWizard() {
             <Plus size={18} />
             Add line
           </button>
+          <label className={`button secondary ${!lastLineItemId || busy ? "disabled-label" : ""}`}>
+            <Paperclip size={18} />
+            Attach receipt
+            <input
+              accept="image/jpeg,image/png,image/heic,application/pdf"
+              capture="environment"
+              disabled={!lastLineItemId || busy}
+              hidden
+              onChange={(event) => void uploadReceipt(event.target.files?.[0])}
+              type="file"
+            />
+          </label>
           <button className="button" disabled={busy || !claimId} onClick={submitClaim} type="button">
             <Send size={18} />
             Submit

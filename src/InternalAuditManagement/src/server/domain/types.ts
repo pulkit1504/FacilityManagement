@@ -32,6 +32,7 @@ export type UserRole = (typeof userRoles)[number];
 
 export const auditActionTypes = [
   "DRAFT_SAVED",
+  "RECEIPT_UPLOADED",
   "SUBMIT",
   "HOD_APPROVE",
   "MD_APPROVE",

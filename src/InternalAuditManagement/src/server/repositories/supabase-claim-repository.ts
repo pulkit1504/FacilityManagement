@@ -14,6 +14,7 @@ import type {
 import type {
   AuditLogInput,
   ClaimRepository,
+  CreateAttachmentRecord,
   CreateClaimRecord
 } from "./claim-repository";
 import { defaultClaimRecord } from "./claim-repository";
@@ -442,6 +443,72 @@ export class SupabaseClaimRepository implements ClaimRepository {
       assigned_approver_id: null,
       decision: "Pending"
     });
+
+    if (error) throw error;
+  }
+
+  async createAttachment(input: CreateAttachmentRecord): Promise<ExpenseAttachment> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_attachments")
+      .insert({
+        attachment_id: randomUUID(),
+        line_item_id: input.lineItemId,
+        storage_path: input.storagePath,
+        content_hash: input.contentHash,
+        original_file_name: input.originalFileName,
+        file_size_bytes: input.fileSizeBytes,
+        content_type: input.contentType,
+        uploaded_by_user_id: input.uploadedByUserId
+      })
+      .select("*")
+      .single();
+
+    if (error) throw error;
+
+    return {
+      attachmentId: String(data.attachment_id),
+      lineItemId: String(data.line_item_id),
+      storagePath: String(data.storage_path),
+      contentHash: String(data.content_hash),
+      originalFileName: String(data.original_file_name),
+      fileSizeBytes: Number(data.file_size_bytes),
+      contentType: String(data.content_type),
+      uploadedAt: String(data.uploaded_at),
+      uploadedByUserId: String(data.uploaded_by_user_id)
+    };
+  }
+
+  async getAttachment(attachmentId: string): Promise<ExpenseAttachment | null> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_attachments")
+      .select("*")
+      .eq("attachment_id", attachmentId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    return {
+      attachmentId: String(data.attachment_id),
+      lineItemId: String(data.line_item_id),
+      storagePath: String(data.storage_path),
+      contentHash: String(data.content_hash),
+      originalFileName: String(data.original_file_name),
+      fileSizeBytes: Number(data.file_size_bytes),
+      contentType: String(data.content_type),
+      uploadedAt: String(data.uploaded_at),
+      uploadedByUserId: String(data.uploaded_by_user_id)
+    };
+  }
+
+  async clearMissingReceiptFlag(lineItemId: string): Promise<void> {
+    const db = await getSupabaseAdminClient();
+    const { error } = await db
+      .from("expense_line_items")
+      .update({ missing_receipt_flag: false })
+      .eq("line_item_id", lineItemId);
 
     if (error) throw error;
   }

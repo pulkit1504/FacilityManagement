@@ -7,6 +7,7 @@ import type {
   Employee,
   FinanceQueueItem,
   ExpenseClaim,
+  ExpenseAttachment,
   ExpenseLineItem,
   SubmissionMode
 } from "../domain/types";
@@ -24,6 +25,16 @@ export type AuditLogInput = {
   postActionStatus: string;
   auditRemarks?: string | null;
   correlationId: string;
+};
+
+export type CreateAttachmentRecord = {
+  lineItemId: string;
+  storagePath: string;
+  contentHash: string;
+  originalFileName: string;
+  fileSizeBytes: number;
+  contentType: string;
+  uploadedByUserId: string;
 };
 
 export interface ClaimRepository {
@@ -44,6 +55,9 @@ export interface ClaimRepository {
   rejectClaim(claimId: string, reason: string): Promise<ExpenseClaim>;
   confirmPhysicalReceipt(claimId: string, confirmedAt: string, confirmedBy: string): Promise<ExpenseClaim>;
   createFinanceApprovalStep(claimId: string): Promise<void>;
+  createAttachment(input: CreateAttachmentRecord): Promise<ExpenseAttachment>;
+  getAttachment(attachmentId: string): Promise<ExpenseAttachment | null>;
+  clearMissingReceiptFlag(lineItemId: string): Promise<void>;
 }
 
 export type ClaimSummary = Pick<

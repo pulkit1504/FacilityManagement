@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Link2, RefreshCw } from "lucide-react";
+import { Link2, Loader2, RefreshCw } from "lucide-react";
 
 type BillingAlertItem = {
   alertId: string;
@@ -20,16 +20,22 @@ type BillingAlertItem = {
 export function BillingAlerts() {
   const [items, setItems] = useState<BillingAlertItem[]>([]);
   const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   async function load() {
-    const response = await fetch("/api/v1/billing/alerts?isResolved=false");
-    const data = await response.json();
-    if (!response.ok) {
-      setMessage(data.detail ?? "Could not load billing alerts.");
-      return;
+    try {
+      const response = await fetch("/api/v1/billing/alerts?isResolved=false");
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.detail ?? "Could not load billing alerts.");
+        return;
+      }
+      setItems(data.items ?? []);
+    } finally {
+      setIsLoading(false);
     }
-    setItems(data.items ?? []);
   }
 
   useEffect(() => {
@@ -43,14 +49,20 @@ export function BillingAlerts() {
       return;
     }
 
-    const response = await fetch(`/api/v1/billing/alerts/${alertId}/link-invoice`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clientInvoiceNumber })
-    });
-    const data = await response.json();
-    setMessage(data.message ?? data.detail ?? "Billing alert updated.");
-    await load();
+    setBusyAction(`link:${alertId}`);
+    setMessage("Linking invoice...");
+    try {
+      const response = await fetch(`/api/v1/billing/alerts/${alertId}/link-invoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientInvoiceNumber })
+      });
+      const data = await response.json();
+      setMessage(data.message ?? data.detail ?? "Billing alert updated.");
+      await load();
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   return (
@@ -60,9 +72,9 @@ export function BillingAlerts() {
           <h2>Pending Billing Alerts</h2>
           <p className="muted">Link client invoices to stop revenue leakage reminders.</p>
         </div>
-        <button className="button secondary" onClick={() => void load()} type="button">
-          <RefreshCw size={16} />
-          Refresh
+        <button className="button secondary" disabled={isLoading} onClick={() => void load()} type="button">
+          {isLoading ? <Loader2 size={16} /> : <RefreshCw size={16} />}
+          {isLoading ? "Loading..." : "Refresh"}
         </button>
       </div>
       {message ? <p className="muted">{message}</p> : null}
@@ -78,7 +90,17 @@ export function BillingAlerts() {
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
+          {isLoading ? (
+            <tr>
+              <td colSpan={6}>
+                <span className="loading-inline">
+                  <Loader2 size={16} />
+                  Loading billing alerts...
+                </span>
+              </td>
+            </tr>
+          ) : null}
+          {!isLoading && items.map((item) => (
             <tr key={item.alertId}>
               <td>
                 <strong>{item.claimId.slice(0, 8)}</strong>
@@ -106,14 +128,14 @@ export function BillingAlerts() {
                 />
               </td>
               <td>
-                <button className="button" onClick={() => void linkInvoice(item.alertId)} type="button">
-                  <Link2 size={16} />
-                  Link
+                <button className="button" disabled={Boolean(busyAction)} onClick={() => void linkInvoice(item.alertId)} type="button">
+                  {busyAction === `link:${item.alertId}` ? <Loader2 size={16} /> : <Link2 size={16} />}
+                  {busyAction === `link:${item.alertId}` ? "Linking..." : "Link"}
                 </button>
               </td>
             </tr>
           ))}
-          {items.length === 0 ? (
+          {!isLoading && items.length === 0 ? (
             <tr>
               <td colSpan={6}>No active billing alerts.</td>
             </tr>

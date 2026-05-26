@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, RotateCcw } from "lucide-react";
+import { Check, Loader2, RotateCcw } from "lucide-react";
 
 type ApprovalItem = {
   claimId: string;
@@ -16,16 +16,22 @@ type ApprovalItem = {
 
 export function ApprovalQueue() {
   const [items, setItems] = useState<ApprovalItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   async function load() {
-    const response = await fetch("/api/v1/approvals/queue");
-    const data = await response.json();
-    if (!response.ok) {
-      setMessage(data.detail ?? "Could not load approval queue.");
-      return;
+    try {
+      const response = await fetch("/api/v1/approvals/queue");
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.detail ?? "Could not load approval queue.");
+        return;
+      }
+      setItems(data.items ?? []);
+    } finally {
+      setIsLoading(false);
     }
-    setItems(data.items ?? []);
   }
 
   useEffect(() => {
@@ -33,14 +39,20 @@ export function ApprovalQueue() {
   }, []);
 
   async function decide(claimId: string, action: "approve" | "reject") {
-    const response = await fetch(`/api/v1/approvals/${claimId}/${action}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: action === "approve" ? JSON.stringify({ remarks: "" }) : JSON.stringify({ reason: "Returned for correction." })
-    });
-    const data = await response.json();
-    setMessage(data.message ?? data.detail ?? "Action completed.");
-    await load();
+    setBusyAction(`${action}:${claimId}`);
+    setMessage(action === "approve" ? "Approving claim..." : "Returning claim...");
+    try {
+      const response = await fetch(`/api/v1/approvals/${claimId}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: action === "approve" ? JSON.stringify({ remarks: "" }) : JSON.stringify({ reason: "Returned for correction." })
+      });
+      const data = await response.json();
+      setMessage(data.message ?? data.detail ?? "Action completed.");
+      await load();
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   return (
@@ -59,7 +71,17 @@ export function ApprovalQueue() {
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
+          {isLoading ? (
+            <tr>
+              <td colSpan={6}>
+                <span className="loading-inline">
+                  <Loader2 size={16} />
+                  Loading approval queue...
+                </span>
+              </td>
+            </tr>
+          ) : null}
+          {!isLoading && items.map((item) => (
             <tr key={item.claimId}>
               <td>
                 <strong>{item.claimId.slice(0, 8)}</strong>
@@ -80,19 +102,19 @@ export function ApprovalQueue() {
               </td>
               <td>
                 <div className="actions">
-                  <button className="button" onClick={() => void decide(item.claimId, "approve")} type="button">
-                    <Check size={16} />
-                    Approve
+                  <button className="button" disabled={Boolean(busyAction)} onClick={() => void decide(item.claimId, "approve")} type="button">
+                    {busyAction === `approve:${item.claimId}` ? <Loader2 size={16} /> : <Check size={16} />}
+                    {busyAction === `approve:${item.claimId}` ? "Approving..." : "Approve"}
                   </button>
-                  <button className="button secondary" onClick={() => void decide(item.claimId, "reject")} type="button">
-                    <RotateCcw size={16} />
-                    Return
+                  <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void decide(item.claimId, "reject")} type="button">
+                    {busyAction === `reject:${item.claimId}` ? <Loader2 size={16} /> : <RotateCcw size={16} />}
+                    {busyAction === `reject:${item.claimId}` ? "Returning..." : "Return"}
                   </button>
                 </div>
               </td>
             </tr>
           ))}
-          {items.length === 0 ? (
+          {!isLoading && items.length === 0 ? (
             <tr>
               <td colSpan={6}>No pending approvals.</td>
             </tr>

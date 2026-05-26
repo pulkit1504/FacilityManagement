@@ -11,6 +11,10 @@ import type {
   ExpenseClaim,
   ExpenseAttachment,
   ExpenseLineItem,
+  FraudFlag,
+  FraudFlagQueueItem,
+  FraudFlagStatus,
+  FraudRuleName,
   SubmissionMode
 } from "../domain/types";
 import type { CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
@@ -45,6 +49,13 @@ export type CreateBillingAlertRecord = {
   nextSendAt: string;
 };
 
+export type CreateFraudFlagRecord = {
+  primaryClaimId: string;
+  relatedClaimIds: string[];
+  ruleName: FraudRuleName;
+  sweepDate: string;
+};
+
 export interface ClaimRepository {
   listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]>;
   getClaimDetail(claimId: string): Promise<ClaimDetail | null>;
@@ -70,6 +81,11 @@ export interface ClaimRepository {
   listBillingAlerts(isResolved?: boolean): Promise<BillingAlertQueueItem[]>;
   getBillingAlert(alertId: string): Promise<BillingAlert | null>;
   linkInvoiceToBillingAlert(alertId: string, invoiceNumber: string, resolvedByUserId: string): Promise<BillingAlert>;
+  listClaimsForFraudSweep(): Promise<ClaimDetail[]>;
+  createFraudFlag(input: CreateFraudFlagRecord): Promise<FraudFlag | null>;
+  listFraudFlags(status?: FraudFlagStatus): Promise<FraudFlagQueueItem[]>;
+  reviewFraudFlag(flagId: string, status: Exclude<FraudFlagStatus, "Open">, remarks: string, reviewedByUserId: string): Promise<FraudFlag>;
+  listHolidayDates(): Promise<string[]>;
 }
 
 export type ClaimSummary = Pick<

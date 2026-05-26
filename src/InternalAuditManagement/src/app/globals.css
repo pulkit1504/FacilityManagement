@@ -272,6 +272,25 @@ h1 {
   width: 40px;
 }
 
+.receipt-review {
+  background: var(--surface-muted);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.receipt-row {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(180px, 1fr);
+  padding: 12px;
+}
+
 @media (max-width: 860px) {
   .shell {
     grid-template-columns: 1fr;
@@ -296,5 +315,10 @@ h1 {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .receipt-row {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
   }
 }

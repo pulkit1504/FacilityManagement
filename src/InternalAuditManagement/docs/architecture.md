@@ -43,8 +43,9 @@ Production deployments must store these secrets in Azure Key Vault:
 ```text
 Supabase--Url
 Supabase--ServiceRoleKey
-AzureStorage--ConnectionString
-AzureStorage--ContainerName
+fmsstorage-connectionstring
 ```
+
+The receipt Blob container is hardcoded as `nimbus` because it is environment-specific operational configuration for the current deployment.
 
 The application uses `DefaultAzureCredential`. On Vercel, this requires `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, and `AZURE_CLIENT_SECRET` environment variables for the Key Vault reader app registration. When moved to Azure App Service or Container Apps, replace that bootstrap credential with Managed Identity and remove the client secret from hosting configuration.

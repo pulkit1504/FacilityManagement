@@ -26,6 +26,10 @@ export class ClaimService {
   }
 
   async createClaim(input: CreateClaimInput, user: UserContext) {
+    if (!["Claimant", "HOD"].includes(user.role)) {
+      throw forbidden("Only claimants and HODs can create expense claims.");
+    }
+
     const claim = await this.claims.createClaim({
       ...input,
       submitterEmployeeId: user.userId

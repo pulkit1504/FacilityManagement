@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Paperclip, Plus, Send } from "lucide-react";
+import { Check, Paperclip, Plus, RotateCcw, Send } from "lucide-react";
 
 type ExpenseTag = "AlreadyBilled" | "PendingBilling" | "ContractPartCost" | "BackendCTC";
 
@@ -81,6 +81,14 @@ export function ClaimWizard() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function resetDraft() {
+    setClaimId(null);
+    setLineItem(emptyLineItem);
+    setSavedLineItems([]);
+    setSubmissionResult(null);
+    setMessage("Draft cleared. Choose the entry method and create a new draft.");
   }
 
   async function addLineItem() {
@@ -195,6 +203,12 @@ export function ClaimWizard() {
               <Check size={18} />
               {claimId ? "Draft ready" : "Create draft"}
             </button>
+            {claimId && !submissionResult ? (
+              <button className="button secondary" disabled={busy} onClick={resetDraft} type="button">
+                <RotateCcw size={18} />
+                Cancel draft
+              </button>
+            ) : null}
           </div>
         </div>
         {claimId ? <p className="muted" style={{ marginTop: 12 }}>Draft ID: {claimId}</p> : null}

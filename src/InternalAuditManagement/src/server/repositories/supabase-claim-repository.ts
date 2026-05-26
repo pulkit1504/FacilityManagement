@@ -3,6 +3,8 @@ import { notFound } from "../errors/application-error";
 import type {
   ApprovalStep,
   ApprovalQueueItem,
+  BillingAlert,
+  BillingAlertQueueItem,
   ClaimDetail,
   ClaimStatus,
   Employee,
@@ -15,6 +17,7 @@ import type {
   AuditLogInput,
   ClaimRepository,
   CreateAttachmentRecord,
+  CreateBillingAlertRecord,
   CreateClaimRecord
 } from "./claim-repository";
 import { defaultClaimRecord } from "./claim-repository";
@@ -69,6 +72,22 @@ function mapLineItem(row: Record<string, unknown>): ExpenseLineItem {
     siteId: row.site_id ? String(row.site_id) : null,
     missingReceiptFlag: Boolean(row.missing_receipt_flag),
     sortOrder: Number(row.sort_order)
+  };
+}
+
+function mapBillingAlert(row: Record<string, unknown>): BillingAlert {
+  return {
+    alertId: String(row.alert_id),
+    lineItemId: String(row.line_item_id),
+    claimId: String(row.claim_id),
+    createdAt: String(row.created_at),
+    lastSentAt: row.last_sent_at ? String(row.last_sent_at) : null,
+    nextSendAt: String(row.next_send_at),
+    escalationLevel: Number(row.escalation_level) === 1 ? 1 : 0,
+    alertsSentCount: Number(row.alerts_sent_count),
+    isResolved: Boolean(row.is_resolved),
+    resolvedAt: row.resolved_at ? String(row.resolved_at) : null,
+    resolvedByUserId: row.resolved_by_user_id ? String(row.resolved_by_user_id) : null
   };
 }
 
@@ -511,6 +530,126 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .eq("line_item_id", lineItemId);
 
     if (error) throw error;
+  }
+
+  async createBillingAlert(input: CreateBillingAlertRecord): Promise<BillingAlert | null> {
+    const db = await getSupabaseAdminClient();
+    const { data: existing, error: existingError } = await db
+      .from("billing_alerts")
+      .select("*")
+      .eq("line_item_id", input.lineItemId)
+      .eq("is_resolved", false)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+    if (existing) return null;
+
+    const { data, error } = await db
+      .from("billing_alerts")
+      .insert({
+        alert_id: randomUUID(),
+        line_item_id: input.lineItemId,
+        claim_id: input.claimId,
+        next_send_at: input.nextSendAt,
+        escalation_level: 0,
+        alerts_sent_count: 0,
+        is_resolved: false
+      })
+      .select("*")
+      .single();
+
+    if (error) throw error;
+
+    const { error: lineError } = await db
+      .from("expense_line_items")
+      .update({ billing_alert_created: true })
+      .eq("line_item_id", input.lineItemId);
+
+    if (lineError) throw lineError;
+    return mapBillingAlert(data);
+  }
+
+  async listBillingAlerts(isResolved = false): Promise<BillingAlertQueueItem[]> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("billing_alerts")
+      .select("*")
+      .eq("is_resolved", isResolved)
+      .order("created_at", { ascending: true })
+      .limit(100);
+
+    if (error) throw error;
+
+    const items = await Promise.all(
+      (data ?? []).map(async (row) => {
+        const alert = mapBillingAlert(row);
+        const detail = await this.getClaimDetail(alert.claimId);
+        const lineItem = detail?.lineItems.find((item) => item.lineItemId === alert.lineItemId);
+        const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(alert.createdAt).getTime()) / 86_400_000));
+
+        return {
+          ...alert,
+          lineItemDescription: lineItem?.description ?? "Line item unavailable",
+          amount: lineItem?.amount ?? 0,
+          claimantName: detail?.submitterEmployeeId ?? "Unknown",
+          siteName: detail?.siteId ?? null,
+          daysOpen,
+          urgencyLabel:
+            daysOpen >= 7 ? "Escalate to Finance HOD" : daysOpen >= 2 ? "Needs billing follow-up" : "Within 48-hour window"
+        };
+      })
+    );
+
+    return items;
+  }
+
+  async getBillingAlert(alertId: string): Promise<BillingAlert | null> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("billing_alerts")
+      .select("*")
+      .eq("alert_id", alertId)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data ? mapBillingAlert(data) : null;
+  }
+
+  async linkInvoiceToBillingAlert(
+    alertId: string,
+    invoiceNumber: string,
+    resolvedByUserId: string
+  ): Promise<BillingAlert> {
+    const db = await getSupabaseAdminClient();
+    const alert = await this.getBillingAlert(alertId);
+    if (!alert) {
+      throw notFound("Billing alert was not found.");
+    }
+
+    const { error: lineError } = await db
+      .from("expense_line_items")
+      .update({
+        expense_tag: "AlreadyBilled",
+        client_invoice_number: invoiceNumber,
+        invoice_validation_status: "Valid"
+      })
+      .eq("line_item_id", alert.lineItemId);
+
+    if (lineError) throw lineError;
+
+    const { data, error } = await db
+      .from("billing_alerts")
+      .update({
+        is_resolved: true,
+        resolved_at: new Date().toISOString(),
+        resolved_by_user_id: resolvedByUserId
+      })
+      .eq("alert_id", alertId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapBillingAlert(data);
   }
 
   private toApprovalQueueItem(claim: ClaimDetail): ApprovalQueueItem {

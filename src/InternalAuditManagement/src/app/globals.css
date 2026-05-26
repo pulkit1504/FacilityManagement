@@ -310,6 +310,15 @@ h1 {
   padding: 12px;
 }
 
+.audit-evidence {
+  background: var(--surface-muted);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  min-width: 240px;
+  padding: 10px;
+}
+
 @media (max-width: 860px) {
   .shell {
     grid-template-columns: 1fr;

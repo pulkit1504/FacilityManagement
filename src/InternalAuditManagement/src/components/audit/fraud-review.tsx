@@ -12,6 +12,16 @@ type FraudFlagItem = {
   relatedClaimCount: number;
   daysOpen: number;
   employeeName: string;
+  flaggedLineItems: Array<{
+    claimId: string;
+    lineItemId: string;
+    description: string;
+    amount: number;
+    transactionDate: string;
+    expenseTag: string;
+    clientInvoiceNumber: string | null;
+    missingReceiptFlag: boolean;
+  }>;
 };
 
 export function FraudReview() {
@@ -62,7 +72,9 @@ export function FraudReview() {
       <div className="topbar" style={{ marginBottom: 12 }}>
         <div>
           <h2>Fraud Review Queue</h2>
-          <p className="muted">Run sweeps and resolve suspicious claims with an audit trail.</p>
+          <p className="muted">
+            Run sweeps, review evidence lines, then clear or mark flags escalated in the audit trail.
+          </p>
         </div>
         <button className="button secondary" onClick={() => void runSweep()} type="button">
           <Play size={16} />
@@ -76,6 +88,7 @@ export function FraudReview() {
             <th>Rule</th>
             <th>Claim</th>
             <th>Employee</th>
+            <th>Evidence</th>
             <th>Age</th>
             <th>Related</th>
             <th>Actions</th>
@@ -95,6 +108,26 @@ export function FraudReview() {
               <td>{flag.primaryClaimId.slice(0, 8)}</td>
               <td>{flag.employeeName}</td>
               <td>
+                <div className="grid" style={{ gap: 8 }}>
+                  {flag.flaggedLineItems.map((line) => (
+                    <div className="audit-evidence" key={line.lineItemId}>
+                      <strong>{line.description}</strong>
+                      <span className="muted">
+                        {line.transactionDate} · {line.expenseTag} · Rs {line.amount.toLocaleString("en-IN")}
+                      </span>
+                      <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
+                        {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
+                      </span>
+                      <span className="muted">
+                        Claim {line.claimId.slice(0, 8)}
+                        {line.clientInvoiceNumber ? ` · Invoice ${line.clientInvoiceNumber}` : ""}
+                      </span>
+                    </div>
+                  ))}
+                  {flag.flaggedLineItems.length === 0 ? <span className="muted">No line detail available.</span> : null}
+                </div>
+              </td>
+              <td>
                 <span className={`badge ${flag.daysOpen >= 7 ? "danger" : flag.daysOpen >= 2 ? "warning" : "success"}`}>
                   {flag.daysOpen} days
                 </span>
@@ -110,13 +143,14 @@ export function FraudReview() {
                     <ShieldAlert size={16} />
                     Escalate
                   </button>
+                  <span className="muted">Marks for management review</span>
                 </div>
               </td>
             </tr>
           ))}
           {flags.length === 0 ? (
             <tr>
-              <td colSpan={6}>No open fraud flags.</td>
+              <td colSpan={7}>No open fraud flags.</td>
             </tr>
           ) : null}
         </tbody>

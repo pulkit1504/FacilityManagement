@@ -192,6 +192,16 @@ export type FraudFlagQueueItem = FraudFlag & {
   relatedClaimCount: number;
   daysOpen: number;
   employeeName: string;
+  flaggedLineItems: Array<{
+    claimId: string;
+    lineItemId: string;
+    description: string;
+    amount: number;
+    transactionDate: string;
+    expenseTag: ExpenseTag;
+    clientInvoiceNumber: string | null;
+    missingReceiptFlag: boolean;
+  }>;
 };
 
 export type OverviewMetrics = {

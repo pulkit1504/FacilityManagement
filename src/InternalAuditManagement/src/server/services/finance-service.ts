@@ -35,6 +35,7 @@ export class FinanceService {
         await this.claims.decideApprovalStep(step.stepId, "Approved", `Physical voucher received by ${input.receivedByName}`);
       }
       const financeConfirmed = await this.claims.submitClaim(claimId, "FinanceConfirmed");
+      await this.createBillingAlertsForClaim(claimId, user);
       await this.claims.appendAuditLog({
         claimId,
         actorUserId: user.userId,
@@ -77,6 +78,7 @@ export class FinanceService {
     }
 
     const updated = await this.claims.submitClaim(claimId, "PaymentReleased");
+    await this.createBillingAlertsForClaim(claimId, user);
     await this.claims.appendAuditLog({
       claimId,
       actorUserId: user.userId,
@@ -97,6 +99,32 @@ export class FinanceService {
   private assertFinance(user: UserContext) {
     if (!["Finance", "FinanceHOD"].includes(user.role)) {
       throw forbidden("Only Finance users can perform this action.");
+    }
+  }
+
+  private async createBillingAlertsForClaim(claimId: string, user: UserContext) {
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) throw notFound("Claim was not found.");
+
+    const pendingBillingItems = claim.lineItems.filter((item) => item.expenseTag === "PendingBilling");
+    for (const item of pendingBillingItems) {
+      const alert = await this.claims.createBillingAlert({
+        claimId,
+        lineItemId: item.lineItemId,
+        nextSendAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString()
+      });
+
+      if (alert) {
+        await this.claims.appendAuditLog({
+          claimId,
+          actorUserId: user.userId,
+          actionType: "BILLING_ALERT_CREATED",
+          preActionStatus: "PendingBilling",
+          postActionStatus: "PendingBilling",
+          auditRemarks: `Billing alert created for line item ${item.lineItemId}`,
+          correlationId: user.correlationId
+        });
+      }
     }
   }
 }

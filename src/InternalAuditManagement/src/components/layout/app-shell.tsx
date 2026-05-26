@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, ClipboardCheck, FileText, ReceiptText, ShieldCheck } from "lucide-react";
+import { BarChart3, ClipboardCheck, FileText, Link2, ReceiptText, ShieldCheck } from "lucide-react";
 
 const links = [
   { href: "/", label: "Overview", icon: BarChart3 },
@@ -7,6 +7,7 @@ const links = [
   { href: "/claims/new", label: "New Claim", icon: ReceiptText },
   { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { href: "/finance", label: "Finance Queue", icon: FileText },
+  { href: "/billing", label: "Billing Alerts", icon: Link2 },
   { href: "/audit", label: "Audit Review", icon: ShieldCheck }
 ];
 

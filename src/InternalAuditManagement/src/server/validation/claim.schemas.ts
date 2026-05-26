@@ -83,6 +83,11 @@ export const confirmPhysicalReceiptSchema = z.object({
   receivedByName: z.string().trim().min(2).max(200)
 });
 
+export const linkInvoiceSchema = z.object({
+  clientInvoiceNumber: z.string().trim().min(3).max(100)
+});
+
 export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
 export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
 export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptSchema>;
+export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;

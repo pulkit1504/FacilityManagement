@@ -2,6 +2,8 @@ import type {
   ApprovalStep,
   ApprovalQueueItem,
   AuditActionType,
+  BillingAlert,
+  BillingAlertQueueItem,
   ClaimDetail,
   ClaimStatus,
   Employee,
@@ -37,6 +39,12 @@ export type CreateAttachmentRecord = {
   uploadedByUserId: string;
 };
 
+export type CreateBillingAlertRecord = {
+  claimId: string;
+  lineItemId: string;
+  nextSendAt: string;
+};
+
 export interface ClaimRepository {
   listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]>;
   getClaimDetail(claimId: string): Promise<ClaimDetail | null>;
@@ -58,6 +66,10 @@ export interface ClaimRepository {
   createAttachment(input: CreateAttachmentRecord): Promise<ExpenseAttachment>;
   getAttachment(attachmentId: string): Promise<ExpenseAttachment | null>;
   clearMissingReceiptFlag(lineItemId: string): Promise<void>;
+  createBillingAlert(input: CreateBillingAlertRecord): Promise<BillingAlert | null>;
+  listBillingAlerts(isResolved?: boolean): Promise<BillingAlertQueueItem[]>;
+  getBillingAlert(alertId: string): Promise<BillingAlert | null>;
+  linkInvoiceToBillingAlert(alertId: string, invoiceNumber: string, resolvedByUserId: string): Promise<BillingAlert>;
 }
 
 export type ClaimSummary = Pick<

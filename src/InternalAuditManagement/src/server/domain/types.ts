@@ -33,6 +33,8 @@ export type UserRole = (typeof userRoles)[number];
 export const auditActionTypes = [
   "DRAFT_SAVED",
   "RECEIPT_UPLOADED",
+  "BILLING_ALERT_CREATED",
+  "INVOICE_LINKED",
   "SUBMIT",
   "HOD_APPROVE",
   "MD_APPROVE",
@@ -143,6 +145,29 @@ export type FinanceQueueItem = ApprovalQueueItem & {
   physicalReceiptConfirmed: boolean;
   hasPendingBillingItems: boolean;
   pendingBillingItemCount: number;
+};
+
+export type BillingAlert = {
+  alertId: string;
+  lineItemId: string;
+  claimId: string;
+  createdAt: string;
+  lastSentAt: string | null;
+  nextSendAt: string;
+  escalationLevel: 0 | 1;
+  alertsSentCount: number;
+  isResolved: boolean;
+  resolvedAt: string | null;
+  resolvedByUserId: string | null;
+};
+
+export type BillingAlertQueueItem = BillingAlert & {
+  lineItemDescription: string;
+  amount: number;
+  claimantName: string;
+  siteName: string | null;
+  daysOpen: number;
+  urgencyLabel: string;
 };
 
 export function statusLabel(status: ClaimStatus): string {

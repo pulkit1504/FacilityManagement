@@ -29,6 +29,14 @@ type SubmissionResult = {
   message: string;
 };
 
+type ProblemResponse = {
+  detail?: string;
+  errors?: {
+    formErrors?: string[];
+    fieldErrors?: Record<string, string[] | undefined>;
+  };
+};
+
 const emptyLineItem: LineItemDraft = {
   description: "",
   amount: "",
@@ -42,6 +50,8 @@ export function ClaimWizard() {
   const [claimId, setClaimId] = useState<string | null>(null);
   const [submissionMode, setSubmissionMode] = useState<"SingleVoucher" | "Proforma">("SingleVoucher");
   const [siteId, setSiteId] = useState("site-ansal-a");
+  const [proformaPeriodStart, setProformaPeriodStart] = useState("");
+  const [proformaPeriodEnd, setProformaPeriodEnd] = useState("");
   const [lineItem, setLineItem] = useState<LineItemDraft>(emptyLineItem);
   const [savedLineItems, setSavedLineItems] = useState<SavedLineItem[]>([]);
   const [submissionResult, setSubmissionResult] = useState<SubmissionResult | null>(null);
@@ -50,6 +60,10 @@ export function ClaimWizard() {
 
   const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
   const requiresSite = lineItem.expenseTag === "ContractPartCost";
+  const requiresProformaPeriod = submissionMode === "Proforma";
+  const hasValidProformaPeriod =
+    !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
+  const canCreateDraft = Boolean(siteId) && hasValidProformaPeriod;
 
   const canAddLine = useMemo(() => {
     if (!lineItem.description || !lineItem.amount || Number(lineItem.amount) <= 0) return false;
@@ -68,13 +82,16 @@ export function ClaimWizard() {
         body: JSON.stringify({
           submissionMode,
           siteId,
-          proformaPeriodStart: null,
-          proformaPeriodEnd: null
+          proformaPeriodStart: requiresProformaPeriod ? proformaPeriodStart : null,
+          proformaPeriodEnd: requiresProformaPeriod ? proformaPeriodEnd : null
         })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail ?? "Could not create claim.");
+      if (!response.ok) throw new Error(getProblemMessage(data, "Could not create claim."));
       setClaimId(data.claimId);
+      if (requiresProformaPeriod) {
+        setLineItem((current) => ({ ...current, transactionDate: proformaPeriodStart }));
+      }
       setMessage("Draft created. Add itemized line details next.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not create claim.");
@@ -198,19 +215,48 @@ export function ClaimWizard() {
               <option value="site-ansal-a">Ansal Heights Block A</option>
             </select>
           </label>
+          {requiresProformaPeriod ? (
+            <>
+              <label>
+                <span className="muted">Period start</span>
+                <input
+                  disabled={Boolean(claimId)}
+                  max={proformaPeriodEnd || undefined}
+                  onChange={(event) => setProformaPeriodStart(event.target.value)}
+                  type="date"
+                  value={proformaPeriodStart}
+                />
+              </label>
+              <label>
+                <span className="muted">Period end</span>
+                <input
+                  disabled={Boolean(claimId)}
+                  min={proformaPeriodStart || undefined}
+                  onChange={(event) => setProformaPeriodEnd(event.target.value)}
+                  type="date"
+                  value={proformaPeriodEnd}
+                />
+              </label>
+            </>
+          ) : null}
           <div className="actions" style={{ alignItems: "end" }}>
-            <button className="button" disabled={busy || Boolean(claimId)} onClick={createDraft} type="button">
+            <button className="button" disabled={busy || Boolean(claimId) || !canCreateDraft} onClick={createDraft} type="button">
               <Check size={18} />
               {claimId ? "Draft ready" : "Create draft"}
             </button>
             {claimId && !submissionResult ? (
               <button className="button secondary" disabled={busy} onClick={resetDraft} type="button">
                 <RotateCcw size={18} />
-                Cancel draft
+              Cancel draft
               </button>
             ) : null}
           </div>
         </div>
+        {requiresProformaPeriod && !claimId && !hasValidProformaPeriod ? (
+          <p className="muted" style={{ marginTop: 12 }}>
+            Select a valid proforma period before creating the draft.
+          </p>
+        ) : null}
         {claimId ? <p className="muted" style={{ marginTop: 12 }}>Draft ID: {claimId}</p> : null}
       </section>
 
@@ -243,7 +289,13 @@ export function ClaimWizard() {
               </label>
               <label>
                 <span className="muted">Transaction date</span>
-                <input type="date" value={lineItem.transactionDate} onChange={(event) => setLineItem({ ...lineItem, transactionDate: event.target.value })} />
+                <input
+                  max={requiresProformaPeriod ? proformaPeriodEnd : undefined}
+                  min={requiresProformaPeriod ? proformaPeriodStart : undefined}
+                  onChange={(event) => setLineItem({ ...lineItem, transactionDate: event.target.value })}
+                  type="date"
+                  value={lineItem.transactionDate}
+                />
               </label>
               <label>
                 <span className="muted">Expense tag</span>
@@ -359,4 +411,13 @@ export function ClaimWizard() {
       {message ? <p className="muted">{message}</p> : null}
     </div>
   );
+}
+
+function getProblemMessage(data: ProblemResponse, fallback: string) {
+  const formError = data.errors?.formErrors?.[0];
+  if (formError) return formError;
+
+  const fieldErrors = data.errors?.fieldErrors;
+  const fieldError = fieldErrors ? Object.values(fieldErrors).flat().find(Boolean) : undefined;
+  return fieldError ?? data.detail ?? fallback;
 }

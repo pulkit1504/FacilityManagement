@@ -1,6 +1,6 @@
 import { ArrowRight, FilePlus2 } from "lucide-react";
+import { OverviewMetrics } from "@/components/dashboard/overview-metrics";
 import { AppShell } from "@/components/layout/app-shell";
-import { MetricCard } from "@/components/ui/metric-card";
 
 export default function Home() {
   return (
@@ -26,11 +26,7 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="grid cols-3">
-        <MetricCard label="Pending approvals" value="12" tone="warning" />
-        <MetricCard label="Billing recovery" value="84%" tone="warning" />
-        <MetricCard label="Open fraud flags" value="4" tone="danger" />
-      </div>
+      <OverviewMetrics />
 
       <section className="panel" style={{ marginTop: 16 }}>
         <h2>Active MVP Scope</h2>

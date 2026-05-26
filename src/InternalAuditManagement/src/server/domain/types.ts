@@ -194,6 +194,14 @@ export type FraudFlagQueueItem = FraudFlag & {
   employeeName: string;
 };
 
+export type OverviewMetrics = {
+  pendingApprovals: number;
+  financeQueueCount: number;
+  activeBillingAlerts: number;
+  openFraudFlags: number;
+  billingRecoveryPct: number | null;
+};
+
 export function statusLabel(status: ClaimStatus): string {
   const labels: Record<ClaimStatus, string> = {
     Draft: "Draft - not yet submitted",

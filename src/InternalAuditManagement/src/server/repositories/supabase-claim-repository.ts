@@ -14,7 +14,8 @@ import type {
   ExpenseLineItem,
   FraudFlag,
   FraudFlagQueueItem,
-  FraudFlagStatus
+  FraudFlagStatus,
+  OverviewMetrics
 } from "../domain/types";
 import type {
   AuditLogInput,
@@ -811,6 +812,56 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     if (error) throw error;
     return (data ?? []).map((row) => String(row.holiday_date));
+  }
+
+  async getOverviewMetrics(userId: string, role: string): Promise<OverviewMetrics> {
+    const db = await getSupabaseAdminClient();
+    const approvalQueue = await this.listApprovalQueue(userId, role);
+    const financeQueue = ["Finance", "FinanceHOD"].includes(role) ? await this.listFinanceQueue() : [];
+
+    const [
+      { count: activeBillingAlerts, error: billingAlertError },
+      { count: openFraudFlags, error: fraudFlagError },
+      { data: approvedClaims, error: approvedClaimsError }
+    ] = await Promise.all([
+      db.from("billing_alerts").select("alert_id", { count: "exact", head: true }).eq("is_resolved", false),
+      db.from("fraud_flags").select("flag_id", { count: "exact", head: true }).eq("status", "Open"),
+      db
+        .from("expense_claims")
+        .select("claim_id")
+        .in("status", ["FinanceConfirmed", "PaymentReleased"])
+        .eq("is_deleted", false)
+        .limit(500)
+    ]);
+
+    if (billingAlertError) throw billingAlertError;
+    if (fraudFlagError) throw fraudFlagError;
+    if (approvedClaimsError) throw approvedClaimsError;
+
+    const claimDetails = await Promise.all(
+      (approvedClaims ?? []).map(async (row) => this.getClaimDetail(String(row.claim_id)))
+    );
+
+    let totalBillable = 0;
+    let totalBilled = 0;
+    for (const claim of claimDetails.filter((item): item is ClaimDetail => Boolean(item))) {
+      for (const line of claim.lineItems) {
+        if (line.expenseTag === "AlreadyBilled" || line.expenseTag === "PendingBilling") {
+          totalBillable += line.amount;
+        }
+        if (line.expenseTag === "AlreadyBilled" && line.invoiceValidationStatus === "Valid") {
+          totalBilled += line.amount;
+        }
+      }
+    }
+
+    return {
+      pendingApprovals: approvalQueue.length,
+      financeQueueCount: financeQueue.length,
+      activeBillingAlerts: activeBillingAlerts ?? 0,
+      openFraudFlags: openFraudFlags ?? 0,
+      billingRecoveryPct: totalBillable > 0 ? Math.round((totalBilled / totalBillable) * 100) : null
+    };
   }
 
   private toApprovalQueueItem(claim: ClaimDetail): ApprovalQueueItem {

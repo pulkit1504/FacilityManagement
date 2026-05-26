@@ -2,6 +2,7 @@ import { SupabaseClaimRepository } from "../repositories/supabase-claim-reposito
 import { ApprovalService } from "./approval-service";
 import { BillingService } from "./billing-service";
 import { ClaimService } from "./claim-service";
+import { DashboardService } from "./dashboard-service";
 import { FinanceService } from "./finance-service";
 import { FraudService } from "./fraud-service";
 import { ReceiptService } from "./receipt-service";
@@ -10,6 +11,7 @@ import { AzureBlobFileStorageService } from "../storage/file-storage-service";
 let claimService: ClaimService | null = null;
 let approvalService: ApprovalService | null = null;
 let billingService: BillingService | null = null;
+let dashboardService: DashboardService | null = null;
 let financeService: FinanceService | null = null;
 let fraudService: FraudService | null = null;
 let receiptService: ReceiptService | null = null;
@@ -37,6 +39,11 @@ export function getApprovalService() {
 export function getBillingService() {
   billingService ??= new BillingService(getRepository());
   return billingService;
+}
+
+export function getDashboardService() {
+  dashboardService ??= new DashboardService(getRepository());
+  return dashboardService;
 }
 
 export function getFinanceService() {

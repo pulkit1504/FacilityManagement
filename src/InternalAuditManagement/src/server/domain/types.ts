@@ -202,6 +202,22 @@ export type OverviewMetrics = {
   billingRecoveryPct: number | null;
 };
 
+export type MisRecoveryMatrixRow = {
+  siteName: string;
+  totalBillable: number;
+  totalBilled: number;
+  recoveryPct: number | null;
+};
+
+export type MisDashboardMetrics = {
+  totalBillableApproved: number;
+  totalBilled: number;
+  unbilledLeakage: number;
+  billingRecoveryPct: number | null;
+  oldestBillingAlertDays: number | null;
+  recoveryMatrix: MisRecoveryMatrixRow[];
+};
+
 export function statusLabel(status: ClaimStatus): string {
   const labels: Record<ClaimStatus, string> = {
     Draft: "Draft - not yet submitted",

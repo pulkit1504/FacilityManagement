@@ -15,6 +15,7 @@ import type {
   FraudFlagQueueItem,
   FraudFlagStatus,
   FraudRuleName,
+  MisDashboardMetrics,
   OverviewMetrics,
   SubmissionMode
 } from "../domain/types";
@@ -88,6 +89,7 @@ export interface ClaimRepository {
   reviewFraudFlag(flagId: string, status: Exclude<FraudFlagStatus, "Open">, remarks: string, reviewedByUserId: string): Promise<FraudFlag>;
   listHolidayDates(): Promise<string[]>;
   getOverviewMetrics(userId: string, role: string): Promise<OverviewMetrics>;
+  getMisDashboardMetrics(): Promise<MisDashboardMetrics>;
 }
 
 export type ClaimSummary = Pick<

@@ -12,4 +12,13 @@ export class DashboardService {
       metrics
     };
   }
+
+  async getMisDashboard() {
+    const metrics = await this.claims.getMisDashboardMetrics();
+
+    return {
+      generatedAt: new Date().toISOString(),
+      metrics
+    };
+  }
 }

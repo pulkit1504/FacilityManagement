@@ -13,10 +13,10 @@ const links: NavLink[] = [
   { href: "/", label: "Overview", icon: BarChart3 },
   { href: "/dashboard", label: "MIS Dashboard", icon: ClipboardCheck },
   { href: "/claims/new", label: "New Claim", icon: ReceiptText, allowedRoles: ["Claimant", "HOD"] satisfies UserRole[] },
-  { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
-  { href: "/finance", label: "Finance Queue", icon: FileText },
-  { href: "/billing", label: "Billing Alerts", icon: Link2 },
-  { href: "/audit", label: "Audit Review", icon: ShieldCheck }
+  { href: "/approvals", label: "Approvals", icon: ClipboardCheck, allowedRoles: ["HOD", "MD"] satisfies UserRole[] },
+  { href: "/finance", label: "Finance Queue", icon: FileText, allowedRoles: ["Finance", "FinanceHOD"] satisfies UserRole[] },
+  { href: "/billing", label: "Billing Alerts", icon: Link2, allowedRoles: ["BillingTeam", "Finance", "FinanceHOD"] satisfies UserRole[] },
+  { href: "/audit", label: "Audit Review", icon: ShieldCheck, allowedRoles: ["Finance", "FinanceHOD", "MD"] satisfies UserRole[] }
 ];
 
 export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {

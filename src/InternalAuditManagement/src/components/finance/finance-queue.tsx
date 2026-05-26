@@ -31,17 +31,22 @@ export function FinanceQueue() {
   const [items, setItems] = useState<FinanceItem[]>([]);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
   const [claimDetails, setClaimDetails] = useState<Record<string, ClaimReceiptDetail>>({});
+  const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   async function load() {
-    const response = await fetch("/api/v1/finance/queue");
-    const data = await response.json();
-    if (!response.ok) {
-      setMessage(data.detail ?? "Could not load finance queue.");
-      return;
+    try {
+      const response = await fetch("/api/v1/finance/queue");
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.detail ?? "Could not load finance queue.");
+        return;
+      }
+      setItems(data.items ?? []);
+    } finally {
+      setIsLoading(false);
     }
-    setItems(data.items ?? []);
   }
 
   useEffect(() => {
@@ -103,6 +108,11 @@ export function FinanceQueue() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail ?? "Receipt confirmation failed.");
       setMessage(data.message ?? "Physical receipt confirmed.");
+      setItems((current) =>
+        current.map((item) =>
+          item.claimId === claimId ? { ...item, physicalReceiptConfirmed: true } : item
+        )
+      );
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Receipt confirmation failed.");
@@ -142,7 +152,17 @@ export function FinanceQueue() {
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
+          {isLoading ? (
+            <tr>
+              <td colSpan={5}>
+                <span className="loading-inline">
+                  <Loader2 size={16} />
+                  Loading finance queue...
+                </span>
+              </td>
+            </tr>
+          ) : null}
+          {!isLoading && items.map((item) => (
             <>
               <tr key={item.claimId}>
                 <td>
@@ -220,7 +240,7 @@ export function FinanceQueue() {
               ) : null}
             </>
           ))}
-          {items.length === 0 ? (
+          {!isLoading && items.length === 0 ? (
             <tr>
               <td colSpan={5}>No finance items pending.</td>
             </tr>

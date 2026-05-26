@@ -41,8 +41,8 @@ Browser
 Production deployments must store these secrets in Azure Key Vault:
 
 ```text
-Supabase--Url
-Supabase--ServiceRoleKey
+Supabase-Url
+Supabase-ServiceRoleKey
 fmsstorage-connectionstring
 ```
 

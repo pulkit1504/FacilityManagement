@@ -26,8 +26,8 @@ Production secrets should live in Azure Key Vault. Set `AZURE_KEY_VAULT_URL` and
 Expected Key Vault secret names:
 
 ```text
-Supabase--Url
-Supabase--ServiceRoleKey
+Supabase-Url
+Supabase-ServiceRoleKey
 fmsstorage-connectionstring
 ```
 

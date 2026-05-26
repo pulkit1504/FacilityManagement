@@ -58,7 +58,7 @@ export class ClaimService {
       throw notFound("Claim was not found.");
     }
 
-    this.assertCanView(claim, user);
+    await this.assertCanView(claim, user);
 
     return {
       ...claim,
@@ -145,12 +145,21 @@ export class ClaimService {
     };
   }
 
-  private assertCanView(claim: ExpenseClaim, user: UserContext) {
+  private async assertCanView(claim: ExpenseClaim, user: UserContext) {
     if (["Finance", "FinanceHOD", "MD"].includes(user.role)) {
       return;
     }
 
     if (claim.submitterEmployeeId === user.userId) {
+      return;
+    }
+
+    const pendingStep = await this.claims.getPendingApprovalStep(claim.claimId);
+    if (
+      pendingStep &&
+      pendingStep.assignedApproverId === user.userId &&
+      pendingStep.requiredApproverRole === user.role
+    ) {
       return;
     }
 

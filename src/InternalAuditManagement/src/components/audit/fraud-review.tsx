@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Play, ShieldAlert } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
+import { AlertTriangle, CheckCircle2, Eye, Play, ShieldAlert } from "lucide-react";
 
 type FraudFlagItem = {
   flagId: string;
@@ -26,6 +26,7 @@ type FraudFlagItem = {
 
 export function FraudReview() {
   const [flags, setFlags] = useState<FraudFlagItem[]>([]);
+  const [expandedFlagId, setExpandedFlagId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   async function load() {
@@ -88,7 +89,6 @@ export function FraudReview() {
             <th>Rule</th>
             <th>Claim</th>
             <th>Employee</th>
-            <th>Evidence</th>
             <th>Age</th>
             <th>Related</th>
             <th>Actions</th>
@@ -96,61 +96,78 @@ export function FraudReview() {
         </thead>
         <tbody>
           {flags.map((flag) => (
-            <tr key={flag.flagId}>
-              <td>
-                <strong style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <AlertTriangle size={16} />
-                  {flag.ruleLabel}
-                </strong>
-                <br />
-                <span className="muted">{flag.ruleDescription}</span>
-              </td>
-              <td>{flag.primaryClaimId.slice(0, 8)}</td>
-              <td>{flag.employeeName}</td>
-              <td>
-                <div className="grid" style={{ gap: 8 }}>
-                  {flag.flaggedLineItems.map((line) => (
-                    <div className="audit-evidence" key={line.lineItemId}>
-                      <strong>{line.description}</strong>
-                      <span className="muted">
-                        {line.transactionDate} · {line.expenseTag} · Rs {line.amount.toLocaleString("en-IN")}
-                      </span>
-                      <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
-                        {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
-                      </span>
-                      <span className="muted">
-                        Claim {line.claimId.slice(0, 8)}
-                        {line.clientInvoiceNumber ? ` · Invoice ${line.clientInvoiceNumber}` : ""}
-                      </span>
+            <Fragment key={flag.flagId}>
+              <tr>
+                <td>
+                  <strong style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <AlertTriangle size={16} />
+                    {flag.ruleLabel}
+                  </strong>
+                  <br />
+                  <span className="muted">{flag.ruleDescription}</span>
+                </td>
+                <td>{flag.primaryClaimId.slice(0, 8)}</td>
+                <td>{flag.employeeName}</td>
+                <td>
+                  <span className={`badge ${flag.daysOpen >= 7 ? "danger" : flag.daysOpen >= 2 ? "warning" : "success"}`}>
+                    {flag.daysOpen} days
+                  </span>
+                </td>
+                <td>{flag.relatedClaimCount}</td>
+                <td>
+                  <div className="actions">
+                    <button className="button secondary" onClick={() => setExpandedFlagId(expandedFlagId === flag.flagId ? null : flag.flagId)} type="button">
+                      <Eye size={16} />
+                      {expandedFlagId === flag.flagId ? "Hide evidence" : "View evidence"}
+                    </button>
+                    <button className="button secondary" onClick={() => void review(flag.flagId, "Cleared")} type="button">
+                      <CheckCircle2 size={16} />
+                      Clear
+                    </button>
+                    <button className="button" onClick={() => void review(flag.flagId, "Escalated")} type="button">
+                      <ShieldAlert size={16} />
+                      Escalate
+                    </button>
+                    <span className="muted">Marks for management review</span>
+                  </div>
+                </td>
+              </tr>
+              {expandedFlagId === flag.flagId ? (
+                <tr>
+                  <td colSpan={6}>
+                    <div className="receipt-review">
+                      {flag.flaggedLineItems.map((line) => (
+                        <div className="audit-evidence-row" key={line.lineItemId}>
+                          <div>
+                            <strong>{line.description}</strong>
+                            <br />
+                            <span className="muted">
+                              {line.transactionDate} · {line.expenseTag}
+                            </span>
+                          </div>
+                          <div>
+                            <strong>Rs {line.amount.toLocaleString("en-IN")}</strong>
+                            <br />
+                            <span className="muted">
+                              Claim {line.claimId.slice(0, 8)}
+                              {line.clientInvoiceNumber ? ` · Invoice ${line.clientInvoiceNumber}` : ""}
+                            </span>
+                          </div>
+                          <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
+                            {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
+                          </span>
+                        </div>
+                      ))}
+                      {flag.flaggedLineItems.length === 0 ? <span className="muted">No line detail available.</span> : null}
                     </div>
-                  ))}
-                  {flag.flaggedLineItems.length === 0 ? <span className="muted">No line detail available.</span> : null}
-                </div>
-              </td>
-              <td>
-                <span className={`badge ${flag.daysOpen >= 7 ? "danger" : flag.daysOpen >= 2 ? "warning" : "success"}`}>
-                  {flag.daysOpen} days
-                </span>
-              </td>
-              <td>{flag.relatedClaimCount}</td>
-              <td>
-                <div className="actions">
-                  <button className="button secondary" onClick={() => void review(flag.flagId, "Cleared")} type="button">
-                    <CheckCircle2 size={16} />
-                    Clear
-                  </button>
-                  <button className="button" onClick={() => void review(flag.flagId, "Escalated")} type="button">
-                    <ShieldAlert size={16} />
-                    Escalate
-                  </button>
-                  <span className="muted">Marks for management review</span>
-                </div>
-              </td>
-            </tr>
+                  </td>
+                </tr>
+              ) : null}
+            </Fragment>
           ))}
           {flags.length === 0 ? (
             <tr>
-              <td colSpan={7}>No open fraud flags.</td>
+              <td colSpan={6}>No open fraud flags.</td>
             </tr>
           ) : null}
         </tbody>

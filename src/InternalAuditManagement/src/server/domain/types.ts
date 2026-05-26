@@ -170,6 +170,30 @@ export type BillingAlertQueueItem = BillingAlert & {
   urgencyLabel: string;
 };
 
+export type FraudRuleName = "DuplicateVoucher" | "ThresholdSplit" | "WeekendOutlier";
+export type FraudFlagStatus = "Open" | "Cleared" | "Escalated";
+
+export type FraudFlag = {
+  flagId: string;
+  primaryClaimId: string;
+  relatedClaimIds: string[];
+  ruleName: FraudRuleName;
+  flaggedAt: string;
+  sweepDate: string;
+  status: FraudFlagStatus;
+  reviewedByUserId: string | null;
+  reviewRemarks: string | null;
+  reviewedAt: string | null;
+};
+
+export type FraudFlagQueueItem = FraudFlag & {
+  ruleLabel: string;
+  ruleDescription: string;
+  relatedClaimCount: number;
+  daysOpen: number;
+  employeeName: string;
+};
+
 export function statusLabel(status: ClaimStatus): string {
   const labels: Record<ClaimStatus, string> = {
     Draft: "Draft - not yet submitted",

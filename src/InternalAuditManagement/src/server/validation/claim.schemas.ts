@@ -87,7 +87,13 @@ export const linkInvoiceSchema = z.object({
   clientInvoiceNumber: z.string().trim().min(3).max(100)
 });
 
+export const reviewFraudFlagSchema = z.object({
+  decision: z.enum(["Cleared", "Escalated"]),
+  remarks: z.string().trim().min(5).max(1000)
+});
+
 export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
 export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
 export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptSchema>;
 export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;
+export type ReviewFraudFlagInput = z.infer<typeof reviewFraudFlagSchema>;

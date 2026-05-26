@@ -11,13 +11,17 @@ import type {
   FinanceQueueItem,
   ExpenseAttachment,
   ExpenseClaim,
-  ExpenseLineItem
+  ExpenseLineItem,
+  FraudFlag,
+  FraudFlagQueueItem,
+  FraudFlagStatus
 } from "../domain/types";
 import type {
   AuditLogInput,
   ClaimRepository,
   CreateAttachmentRecord,
   CreateBillingAlertRecord,
+  CreateFraudFlagRecord,
   CreateClaimRecord
 } from "./claim-repository";
 import { defaultClaimRecord } from "./claim-repository";
@@ -88,6 +92,38 @@ function mapBillingAlert(row: Record<string, unknown>): BillingAlert {
     isResolved: Boolean(row.is_resolved),
     resolvedAt: row.resolved_at ? String(row.resolved_at) : null,
     resolvedByUserId: row.resolved_by_user_id ? String(row.resolved_by_user_id) : null
+  };
+}
+
+function parseRelatedClaimIds(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map(String);
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function mapFraudFlag(row: Record<string, unknown>): FraudFlag {
+  return {
+    flagId: String(row.flag_id),
+    primaryClaimId: String(row.primary_claim_id),
+    relatedClaimIds: parseRelatedClaimIds(row.related_claim_ids),
+    ruleName: row.rule_name as FraudFlag["ruleName"],
+    flaggedAt: String(row.flagged_at),
+    sweepDate: String(row.sweep_date),
+    status: row.status as FraudFlagStatus,
+    reviewedByUserId: row.reviewed_by_user_id ? String(row.reviewed_by_user_id) : null,
+    reviewRemarks: row.review_remarks ? String(row.review_remarks) : null,
+    reviewedAt: row.reviewed_at ? String(row.reviewed_at) : null
   };
 }
 
@@ -650,6 +686,131 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     if (error) throw error;
     return mapBillingAlert(data);
+  }
+
+  async listClaimsForFraudSweep(): Promise<ClaimDetail[]> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_claims")
+      .select("claim_id")
+      .in("status", ["FinanceConfirmed", "PaymentReleased"])
+      .eq("is_deleted", false)
+      .order("updated_at", { ascending: false })
+      .limit(500);
+
+    if (error) throw error;
+
+    const claims = await Promise.all(
+      (data ?? []).map(async (row) => this.getClaimDetail(String(row.claim_id)))
+    );
+
+    return claims.filter((claim): claim is ClaimDetail => Boolean(claim));
+  }
+
+  async createFraudFlag(input: CreateFraudFlagRecord): Promise<FraudFlag | null> {
+    const db = await getSupabaseAdminClient();
+    const { data: existing, error: existingError } = await db
+      .from("fraud_flags")
+      .select("*")
+      .eq("primary_claim_id", input.primaryClaimId)
+      .eq("rule_name", input.ruleName)
+      .eq("status", "Open")
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+    if (existing) return null;
+
+    const { data, error } = await db
+      .from("fraud_flags")
+      .insert({
+        flag_id: randomUUID(),
+        primary_claim_id: input.primaryClaimId,
+        related_claim_ids: input.relatedClaimIds,
+        rule_name: input.ruleName,
+        sweep_date: input.sweepDate,
+        status: "Open"
+      })
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapFraudFlag(data);
+  }
+
+  async listFraudFlags(status: FraudFlagStatus = "Open"): Promise<FraudFlagQueueItem[]> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("fraud_flags")
+      .select("*")
+      .eq("status", status)
+      .order("flagged_at", { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+
+    const labels: Record<FraudFlag["ruleName"], { label: string; description: string }> = {
+      DuplicateVoucher: {
+        label: "Duplicate Voucher Suspected",
+        description: "Matching amount and transaction date found across claims."
+      },
+      ThresholdSplit: {
+        label: "Threshold Split Suspected",
+        description: "Multiple claims appear sized just below an approval threshold."
+      },
+      WeekendOutlier: {
+        label: "Non-Operational Day",
+        description: "Backend CTC expense occurred on a weekend or configured holiday."
+      }
+    };
+
+    return Promise.all(
+      (data ?? []).map(async (row) => {
+        const flag = mapFraudFlag(row);
+        const claim = await this.getClaimDetail(flag.primaryClaimId);
+        const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(flag.flaggedAt).getTime()) / 86_400_000));
+        const ruleText = labels[flag.ruleName];
+
+        return {
+          ...flag,
+          ruleLabel: ruleText.label,
+          ruleDescription: ruleText.description,
+          relatedClaimCount: flag.relatedClaimIds.length,
+          daysOpen,
+          employeeName: claim?.submitterEmployeeId ?? "Unknown"
+        };
+      })
+    );
+  }
+
+  async reviewFraudFlag(
+    flagId: string,
+    status: Exclude<FraudFlagStatus, "Open">,
+    remarks: string,
+    reviewedByUserId: string
+  ): Promise<FraudFlag> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("fraud_flags")
+      .update({
+        status,
+        review_remarks: remarks,
+        reviewed_by_user_id: reviewedByUserId,
+        reviewed_at: new Date().toISOString()
+      })
+      .eq("flag_id", flagId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapFraudFlag(data);
+  }
+
+  async listHolidayDates(): Promise<string[]> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db.from("holidays").select("holiday_date");
+
+    if (error) throw error;
+    return (data ?? []).map((row) => String(row.holiday_date));
   }
 
   private toApprovalQueueItem(claim: ClaimDetail): ApprovalQueueItem {

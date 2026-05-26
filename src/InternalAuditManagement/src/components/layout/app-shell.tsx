@@ -1,10 +1,18 @@
 import Link from "next/link";
 import { BarChart3, ClipboardCheck, FileText, Link2, ReceiptText, ShieldCheck } from "lucide-react";
+import type { UserRole } from "@/server/domain/types";
 
-const links = [
+type NavLink = {
+  href: string;
+  label: string;
+  icon: typeof BarChart3;
+  allowedRoles?: UserRole[];
+};
+
+const links: NavLink[] = [
   { href: "/", label: "Overview", icon: BarChart3 },
   { href: "/dashboard", label: "MIS Dashboard", icon: ClipboardCheck },
-  { href: "/claims/new", label: "New Claim", icon: ReceiptText },
+  { href: "/claims/new", label: "New Claim", icon: ReceiptText, allowedRoles: ["Claimant", "HOD"] satisfies UserRole[] },
   { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { href: "/finance", label: "Finance Queue", icon: FileText },
   { href: "/billing", label: "Billing Alerts", icon: Link2 },
@@ -12,6 +20,9 @@ const links = [
 ];
 
 export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
+  const currentRole = (process.env.DEV_USER_ROLE ?? "Claimant") as UserRole;
+  const visibleLinks = links.filter((link) => !link.allowedRoles || link.allowedRoles.includes(currentRole));
+
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -20,7 +31,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           <span>Expense, billing, and audit workflow</span>
         </div>
         <nav className="nav" aria-label="Primary navigation">
-          {links.map((link) => {
+          {visibleLinks.map((link) => {
             const Icon = link.icon;
             return (
               <Link href={link.href} key={link.href}>

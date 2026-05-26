@@ -7,8 +7,8 @@ export class ApprovalService {
   constructor(private readonly claims: ClaimRepository) {}
 
   async listQueue(user: UserContext) {
-    if (!["HOD", "MD", "Finance", "FinanceHOD"].includes(user.role)) {
-      throw forbidden("Only approvers and Finance can view approval queues.");
+    if (!["HOD", "MD"].includes(user.role)) {
+      throw forbidden("Only HOD and MD approvers can view approval queues.");
     }
 
     const items = await this.claims.listApprovalQueue(user.userId, user.role);

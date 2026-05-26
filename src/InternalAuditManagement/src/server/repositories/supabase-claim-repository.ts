@@ -15,6 +15,7 @@ import type {
   FraudFlag,
   FraudFlagQueueItem,
   FraudFlagStatus,
+  MisDashboardMetrics,
   OverviewMetrics
 } from "../domain/types";
 import type {
@@ -359,6 +360,10 @@ export class SupabaseClaimRepository implements ClaimRepository {
   }
 
   async listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]> {
+    if (!["HOD", "MD"].includes(role)) {
+      return [];
+    }
+
     const db = await getSupabaseAdminClient();
     let query = db
       .from("approval_steps")
@@ -366,11 +371,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .eq("decision", "Pending")
       .order("step_order");
 
-    if (role !== "Finance" && role !== "FinanceHOD") {
-      query = query.eq("assigned_approver_id", userId);
-    } else {
-      query = query.eq("required_approver_role", "Finance");
-    }
+    query = query.eq("assigned_approver_id", userId);
 
     const { data, error } = await query.limit(50);
     if (error) throw error;
@@ -861,6 +862,79 @@ export class SupabaseClaimRepository implements ClaimRepository {
       activeBillingAlerts: activeBillingAlerts ?? 0,
       openFraudFlags: openFraudFlags ?? 0,
       billingRecoveryPct: totalBillable > 0 ? Math.round((totalBilled / totalBillable) * 100) : null
+    };
+  }
+
+  async getMisDashboardMetrics(): Promise<MisDashboardMetrics> {
+    const db = await getSupabaseAdminClient();
+    const [{ data: approvedClaims, error: approvedClaimsError }, { data: billingAlerts, error: billingAlertsError }] =
+      await Promise.all([
+        db
+          .from("expense_claims")
+          .select("claim_id")
+          .in("status", ["FinanceConfirmed", "PaymentReleased"])
+          .eq("is_deleted", false)
+          .limit(500),
+        db
+          .from("billing_alerts")
+          .select("created_at")
+          .eq("is_resolved", false)
+          .order("created_at", { ascending: true })
+          .limit(1)
+      ]);
+
+    if (approvedClaimsError) throw approvedClaimsError;
+    if (billingAlertsError) throw billingAlertsError;
+
+    const claimDetails = await Promise.all(
+      (approvedClaims ?? []).map(async (row) => this.getClaimDetail(String(row.claim_id)))
+    );
+
+    let totalBillableApproved = 0;
+    let totalBilled = 0;
+    const matrix = new Map<string, { totalBillable: number; totalBilled: number }>();
+
+    for (const claim of claimDetails.filter((item): item is ClaimDetail => Boolean(item))) {
+      const siteName = claim.siteId ?? "Not linked";
+      const current = matrix.get(siteName) ?? { totalBillable: 0, totalBilled: 0 };
+
+      for (const line of claim.lineItems) {
+        const isBillable = line.expenseTag === "AlreadyBilled" || line.expenseTag === "PendingBilling";
+        const isBilled = line.expenseTag === "AlreadyBilled" && line.invoiceValidationStatus === "Valid";
+
+        if (isBillable) {
+          totalBillableApproved += line.amount;
+          current.totalBillable += line.amount;
+        }
+
+        if (isBilled) {
+          totalBilled += line.amount;
+          current.totalBilled += line.amount;
+        }
+      }
+
+      matrix.set(siteName, current);
+    }
+
+    const oldestBillingAlert = billingAlerts?.[0]?.created_at ? String(billingAlerts[0].created_at) : null;
+    const oldestBillingAlertDays = oldestBillingAlert
+      ? Math.max(0, Math.floor((Date.now() - new Date(oldestBillingAlert).getTime()) / 86_400_000))
+      : null;
+
+    return {
+      totalBillableApproved,
+      totalBilled,
+      unbilledLeakage: Math.max(0, totalBillableApproved - totalBilled),
+      billingRecoveryPct: totalBillableApproved > 0 ? Math.round((totalBilled / totalBillableApproved) * 100) : null,
+      oldestBillingAlertDays,
+      recoveryMatrix: Array.from(matrix.entries())
+        .map(([siteName, values]) => ({
+          siteName,
+          totalBillable: values.totalBillable,
+          totalBilled: values.totalBilled,
+          recoveryPct: values.totalBillable > 0 ? Math.round((values.totalBilled / values.totalBillable) * 100) : null
+        }))
+        .sort((a, b) => b.totalBillable - a.totalBillable)
     };
   }
 

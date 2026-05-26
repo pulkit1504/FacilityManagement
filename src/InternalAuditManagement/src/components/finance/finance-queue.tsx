@@ -194,12 +194,13 @@ export function FinanceQueue() {
                     </button>
                     <button
                       className="button"
-                      disabled={busyAction === `release:${item.claimId}`}
+                      disabled={!item.physicalReceiptConfirmed || busyAction === `release:${item.claimId}`}
                       onClick={() => void releasePayment(item.claimId)}
                       type="button"
+                      title={item.physicalReceiptConfirmed ? "Release payment" : "Confirm receipt before releasing payment"}
                     >
                       {busyAction === `release:${item.claimId}` ? <Loader2 size={16} /> : <Banknote size={16} />}
-                      Release
+                      {item.physicalReceiptConfirmed ? "Release" : "Receipt pending"}
                     </button>
                   </div>
                 </td>

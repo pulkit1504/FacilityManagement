@@ -96,7 +96,7 @@ label {
   padding: 10px 12px;
 }
 
-.nav a:first-child,
+.nav a.active,
 .nav a:hover {
   background: rgba(255, 255, 255, 0.1);
 }
@@ -299,6 +299,17 @@ h1 {
   padding: 12px;
 }
 
+.approval-line-row {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(140px, 0.8fr) auto minmax(180px, 1fr);
+  padding: 12px;
+}
+
 @media (max-width: 860px) {
   .shell {
     grid-template-columns: 1fr;
@@ -326,6 +337,11 @@ h1 {
   }
 
   .receipt-row {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .approval-line-row {
     align-items: flex-start;
     grid-template-columns: 1fr;
   }

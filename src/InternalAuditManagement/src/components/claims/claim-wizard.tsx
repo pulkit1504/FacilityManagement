@@ -31,10 +31,12 @@ type SubmissionResult = {
 
 type ProblemResponse = {
   detail?: string;
-  errors?: {
-    formErrors?: string[];
-    fieldErrors?: Record<string, string[] | undefined>;
-  };
+  errors?:
+    | string[]
+    | {
+        formErrors?: string[];
+        fieldErrors?: Record<string, string[] | undefined>;
+      };
 };
 
 const emptyLineItem: LineItemDraft = {
@@ -56,6 +58,7 @@ export function ClaimWizard() {
   const [savedLineItems, setSavedLineItems] = useState<SavedLineItem[]>([]);
   const [submissionResult, setSubmissionResult] = useState<SubmissionResult | null>(null);
   const [message, setMessage] = useState<string>("");
+  const [errorMessages, setErrorMessages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
   const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
@@ -64,6 +67,18 @@ export function ClaimWizard() {
   const hasValidProformaPeriod =
     !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
   const canCreateDraft = Boolean(siteId) && hasValidProformaPeriod;
+  const submitGateMessages = useMemo(() => {
+    if (requiresProformaPeriod && savedLineItems.length < 2) {
+      return ["Periodic proforma requires at least two saved line items before submission."];
+    }
+
+    if (savedLineItems.length === 0) {
+      return ["Add at least one saved line item before submitting the claim."];
+    }
+
+    return [];
+  }, [requiresProformaPeriod, savedLineItems.length]);
+  const canSubmitClaim = submitGateMessages.length === 0;
 
   const canAddLine = useMemo(() => {
     if (!lineItem.description || !lineItem.amount || Number(lineItem.amount) <= 0) return false;
@@ -75,6 +90,7 @@ export function ClaimWizard() {
   async function createDraft() {
     setBusy(true);
     setMessage("");
+    setErrorMessages([]);
     try {
       const response = await fetch("/api/v1/claims", {
         method: "POST",
@@ -87,7 +103,10 @@ export function ClaimWizard() {
         })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(getProblemMessage(data, "Could not create claim."));
+      if (!response.ok) {
+        setErrorMessages(getProblemMessages(data, "Could not create claim."));
+        return;
+      }
       setClaimId(data.claimId);
       if (requiresProformaPeriod) {
         setLineItem((current) => ({ ...current, transactionDate: proformaPeriodStart }));
@@ -105,6 +124,7 @@ export function ClaimWizard() {
     setLineItem(emptyLineItem);
     setSavedLineItems([]);
     setSubmissionResult(null);
+    setErrorMessages([]);
     setMessage("Draft cleared. Choose the entry method and create a new draft.");
   }
 
@@ -112,6 +132,7 @@ export function ClaimWizard() {
     if (!claimId) return;
     setBusy(true);
     setMessage("");
+    setErrorMessages([]);
     try {
       const response = await fetch(`/api/v1/claims/${claimId}/line-items`, {
         method: "POST",
@@ -127,7 +148,10 @@ export function ClaimWizard() {
         })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail ?? "Could not add line item.");
+      if (!response.ok) {
+        setErrorMessages(getProblemMessages(data, "Could not add line item."));
+        return;
+      }
 
       setSavedLineItems((current) => [
         ...current,
@@ -153,10 +177,14 @@ export function ClaimWizard() {
     if (!claimId) return;
     setBusy(true);
     setMessage("");
+    setErrorMessages([]);
     try {
       const response = await fetch(`/api/v1/claims/${claimId}/submit`, { method: "POST" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail ?? "Could not submit claim.");
+      if (!response.ok) {
+        setErrorMessages(getProblemMessages(data, "Could not submit claim."));
+        return;
+      }
       setSubmissionResult({
         assignedTo: data.assignedTo,
         message: data.message
@@ -173,6 +201,7 @@ export function ClaimWizard() {
     if (!claimId || !file || submissionResult) return;
     setBusy(true);
     setMessage("");
+    setErrorMessages([]);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -181,7 +210,10 @@ export function ClaimWizard() {
         body: formData
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail ?? "Could not upload receipt.");
+      if (!response.ok) {
+        setErrorMessages(getProblemMessages(data, "Could not upload receipt."));
+        return;
+      }
       setSavedLineItems((current) =>
         current.map((item) =>
           item.lineItemId === lineItemId
@@ -247,7 +279,7 @@ export function ClaimWizard() {
             {claimId && !submissionResult ? (
               <button className="button secondary" disabled={busy} onClick={resetDraft} type="button">
                 <RotateCcw size={18} />
-              Cancel draft
+                Cancel draft
               </button>
             ) : null}
           </div>
@@ -350,10 +382,17 @@ export function ClaimWizard() {
                 </p>
               </div>
               {!submissionResult ? (
-                <button className="button" disabled={busy || savedLineItems.length === 0} onClick={submitClaim} type="button">
-                  <Send size={18} />
-                  Submit claim
-                </button>
+                <div className="grid" style={{ gap: 8, justifyItems: "end" }}>
+                  <button className="button" disabled={busy || !canSubmitClaim} onClick={submitClaim} type="button">
+                    <Send size={18} />
+                    Submit claim
+                  </button>
+                  {submitGateMessages.length > 0 ? (
+                    <p className="muted" style={{ margin: 0, maxWidth: 360, textAlign: "right" }}>
+                      {submitGateMessages[0]}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </div>
             <table className="table">
@@ -408,16 +447,37 @@ export function ClaimWizard() {
         </>
       ) : null}
 
+      {errorMessages.length > 0 ? (
+        <section
+          aria-live="polite"
+          className="panel"
+          role="alert"
+          style={{ borderColor: "#fecaca", boxShadow: "none" }}
+        >
+          <h2 style={{ color: "var(--danger)", fontSize: 18 }}>Action needed</h2>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {errorMessages.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {message ? <p className="muted">{message}</p> : null}
     </div>
   );
 }
 
-function getProblemMessage(data: ProblemResponse, fallback: string) {
-  const formError = data.errors?.formErrors?.[0];
-  if (formError) return formError;
+function getProblemMessages(data: ProblemResponse, fallback: string): string[] {
+  if (Array.isArray(data.errors) && data.errors.length > 0) {
+    return data.errors;
+  }
 
-  const fieldErrors = data.errors?.fieldErrors;
-  const fieldError = fieldErrors ? Object.values(fieldErrors).flat().find(Boolean) : undefined;
-  return fieldError ?? data.detail ?? fallback;
+  const formErrors = !Array.isArray(data.errors) ? data.errors?.formErrors : undefined;
+  if (formErrors?.length) return formErrors;
+
+  const fieldErrors = !Array.isArray(data.errors) ? data.errors?.fieldErrors : undefined;
+  const fieldErrorMessages = fieldErrors ? Object.values(fieldErrors).flat().filter((error): error is string => Boolean(error)) : [];
+  if (fieldErrorMessages.length > 0) return fieldErrorMessages;
+
+  return [data.detail ?? fallback];
 }

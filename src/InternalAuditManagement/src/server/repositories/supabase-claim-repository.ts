@@ -251,9 +251,9 @@ export class SupabaseClaimRepository implements ClaimRepository {
         amount: input.amount,
         transaction_date: input.transactionDate,
         expense_tag: input.expenseTag,
-        client_invoice_number: input.clientInvoiceNumber ?? null,
+        client_invoice_number: input.expenseTag === "AlreadyBilled" ? input.clientInvoiceNumber ?? null : null,
         invoice_validation_status: input.expenseTag === "AlreadyBilled" ? "PendingErpValidation" : "NotApplicable",
-        site_id: input.siteId ?? null,
+        site_id: input.expenseTag === "ContractPartCost" ? input.siteId ?? null : null,
         missing_receipt_flag: true,
         sort_order: input.sortOrder
       })

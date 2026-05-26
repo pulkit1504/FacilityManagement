@@ -15,6 +15,7 @@ import type {
   FraudFlagQueueItem,
   FraudFlagStatus,
   FraudRuleName,
+  OverviewMetrics,
   SubmissionMode
 } from "../domain/types";
 import type { CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
@@ -86,6 +87,7 @@ export interface ClaimRepository {
   listFraudFlags(status?: FraudFlagStatus): Promise<FraudFlagQueueItem[]>;
   reviewFraudFlag(flagId: string, status: Exclude<FraudFlagStatus, "Open">, remarks: string, reviewedByUserId: string): Promise<FraudFlag>;
   listHolidayDates(): Promise<string[]>;
+  getOverviewMetrics(userId: string, role: string): Promise<OverviewMetrics>;
 }
 
 export type ClaimSummary = Pick<

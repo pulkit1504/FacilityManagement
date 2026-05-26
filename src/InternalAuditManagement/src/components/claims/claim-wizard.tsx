@@ -24,6 +24,11 @@ type SavedLineItem = {
   attachmentHash?: string;
 };
 
+type SubmissionResult = {
+  assignedTo: string;
+  message: string;
+};
+
 const emptyLineItem: LineItemDraft = {
   description: "",
   amount: "",
@@ -39,6 +44,7 @@ export function ClaimWizard() {
   const [siteId, setSiteId] = useState("site-ansal-a");
   const [lineItem, setLineItem] = useState<LineItemDraft>(emptyLineItem);
   const [savedLineItems, setSavedLineItems] = useState<SavedLineItem[]>([]);
+  const [submissionResult, setSubmissionResult] = useState<SubmissionResult | null>(null);
   const [message, setMessage] = useState<string>("");
   const [busy, setBusy] = useState(false);
 
@@ -126,7 +132,11 @@ export function ClaimWizard() {
       const response = await fetch(`/api/v1/claims/${claimId}/submit`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail ?? "Could not submit claim.");
-      setMessage(`${data.message} Assigned to ${data.assignedTo}.`);
+      setSubmissionResult({
+        assignedTo: data.assignedTo,
+        message: data.message
+      });
+      setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not submit claim.");
     } finally {
@@ -135,7 +145,7 @@ export function ClaimWizard() {
   }
 
   async function uploadReceipt(lineItemId: string, file: File | undefined) {
-    if (!claimId || !file) return;
+    if (!claimId || !file || submissionResult) return;
     setBusy(true);
     setMessage("");
     try {
@@ -192,6 +202,20 @@ export function ClaimWizard() {
 
       {claimId ? (
         <>
+          {submissionResult ? (
+            <section className="panel success-panel">
+              <div className="success-icon">
+                <Check size={22} />
+              </div>
+              <div>
+                <h2>Claim Submitted</h2>
+                <p>{submissionResult.message}</p>
+                <p className="muted">Assigned to {submissionResult.assignedTo}. This claim is locked while it is under approval.</p>
+              </div>
+            </section>
+          ) : null}
+
+          {!submissionResult ? (
           <section className="panel">
             <h2>Add Line Item</h2>
             <div className="grid cols-3">
@@ -249,17 +273,22 @@ export function ClaimWizard() {
               </button>
             </div>
           </section>
+          ) : null}
 
           <section className="panel">
             <div className="topbar" style={{ marginBottom: 12 }}>
               <div>
                 <h2>Saved Line Items</h2>
-                <p className="muted">Attach receipts to each saved line before submitting.</p>
+                <p className="muted">
+                  {submissionResult ? "Submitted line items are locked for approval." : "Attach receipts to each saved line before submitting."}
+                </p>
               </div>
-              <button className="button" disabled={busy || savedLineItems.length === 0} onClick={submitClaim} type="button">
-                <Send size={18} />
-                Submit claim
-              </button>
+              {!submissionResult ? (
+                <button className="button" disabled={busy || savedLineItems.length === 0} onClick={submitClaim} type="button">
+                  <Send size={18} />
+                  Submit claim
+                </button>
+              ) : null}
             </div>
             <table className="table">
               <thead>
@@ -283,18 +312,22 @@ export function ClaimWizard() {
                       </span>
                     </td>
                     <td>
-                      <label className={`button secondary ${busy ? "disabled-label" : ""}`}>
-                        <Paperclip size={18} />
-                        {item.missingReceiptFlag ? "Attach" : "Replace"}
-                        <input
-                          accept="image/jpeg,image/png,image/heic,application/pdf"
-                          capture="environment"
-                          disabled={busy}
-                          hidden
-                          onChange={(event) => void uploadReceipt(item.lineItemId, event.target.files?.[0])}
-                          type="file"
-                        />
-                      </label>
+                      {submissionResult ? (
+                        <span className="muted">Locked</span>
+                      ) : (
+                        <label className={`button secondary ${busy ? "disabled-label" : ""}`}>
+                          <Paperclip size={18} />
+                          {item.missingReceiptFlag ? "Attach" : "Replace"}
+                          <input
+                            accept="image/jpeg,image/png,image/heic,application/pdf"
+                            capture="environment"
+                            disabled={busy}
+                            hidden
+                            onChange={(event) => void uploadReceipt(item.lineItemId, event.target.files?.[0])}
+                            type="file"
+                          />
+                        </label>
+                      )}
                     </td>
                   </tr>
                 ))}

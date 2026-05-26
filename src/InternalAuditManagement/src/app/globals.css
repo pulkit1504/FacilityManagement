@@ -254,6 +254,24 @@ h1 {
   color: var(--danger);
 }
 
+.success-panel {
+  align-items: flex-start;
+  border-color: #bbf7d0;
+  display: flex;
+  gap: 14px;
+}
+
+.success-icon {
+  align-items: center;
+  background: #dcfce7;
+  border-radius: 999px;
+  color: var(--success);
+  display: inline-flex;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
 @media (max-width: 860px) {
   .shell {
     grid-template-columns: 1fr;

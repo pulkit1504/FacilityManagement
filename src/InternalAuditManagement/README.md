@@ -28,9 +28,10 @@ Expected Key Vault secret names:
 ```text
 Supabase--Url
 Supabase--ServiceRoleKey
-AzureStorage--ConnectionString
-AzureStorage--ContainerName
+fmsstorage-connectionstring
 ```
+
+Receipt files are stored in the `nimbus` container in storage account `fmsstorage15`.
 
 For Vercel, configure `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, and `AZURE_CLIENT_SECRET` as encrypted environment variables so `DefaultAzureCredential` can read Key Vault. For Azure hosting later, use Managed Identity instead.
 

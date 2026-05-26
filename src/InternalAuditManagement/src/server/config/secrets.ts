@@ -5,14 +5,12 @@ import { SecretClient } from "@azure/keyvault-secrets";
 type SecretName =
   | "SUPABASE_URL"
   | "SUPABASE_SERVICE_ROLE_KEY"
-  | "AZURE_STORAGE_CONNECTION_STRING"
-  | "AZURE_STORAGE_CONTAINER_NAME";
+  | "AZURE_STORAGE_CONNECTION_STRING";
 
 const keyVaultNameMap: Record<SecretName, string> = {
   SUPABASE_URL: "Supabase--Url",
   SUPABASE_SERVICE_ROLE_KEY: "Supabase--ServiceRoleKey",
-  AZURE_STORAGE_CONNECTION_STRING: "AzureStorage--ConnectionString",
-  AZURE_STORAGE_CONTAINER_NAME: "AzureStorage--ContainerName"
+  AZURE_STORAGE_CONNECTION_STRING: "fmsstorage-connectionstring"
 };
 
 const cache = new Map<SecretName, Promise<string>>();

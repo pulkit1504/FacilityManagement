@@ -1,11 +1,23 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { forbidden } from "../errors/application-error";
 import { userRoles, type UserContext, type UserRole } from "../domain/types";
+import { parseTestUserCookie, testUserCookieName } from "./test-users";
 
 export async function getUserContext(): Promise<UserContext> {
-  const headerStore = await headers();
+  const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
   const correlationId = headerStore.get("x-correlation-id") ?? randomUUID();
+  const testUser = parseTestUserCookie(cookieStore.get(testUserCookieName)?.value);
+
+  if (testUser) {
+    return {
+      userId: testUser.userId,
+      role: testUser.role,
+      email: testUser.email,
+      name: testUser.name,
+      correlationId
+    };
+  }
 
   if (process.env.APP_AUTH_MODE === "development") {
     const role = process.env.DEV_USER_ROLE ?? "Claimant";

@@ -81,8 +81,8 @@ export class AdminService {
   }
 
   private assertAdmin(user: UserContext) {
-    if (!["MD", "FinanceHOD"].includes(user.role)) {
-      throw forbidden("Only MD and Finance HOD users can manage site and contract master data.");
+    if (user.role !== "Admin") {
+      throw forbidden("Only Admin users can manage operational setup.");
     }
   }
 }

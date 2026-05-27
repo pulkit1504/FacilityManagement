@@ -8,6 +8,7 @@ insert into employees (
   approval_threshold_amount
 ) values
   ('emp-md-001', 'Managing Director', 'md@example.com', 'MD', null, false, 0),
+  ('emp-admin-001', 'System Admin', 'admin@example.com', 'Admin', 'emp-md-001', false, 0),
   ('emp-hod-001', 'Operations HOD', 'hod@example.com', 'HOD', 'emp-md-001', true, 5000),
   ('emp-claimant-001', 'Site Supervisor', 'claimant@example.com', 'Claimant', 'emp-hod-001', false, 0),
   ('emp-finance-hod-001', 'Finance HOD', 'finance.hod@example.com', 'FinanceHOD', 'emp-md-001', false, 0),

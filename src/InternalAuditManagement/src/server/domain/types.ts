@@ -26,7 +26,8 @@ export const userRoles = [
   "MD",
   "Finance",
   "BillingTeam",
-  "FinanceHOD"
+  "FinanceHOD",
+  "Admin"
 ] as const;
 export type UserRole = (typeof userRoles)[number];
 

@@ -267,6 +267,44 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return mapLineItem(data);
   }
 
+  async updateLineItem(claimId: string, lineItemId: string, input: CreateLineItemInput): Promise<ExpenseLineItem> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_line_items")
+      .update({
+        description: input.description,
+        amount: input.amount,
+        transaction_date: input.transactionDate,
+        expense_tag: input.expenseTag,
+        client_invoice_number: input.expenseTag === "AlreadyBilled" ? input.clientInvoiceNumber ?? null : null,
+        invoice_validation_status: input.expenseTag === "AlreadyBilled" ? "PendingErpValidation" : "NotApplicable",
+        site_id: input.expenseTag === "ContractPartCost" ? input.siteId ?? null : null,
+        sort_order: input.sortOrder
+      })
+      .eq("claim_id", claimId)
+      .eq("line_item_id", lineItemId)
+      .eq("is_deleted", false)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    await this.updateClaimTotal(claimId);
+    return mapLineItem(data);
+  }
+
+  async deleteLineItem(claimId: string, lineItemId: string): Promise<void> {
+    const db = await getSupabaseAdminClient();
+    const { error } = await db
+      .from("expense_line_items")
+      .update({ is_deleted: true })
+      .eq("claim_id", claimId)
+      .eq("line_item_id", lineItemId)
+      .eq("is_deleted", false);
+
+    if (error) throw error;
+    await this.updateClaimTotal(claimId);
+  }
+
   async submitClaim(claimId: string, nextStatus: ClaimStatus): Promise<ExpenseClaim> {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db

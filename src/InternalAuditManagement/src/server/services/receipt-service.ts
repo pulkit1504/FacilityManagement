@@ -40,16 +40,18 @@ export class ReceiptService {
       uploadedByUserId: user.userId
     });
 
-    await this.claims.clearMissingReceiptFlag(input.lineItemId);
-    await this.claims.appendAuditLog({
-      claimId: input.claimId,
-      actorUserId: user.userId,
-      actionType: "RECEIPT_UPLOADED",
-      preActionStatus: claim.status,
-      postActionStatus: claim.status,
-      auditRemarks: `Receipt uploaded for line item ${input.lineItemId}`,
-      correlationId: user.correlationId
-    });
+    await Promise.all([
+      this.claims.clearMissingReceiptFlag(input.lineItemId),
+      this.claims.appendAuditLog({
+        claimId: input.claimId,
+        actorUserId: user.userId,
+        actionType: "RECEIPT_UPLOADED",
+        preActionStatus: claim.status,
+        postActionStatus: claim.status,
+        auditRemarks: `Receipt uploaded for line item ${input.lineItemId}`,
+        correlationId: user.correlationId
+      })
+    ]);
 
     return {
       attachmentId: attachment.attachmentId,

@@ -38,18 +38,18 @@ For Vercel, configure `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, and `AZURE_CLIENT_SE
 
 ## Authentication
 
-Production login uses Microsoft Entra ID. Configure these Vercel environment variables:
+Production login uses app-managed email and password authentication. Users can sign in with any email address as long as it matches an active `employees.email` record with a password set by an Admin user.
+
+Configure these Vercel environment variables:
 
 ```text
-APP_AUTH_MODE=entra
+APP_AUTH_MODE=credentials
 AUTH_SESSION_SECRET=<at least 32 random characters>
-ENTRA_TENANT_ID=<directory tenant id>
-ENTRA_CLIENT_ID=<app registration client id>
-ENTRA_CLIENT_SECRET=<app registration client secret>
-ENTRA_REDIRECT_URI=https://<your-domain>/api/v1/auth/callback
+AUTH_BOOTSTRAP_EMAIL=admin@example.com
+AUTH_BOOTSTRAP_PASSWORD=<temporary first-admin password>
 ```
 
-The Entra app registration must include the same redirect URI. Signed-in users are matched to active `employees.email` records; their application role comes from the employee row. Local test-user login is only enabled when `APP_AUTH_MODE=test`.
+The application role comes from the employee row. `AUTH_BOOTSTRAP_EMAIL` and `AUTH_BOOTSTRAP_PASSWORD` are optional first-run credentials for an active employee without a saved password; remove them after using Admin setup to assign real passwords. Local test-user login is only enabled when `APP_AUTH_MODE=test`.
 
 ## Architecture Rule
 

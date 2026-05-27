@@ -1,6 +1,9 @@
 alter table employees drop constraint if exists employees_role_check;
 
 alter table employees
+  add column if not exists password_hash text;
+
+alter table employees
   add constraint employees_role_check
   check (role in ('Claimant', 'HOD', 'MD', 'Finance', 'BillingTeam', 'FinanceHOD', 'Admin'));
 

@@ -33,6 +33,7 @@ import { defaultClaimRecord } from "./claim-repository";
 import type { CreateLineItemInput } from "../validation/claim.schemas";
 import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
 import { getSupabaseAdminClient } from "./supabase-client";
+import { hashPassword, verifyPassword } from "../auth/password";
 
 type ClaimRow = {
   claim_id: string;
@@ -120,6 +121,15 @@ function mapHoliday(row: Record<string, unknown>): Holiday {
     holidayName: String(row.holiday_name),
     isNational: Boolean(row.is_national)
   };
+}
+
+function isBootstrapLogin(email: string, password: string) {
+  return Boolean(
+    process.env.AUTH_BOOTSTRAP_EMAIL &&
+      process.env.AUTH_BOOTSTRAP_PASSWORD &&
+      email.toLowerCase() === process.env.AUTH_BOOTSTRAP_EMAIL.toLowerCase() &&
+      password === process.env.AUTH_BOOTSTRAP_PASSWORD
+  );
 }
 
 function parseRelatedClaimIds(value: unknown): string[] {
@@ -296,6 +306,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
   async createEmployee(input: CreateEmployeeInput): Promise<Employee> {
     const db = await getSupabaseAdminClient();
+    const passwordHash = input.temporaryPassword ? await hashPassword(input.temporaryPassword) : undefined;
     const { data, error } = await db
       .from("employees")
       .upsert(
@@ -307,6 +318,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
           direct_manager_id: input.directManagerId ?? null,
           is_hod: input.isHod,
           approval_threshold_amount: input.approvalThresholdAmount,
+          ...(passwordHash ? { password_hash: passwordHash } : {}),
           is_active: true
         },
         { onConflict: "employee_id" }
@@ -649,6 +661,33 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     if (error) throw error;
     return data ? mapEmployee(data) : null;
+  }
+
+  async authenticateEmployee(email: string, password: string): Promise<Employee | null> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("employees")
+      .select("*")
+      .eq("email", email.toLowerCase())
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) {
+      return null;
+    }
+
+    const employee = mapEmployee(data);
+    const storedHash = data.password_hash ? String(data.password_hash) : null;
+    if (await verifyPassword(password, storedHash)) {
+      return employee;
+    }
+
+    if (!storedHash && isBootstrapLogin(employee.email, password)) {
+      return employee;
+    }
+
+    return null;
   }
 
   async findManagingDirector(): Promise<Employee | null> {

@@ -113,7 +113,8 @@ export const createEmployeeSchema = z.object({
   role: z.enum(userRoles),
   directManagerId: z.string().trim().min(1).nullable().optional(),
   isHod: z.boolean().default(false),
-  approvalThresholdAmount: z.coerce.number().nonnegative().default(0)
+  approvalThresholdAmount: z.coerce.number().nonnegative().default(0),
+  temporaryPassword: z.string().min(8).max(128).nullable().optional()
 });
 
 export const createHolidaySchema = z.object({

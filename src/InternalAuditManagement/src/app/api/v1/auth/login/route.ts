@@ -1,37 +1,64 @@
 import { NextResponse } from "next/server";
-import {
-  createAuthorizationRequest,
-  oauthNonceCookieName,
-  oauthStateCookieName,
-  oauthVerifierCookieName
-} from "@/server/auth/entra-id";
+import { z } from "zod";
+import { authSessionCookieName, createSessionCookieValue } from "@/server/auth/session";
+import { toProblemResponse } from "@/server/errors/problem-response";
+import { getRepository } from "@/server/services/service-factory";
 
-export async function GET(request: Request) {
-  const { url, state, nonce, verifier } = createAuthorizationRequest(new URL(request.url).origin);
-  const response = NextResponse.redirect(url);
-  const secure = process.env.NODE_ENV === "production";
+const loginSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string().min(1)
+});
+const sessionMaxAgeSeconds = 60 * 60 * 8;
 
-  response.cookies.set(oauthStateCookieName, state, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: "/",
-    maxAge: 10 * 60
-  });
-  response.cookies.set(oauthVerifierCookieName, verifier, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: "/",
-    maxAge: 10 * 60
-  });
-  response.cookies.set(oauthNonceCookieName, nonce, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: "/",
-    maxAge: 10 * 60
-  });
+export async function POST(request: Request) {
+  const traceId = crypto.randomUUID();
+  try {
+    const body = loginSchema.parse(await request.json());
+    const employee = await getRepository().authenticateEmployee(body.email, body.password);
 
-  return response;
+    if (!employee) {
+      return NextResponse.json(
+        {
+          type: "https://httpstatuses.com/401",
+          title: "Unauthorized",
+          status: 401,
+          detail: "Invalid email or password.",
+          traceId
+        },
+        { status: 401 }
+      );
+    }
+
+    const response = NextResponse.json({
+      userId: employee.employeeId,
+      role: employee.role,
+      name: employee.fullName,
+      email: employee.email,
+      message: `Signed in as ${employee.fullName}.`
+    });
+
+    response.cookies.set(
+      authSessionCookieName,
+      createSessionCookieValue(
+        {
+          userId: employee.employeeId,
+          role: employee.role,
+          email: employee.email,
+          name: employee.fullName
+        },
+        sessionMaxAgeSeconds
+      ),
+      {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: sessionMaxAgeSeconds
+      }
+    );
+
+    return response;
+  } catch (error) {
+    return toProblemResponse(error, traceId);
+  }
 }

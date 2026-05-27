@@ -1,4 +1,4 @@
-import { MicrosoftLoginForm } from "@/components/auth/microsoft-login-form";
+import { EmailLoginForm } from "@/components/auth/email-login-form";
 import { TestLoginForm } from "@/components/auth/test-login-form";
 import { testUsers } from "@/server/auth/test-users";
 
@@ -12,7 +12,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <main className="login-shell">
-      {useTestLogin ? <TestLoginForm users={testUsers} /> : <MicrosoftLoginForm error={error} />}
+      {useTestLogin ? <TestLoginForm users={testUsers} /> : <EmailLoginForm error={error} />}
     </main>
   );
 }

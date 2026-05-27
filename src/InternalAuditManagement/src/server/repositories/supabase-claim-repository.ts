@@ -806,31 +806,71 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
   async listBillingAlerts(isResolved = false): Promise<BillingAlertQueueItem[]> {
     const db = await getSupabaseAdminClient();
-    const { data, error } = await db
-      .from("billing_alerts")
-      .select("*")
-      .eq("is_resolved", isResolved)
-      .order("created_at", { ascending: true })
-      .limit(100);
+    const [{ data, error }, siteNames] = await Promise.all([
+      db
+        .from("billing_alerts")
+        .select("*")
+        .eq("is_resolved", isResolved)
+        .order("created_at", { ascending: true })
+        .limit(100),
+      this.getSiteNameMap()
+    ]);
 
     if (error) throw error;
-    const siteNames = await this.getSiteNameMap();
 
     const alerts = (data ?? []).map(mapBillingAlert);
-    const details = await this.getClaimDetails(alerts.map((alert) => alert.claimId));
-    const detailsByClaimId = new Map(details.map((detail) => [detail.claimId, detail]));
+    const lineItemIds = alerts.map((alert) => alert.lineItemId);
+    const claimIds = alerts.map((alert) => alert.claimId);
+    const [{ data: lineItems, error: lineItemsError }, { data: claims, error: claimsError }] = await Promise.all([
+      lineItemIds.length
+        ? db
+            .from("expense_line_items")
+            .select("line_item_id,description,amount")
+            .in("line_item_id", lineItemIds)
+            .eq("is_deleted", false)
+        : { data: [], error: null },
+      claimIds.length
+        ? db
+            .from("expense_claims")
+            .select("claim_id,submitter_employee_id,site_id")
+            .in("claim_id", claimIds)
+            .eq("is_deleted", false)
+        : { data: [], error: null }
+    ]);
+
+    if (lineItemsError) throw lineItemsError;
+    if (claimsError) throw claimsError;
+
+    const lineItemsById = new Map(
+      (lineItems ?? []).map((item) => [
+        String(item.line_item_id),
+        {
+          description: String(item.description),
+          amount: Number(item.amount)
+        }
+      ])
+    );
+    const claimsById = new Map(
+      (claims ?? []).map((claim) => [
+        String(claim.claim_id),
+        {
+          submitterEmployeeId: String(claim.submitter_employee_id),
+          siteId: claim.site_id ? String(claim.site_id) : null
+        }
+      ])
+    );
 
     const items = alerts.map((alert) => {
-      const detail = detailsByClaimId.get(alert.claimId);
-      const lineItem = detail?.lineItems.find((item) => item.lineItemId === alert.lineItemId);
+      const claim = claimsById.get(alert.claimId);
+      const lineItem = lineItemsById.get(alert.lineItemId);
       const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(alert.createdAt).getTime()) / 86_400_000));
 
       return {
         ...alert,
         lineItemDescription: lineItem?.description ?? "Line item unavailable",
         amount: lineItem?.amount ?? 0,
-        claimantName: detail?.submitterEmployeeId ?? "Unknown",
-        siteName: detail?.siteId ? siteNames.get(detail.siteId) ?? detail.siteId : null,
+        claimantName: claim?.submitterEmployeeId ?? "Unknown",
+        siteName: claim?.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,
         daysOpen,
         urgencyLabel:
           daysOpen >= 7 ? "Escalate to Finance HOD" : daysOpen >= 2 ? "Needs billing follow-up" : "Within 48-hour window"
@@ -1039,18 +1079,26 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (fraudFlagError) throw fraudFlagError;
     if (approvedClaimsError) throw approvedClaimsError;
 
-    const claimDetails = await this.getClaimDetails((approvedClaims ?? []).map((row) => String(row.claim_id)));
+    const approvedClaimIds = (approvedClaims ?? []).map((claim) => String(claim.claim_id));
+    const { data: billingLines, error: billingLinesError } = approvedClaimIds.length
+      ? await db
+          .from("expense_line_items")
+          .select("amount,expense_tag,client_invoice_number")
+          .in("claim_id", approvedClaimIds)
+          .in("expense_tag", ["AlreadyBilled", "PendingBilling"])
+          .eq("is_deleted", false)
+          .limit(2_000)
+      : { data: [], error: null };
+
+    if (billingLinesError) throw billingLinesError;
 
     let totalBillable = 0;
     let totalBilled = 0;
-    for (const claim of claimDetails.filter((item): item is ClaimDetail => Boolean(item))) {
-      for (const line of claim.lineItems) {
-        if (line.expenseTag === "AlreadyBilled" || line.expenseTag === "PendingBilling") {
-          totalBillable += line.amount;
-        }
-        if (line.expenseTag === "AlreadyBilled" && line.clientInvoiceNumber) {
-          totalBilled += line.amount;
-        }
+    for (const line of billingLines ?? []) {
+      const amount = Number(line.amount);
+      totalBillable += amount;
+      if (line.expense_tag === "AlreadyBilled" && line.client_invoice_number) {
+        totalBilled += amount;
       }
     }
 
@@ -1065,11 +1113,11 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
   async getMisDashboardMetrics(): Promise<MisDashboardMetrics> {
     const db = await getSupabaseAdminClient();
-    const [{ data: approvedClaims, error: approvedClaimsError }, { data: billingAlerts, error: billingAlertsError }] =
+    const [{ data: approvedClaims, error: approvedClaimsError }, { data: billingAlerts, error: billingAlertsError }, siteNames] =
       await Promise.all([
         db
           .from("expense_claims")
-          .select("claim_id")
+          .select("claim_id,site_id")
           .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed", "PaymentReleased"])
           .eq("is_deleted", false)
           .limit(500),
@@ -1078,36 +1126,47 @@ export class SupabaseClaimRepository implements ClaimRepository {
           .select("created_at")
           .eq("is_resolved", false)
           .order("created_at", { ascending: true })
-          .limit(1)
+          .limit(1),
+        this.getSiteNameMap()
       ]);
 
     if (approvedClaimsError) throw approvedClaimsError;
     if (billingAlertsError) throw billingAlertsError;
 
-    const claimDetails = await this.getClaimDetails((approvedClaims ?? []).map((row) => String(row.claim_id)));
+    const claimSiteById = new Map(
+      (approvedClaims ?? []).map((claim) => [
+        String(claim.claim_id),
+        claim.site_id ? siteNames.get(String(claim.site_id)) ?? String(claim.site_id) : "Not linked"
+      ])
+    );
+    const approvedClaimIds = Array.from(claimSiteById.keys());
+    const { data: lineItems, error: lineItemsError } = approvedClaimIds.length
+      ? await db
+          .from("expense_line_items")
+          .select("claim_id,amount,expense_tag,client_invoice_number")
+          .in("claim_id", approvedClaimIds)
+          .in("expense_tag", ["AlreadyBilled", "PendingBilling"])
+          .eq("is_deleted", false)
+          .limit(2_000)
+      : { data: [], error: null };
+
+    if (lineItemsError) throw lineItemsError;
 
     let totalBillableApproved = 0;
     let totalBilled = 0;
-    const siteNames = await this.getSiteNameMap();
     const matrix = new Map<string, { totalBillable: number; totalBilled: number }>();
 
-    for (const claim of claimDetails.filter((item): item is ClaimDetail => Boolean(item))) {
-      const siteName = claim.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : "Not linked";
+    for (const line of lineItems ?? []) {
+      const siteName = claimSiteById.get(String(line.claim_id)) ?? "Not linked";
       const current = matrix.get(siteName) ?? { totalBillable: 0, totalBilled: 0 };
+      const amount = Number(line.amount);
 
-      for (const line of claim.lineItems) {
-        const isBillable = line.expenseTag === "AlreadyBilled" || line.expenseTag === "PendingBilling";
-        const isBilled = line.expenseTag === "AlreadyBilled" && Boolean(line.clientInvoiceNumber);
+      totalBillableApproved += amount;
+      current.totalBillable += amount;
 
-        if (isBillable) {
-          totalBillableApproved += line.amount;
-          current.totalBillable += line.amount;
-        }
-
-        if (isBilled) {
-          totalBilled += line.amount;
-          current.totalBilled += line.amount;
-        }
+      if (line.expense_tag === "AlreadyBilled" && line.client_invoice_number) {
+        totalBilled += amount;
+        current.totalBilled += amount;
       }
 
       matrix.set(siteName, current);

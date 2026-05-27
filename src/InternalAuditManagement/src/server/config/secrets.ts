@@ -1,6 +1,7 @@
 import "server-only";
 import { DefaultAzureCredential } from "@azure/identity";
 import { SecretClient } from "@azure/keyvault-secrets";
+import { timeAsync } from "../observability/performance";
 
 type SecretName =
   | "SUPABASE_URL"
@@ -31,7 +32,11 @@ async function resolveSecret(name: SecretName): Promise<string> {
   const keyVaultUrl = process.env.AZURE_KEY_VAULT_URL;
 
   if (keyVaultUrl) {
-    const secret = await getKeyVaultClient(keyVaultUrl).getSecret(keyVaultNameMap[name]);
+    const secret = await timeAsync(
+      "keyVault.getSecret",
+      () => getKeyVaultClient(keyVaultUrl).getSecret(keyVaultNameMap[name]),
+      { secretName: keyVaultNameMap[name] }
+    );
     if (secret.value) {
       return secret.value;
     }

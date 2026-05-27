@@ -17,6 +17,7 @@ type PrimaryNavLink = {
   href: string;
   label: string;
   icon: keyof typeof iconMap;
+  exact?: boolean;
 };
 
 export function PrimaryNav({ links }: Readonly<{ links: PrimaryNavLink[] }>) {
@@ -26,7 +27,7 @@ export function PrimaryNav({ links }: Readonly<{ links: PrimaryNavLink[] }>) {
     <nav className="nav" aria-label="Primary navigation">
       {links.map((link) => {
         const Icon = iconMap[link.icon];
-        const isActive = link.href === "/" ? pathname === "/" : pathname === link.href || pathname.startsWith(`${link.href}/`);
+        const isActive = link.href === "/" || link.exact ? pathname === link.href : pathname === link.href || pathname.startsWith(`${link.href}/`);
 
         return (
           <Link aria-current={isActive ? "page" : undefined} className={isActive ? "active" : undefined} href={link.href} key={link.href}>

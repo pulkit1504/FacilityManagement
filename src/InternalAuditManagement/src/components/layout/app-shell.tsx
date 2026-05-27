@@ -8,12 +8,14 @@ type NavLink = {
   href: string;
   label: string;
   icon: "BarChart3" | "ClipboardCheck" | "FileText" | "Link2" | "ReceiptText" | "ShieldCheck";
+  exact?: boolean;
   allowedRoles?: UserRole[];
 };
 
 const links: NavLink[] = [
   { href: "/", label: "Overview", icon: "BarChart3" },
   { href: "/dashboard", label: "MIS Dashboard", icon: "ClipboardCheck" },
+  { href: "/claims", label: "My Claims", icon: "FileText", exact: true, allowedRoles: ["Claimant", "HOD"] satisfies UserRole[] },
   { href: "/claims/new", label: "New Claim", icon: "ReceiptText", allowedRoles: ["Claimant", "HOD"] satisfies UserRole[] },
   { href: "/approvals", label: "Approvals", icon: "ClipboardCheck", allowedRoles: ["HOD", "MD"] satisfies UserRole[] },
   { href: "/finance", label: "Finance Queue", icon: "FileText", allowedRoles: ["Finance", "FinanceHOD"] satisfies UserRole[] },

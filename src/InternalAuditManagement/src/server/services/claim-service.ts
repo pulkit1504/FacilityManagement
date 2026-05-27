@@ -8,7 +8,12 @@ export class ClaimService {
   constructor(private readonly claims: ClaimRepository) {}
 
   async listClaims(user: UserContext) {
-    const claims = await this.claims.listClaimsForUser(user.userId, user.role);
+    const [claims, sites] = await Promise.all([
+      this.claims.listClaimsForUser(user.userId, user.role),
+      this.claims.listActiveSites()
+    ]);
+    const siteNames = new Map(sites.map((site) => [site.siteId, site.siteName]));
+
     return {
       items: claims.map((claim) => ({
         claimId: claim.claimId,
@@ -17,6 +22,7 @@ export class ClaimService {
         statusLabel: statusLabel(claim.status),
         totalAmount: claim.totalAmount,
         siteId: claim.siteId,
+        siteName: claim.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,
         createdAt: claim.createdAt,
         updatedAt: claim.updatedAt
       })),

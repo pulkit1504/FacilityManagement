@@ -16,7 +16,8 @@ import type {
   FraudFlagQueueItem,
   FraudFlagStatus,
   MisDashboardMetrics,
-  OverviewMetrics
+  OverviewMetrics,
+  Site
 } from "../domain/types";
 import type {
   AuditLogInput,
@@ -130,6 +131,30 @@ function mapFraudFlag(row: Record<string, unknown>): FraudFlag {
 }
 
 export class SupabaseClaimRepository implements ClaimRepository {
+  async listActiveSites(): Promise<Site[]> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("sites")
+      .select("site_id, site_name, site_address, service_type, contract_id, client_contracts(client_name, description)")
+      .eq("is_active", true)
+      .order("site_name");
+
+    if (error) throw error;
+
+    return (data ?? []).map((row) => {
+      const contract = Array.isArray(row.client_contracts) ? row.client_contracts[0] : row.client_contracts;
+      return {
+        siteId: String(row.site_id),
+        siteName: String(row.site_name),
+        siteAddress: row.site_address ? String(row.site_address) : null,
+        serviceType: row.service_type as Site["serviceType"],
+        contractId: row.contract_id ? String(row.contract_id) : null,
+        clientName: contract?.client_name ? String(contract.client_name) : null,
+        contractDescription: contract?.description ? String(contract.description) : null
+      };
+    });
+  }
+
   async listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]> {
     const db = await getSupabaseAdminClient();
     let query = db.from("expense_claims").select("*").eq("is_deleted", false).order("created_at", {
@@ -413,11 +438,12 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     const { data, error } = await query.limit(50);
     if (error) throw error;
+    const siteNames = await this.getSiteNameMap();
 
     const items = await Promise.all(
       (data ?? []).map(async (step) => {
         const detail = await this.getClaimDetail(String(step.claim_id));
-        return detail ? this.toApprovalQueueItem(detail) : null;
+        return detail ? this.toApprovalQueueItem(detail, siteNames) : null;
       })
     );
 
@@ -435,6 +461,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .limit(50);
 
     if (error) throw error;
+    const siteNames = await this.getSiteNameMap();
 
     const items = await Promise.all(
       (data ?? []).map(async (row) => {
@@ -442,7 +469,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         if (!detail) return null;
         const pendingBillingItemCount = detail.lineItems.filter((item) => item.expenseTag === "PendingBilling").length;
         return {
-          ...this.toApprovalQueueItem(detail),
+          ...this.toApprovalQueueItem(detail, siteNames),
           physicalReceiptRequired: true,
           physicalReceiptConfirmed: Boolean(detail.physicalReceiptConfirmedAt),
           hasPendingBillingItems: pendingBillingItemCount > 0,
@@ -673,6 +700,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .limit(100);
 
     if (error) throw error;
+    const siteNames = await this.getSiteNameMap();
 
     const items = await Promise.all(
       (data ?? []).map(async (row) => {
@@ -686,7 +714,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
           lineItemDescription: lineItem?.description ?? "Line item unavailable",
           amount: lineItem?.amount ?? 0,
           claimantName: detail?.submitterEmployeeId ?? "Unknown",
-          siteName: detail?.siteId ?? null,
+          siteName: detail?.siteId ? siteNames.get(detail.siteId) ?? detail.siteId : null,
           daysOpen,
           urgencyLabel:
             daysOpen >= 7 ? "Escalate to Finance HOD" : daysOpen >= 2 ? "Needs billing follow-up" : "Within 48-hour window"
@@ -953,10 +981,11 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     let totalBillableApproved = 0;
     let totalBilled = 0;
+    const siteNames = await this.getSiteNameMap();
     const matrix = new Map<string, { totalBillable: number; totalBilled: number }>();
 
     for (const claim of claimDetails.filter((item): item is ClaimDetail => Boolean(item))) {
-      const siteName = claim.siteId ?? "Not linked";
+      const siteName = claim.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : "Not linked";
       const current = matrix.get(siteName) ?? { totalBillable: 0, totalBilled: 0 };
 
       for (const line of claim.lineItems) {
@@ -999,7 +1028,12 @@ export class SupabaseClaimRepository implements ClaimRepository {
     };
   }
 
-  private toApprovalQueueItem(claim: ClaimDetail): ApprovalQueueItem {
+  private async getSiteNameMap() {
+    const sites = await this.listActiveSites();
+    return new Map(sites.map((site) => [site.siteId, site.siteName]));
+  }
+
+  private toApprovalQueueItem(claim: ClaimDetail, siteNames: Map<string, string>): ApprovalQueueItem {
     const submittedAt = claim.updatedAt ?? claim.createdAt;
     const daysPending = Math.max(
       0,
@@ -1010,7 +1044,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       claimId: claim.claimId,
       submittedBy: claim.submitterEmployeeId,
       submittedByRole: "Claimant",
-      siteName: claim.siteId,
+      siteName: claim.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,
       totalAmount: claim.totalAmount,
       lineItemCount: claim.lineItems.length,
       missingReceiptCount: claim.lineItems.filter((item) => item.missingReceiptFlag).length,

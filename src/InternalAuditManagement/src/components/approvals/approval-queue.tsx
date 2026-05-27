@@ -31,21 +31,34 @@ type ApprovalClaimDetail = {
   }>;
 };
 
+type SiteOption = {
+  siteId: string;
+  siteName: string;
+};
+
 export function ApprovalQueue() {
   const [items, setItems] = useState<ApprovalItem[]>([]);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
   const [claimDetails, setClaimDetails] = useState<Record<string, ApprovalClaimDetail>>({});
+  const [sites, setSites] = useState<SiteOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   async function load() {
     try {
-      const response = await fetch("/api/v1/approvals/queue");
-      const data = await response.json();
-      if (!response.ok) {
+      const [queueResponse, sitesResponse] = await Promise.all([
+        fetch("/api/v1/approvals/queue"),
+        fetch("/api/v1/sites", { cache: "no-store" })
+      ]);
+      const data = await queueResponse.json();
+      const sitesData = await sitesResponse.json();
+      if (!queueResponse.ok) {
         setMessage(data.detail ?? "Could not load approval queue.");
         return;
+      }
+      if (sitesResponse.ok) {
+        setSites(sitesData.items ?? []);
       }
       setItems(data.items ?? []);
     } finally {
@@ -110,6 +123,11 @@ export function ApprovalQueue() {
     } finally {
       setBusyAction(null);
     }
+  }
+
+  function siteLabel(siteId: string | null) {
+    if (!siteId) return null;
+    return sites.find((site) => site.siteId === siteId)?.siteName ?? siteId;
   }
 
   return (
@@ -196,7 +214,7 @@ export function ApprovalQueue() {
                             <strong>Rs {line.amount.toLocaleString("en-IN")}</strong>
                             <br />
                             <span className="muted">
-                              {line.clientInvoiceNumber ? `Invoice ${line.clientInvoiceNumber}` : line.siteId ? `Site ${line.siteId}` : "No extra reference"}
+                              {line.clientInvoiceNumber ? `Invoice ${line.clientInvoiceNumber}` : line.siteId ? `Site ${siteLabel(line.siteId)}` : "No extra reference"}
                             </span>
                           </div>
                           <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>

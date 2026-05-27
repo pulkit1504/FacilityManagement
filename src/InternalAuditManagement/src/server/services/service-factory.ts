@@ -18,7 +18,7 @@ let receiptService: ReceiptService | null = null;
 let repository: SupabaseClaimRepository | null = null;
 let fileStorage: AzureBlobFileStorageService | null = null;
 
-function getRepository() {
+export function getRepository() {
   repository ??= new SupabaseClaimRepository();
   return repository;
 }

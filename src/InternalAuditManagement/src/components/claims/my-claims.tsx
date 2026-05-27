@@ -11,6 +11,7 @@ type ClaimSummary = {
   statusLabel: string;
   totalAmount: number;
   siteId: string | null;
+  siteName: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -166,7 +167,7 @@ export function MyClaims() {
                   <td>
                     <strong>{claim.claimId.slice(0, 8)}</strong>
                     <br />
-                    <span className="muted">{claim.siteId ?? "No site linked"}</span>
+                    <span className="muted">{claim.siteName ?? "No site linked"}</span>
                   </td>
                   <td>{claim.submissionMode === "Proforma" ? "Periodic Proforma" : "Single Voucher"}</td>
                   <td>Rs {claim.totalAmount.toLocaleString("en-IN")}</td>

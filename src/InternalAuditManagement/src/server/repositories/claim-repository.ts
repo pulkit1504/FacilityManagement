@@ -17,6 +17,7 @@ import type {
   FraudRuleName,
   MisDashboardMetrics,
   OverviewMetrics,
+  Site,
   SubmissionMode
 } from "../domain/types";
 import type { CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
@@ -60,6 +61,7 @@ export type CreateFraudFlagRecord = {
 
 export interface ClaimRepository {
   listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]>;
+  listActiveSites(): Promise<Site[]>;
   getClaimDetail(claimId: string): Promise<ClaimDetail | null>;
   createClaim(input: CreateClaimRecord): Promise<ExpenseClaim>;
   addLineItem(claimId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
@@ -100,6 +102,7 @@ export type ClaimSummary = Pick<
   "claimId" | "submissionMode" | "status" | "totalAmount" | "siteId" | "createdAt" | "updatedAt"
 > & {
   statusLabel: string;
+  siteName: string | null;
 };
 
 export function defaultClaimRecord(

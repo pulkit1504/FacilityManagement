@@ -288,6 +288,16 @@ h1 {
   color: var(--text);
 }
 
+.checkbox-row {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.checkbox-row input {
+  width: auto;
+}
+
 .table {
   border-collapse: collapse;
   width: 100%;

@@ -7,8 +7,8 @@ export default function AdminPage() {
       <div className="topbar">
         <div>
           <div className="eyebrow">Administration</div>
-          <h1>Sites and contracts</h1>
-          <p className="muted">Maintain society/site master data used across claims, queues, and MIS.</p>
+          <h1>Operational setup</h1>
+          <p className="muted">Maintain employees, approvers, holidays, sites, and client contracts.</p>
         </div>
       </div>
 

@@ -68,6 +68,12 @@ export type Employee = {
   isActive: boolean;
 };
 
+export type Holiday = {
+  holidayDate: string;
+  holidayName: string;
+  isNational: boolean;
+};
+
 export type Site = {
   siteId: string;
   siteName: string;

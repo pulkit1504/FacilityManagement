@@ -6,6 +6,7 @@ import type {
   BillingAlertQueueItem,
   ClaimDetail,
   ClaimStatus,
+  ClientContract,
   Employee,
   FinanceQueueItem,
   ExpenseClaim,
@@ -21,6 +22,7 @@ import type {
   SubmissionMode
 } from "../domain/types";
 import type { CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
+import type { CreateContractInput, CreateSiteInput } from "../validation/claim.schemas";
 
 export type CreateClaimRecord = CreateClaimInput & {
   submitterEmployeeId: string;
@@ -62,6 +64,10 @@ export type CreateFraudFlagRecord = {
 export interface ClaimRepository {
   listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]>;
   listActiveSites(): Promise<Site[]>;
+  listContracts(): Promise<ClientContract[]>;
+  createContract(input: CreateContractInput): Promise<ClientContract>;
+  createSite(input: CreateSiteInput): Promise<Site>;
+  deactivateSite(siteId: string): Promise<Site>;
   getClaimDetail(claimId: string): Promise<ClaimDetail | null>;
   createClaim(input: CreateClaimRecord): Promise<ExpenseClaim>;
   addLineItem(claimId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;

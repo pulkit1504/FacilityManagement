@@ -351,6 +351,12 @@ h1 {
   padding: 12px;
 }
 
+.claim-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .receipt-row {
   align-items: center;
   background: var(--surface);

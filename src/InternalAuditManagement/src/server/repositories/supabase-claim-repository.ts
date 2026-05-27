@@ -136,7 +136,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       ascending: false
     });
 
-    if (role === "Claimant") {
+    if (role === "Claimant" || role === "HOD") {
       query = query.eq("submitter_employee_id", userId);
     }
 

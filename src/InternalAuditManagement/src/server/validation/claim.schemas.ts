@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { expenseTags, submissionModes } from "../domain/types";
+import { expenseTags, submissionModes, userRoles } from "../domain/types";
 
 export const createClaimSchema = z
   .object({
@@ -106,6 +106,22 @@ export const createSiteSchema = z.object({
   contractId: z.string().trim().min(1)
 });
 
+export const createEmployeeSchema = z.object({
+  employeeId: z.string().trim().min(3).max(100),
+  fullName: z.string().trim().min(2).max(200),
+  email: z.string().trim().email().max(320),
+  role: z.enum(userRoles),
+  directManagerId: z.string().trim().min(1).nullable().optional(),
+  isHod: z.boolean().default(false),
+  approvalThresholdAmount: z.coerce.number().nonnegative().default(0)
+});
+
+export const createHolidaySchema = z.object({
+  holidayDate: z.string().date(),
+  holidayName: z.string().trim().min(2).max(200),
+  isNational: z.boolean().default(true)
+});
+
 export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
 export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
 export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptSchema>;
@@ -113,3 +129,5 @@ export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;
 export type ReviewFraudFlagInput = z.infer<typeof reviewFraudFlagSchema>;
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 export type CreateSiteInput = z.infer<typeof createSiteSchema>;
+export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
+export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;

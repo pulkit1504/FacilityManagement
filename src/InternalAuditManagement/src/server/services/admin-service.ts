@@ -1,7 +1,7 @@
 import { forbidden } from "../errors/application-error";
 import type { UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
-import type { CreateContractInput, CreateSiteInput } from "../validation/claim.schemas";
+import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
 
 export class AdminService {
   constructor(private readonly claims: ClaimRepository) {}
@@ -13,7 +13,12 @@ export class AdminService {
       this.claims.listActiveSites()
     ]);
 
-    return { contracts, sites };
+    const [employees, holidays] = await Promise.all([
+      this.claims.listEmployees(),
+      this.claims.listHolidays()
+    ]);
+
+    return { contracts, sites, employees, holidays };
   }
 
   async createContract(input: CreateContractInput, user: UserContext) {
@@ -38,6 +43,40 @@ export class AdminService {
     return {
       siteId,
       message: "Site marked inactive."
+    };
+  }
+
+  async createEmployee(input: CreateEmployeeInput, user: UserContext) {
+    this.assertAdmin(user);
+    return {
+      employee: await this.claims.createEmployee(input),
+      message: "Employee saved."
+    };
+  }
+
+  async deactivateEmployee(employeeId: string, user: UserContext) {
+    this.assertAdmin(user);
+    await this.claims.deactivateEmployee(employeeId);
+    return {
+      employeeId,
+      message: "Employee marked inactive."
+    };
+  }
+
+  async createHoliday(input: CreateHolidayInput, user: UserContext) {
+    this.assertAdmin(user);
+    return {
+      holiday: await this.claims.createHoliday(input),
+      message: "Holiday saved."
+    };
+  }
+
+  async deleteHoliday(holidayDate: string, user: UserContext) {
+    this.assertAdmin(user);
+    await this.claims.deleteHoliday(holidayDate);
+    return {
+      holidayDate,
+      message: "Holiday removed."
     };
   }
 

@@ -15,6 +15,7 @@ import type {
   FraudFlag,
   FraudFlagQueueItem,
   FraudFlagStatus,
+  Holiday,
   FraudRuleName,
   MisDashboardMetrics,
   OverviewMetrics,
@@ -22,7 +23,7 @@ import type {
   SubmissionMode
 } from "../domain/types";
 import type { CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
-import type { CreateContractInput, CreateSiteInput } from "../validation/claim.schemas";
+import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
 
 export type CreateClaimRecord = CreateClaimInput & {
   submitterEmployeeId: string;
@@ -68,6 +69,12 @@ export interface ClaimRepository {
   createContract(input: CreateContractInput): Promise<ClientContract>;
   createSite(input: CreateSiteInput): Promise<Site>;
   deactivateSite(siteId: string): Promise<Site>;
+  listEmployees(): Promise<Employee[]>;
+  createEmployee(input: CreateEmployeeInput): Promise<Employee>;
+  deactivateEmployee(employeeId: string): Promise<Employee>;
+  listHolidays(): Promise<Holiday[]>;
+  createHoliday(input: CreateHolidayInput): Promise<Holiday>;
+  deleteHoliday(holidayDate: string): Promise<void>;
   getClaimDetail(claimId: string): Promise<ClaimDetail | null>;
   createClaim(input: CreateClaimRecord): Promise<ExpenseClaim>;
   addLineItem(claimId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;

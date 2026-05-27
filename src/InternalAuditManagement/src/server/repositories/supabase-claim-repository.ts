@@ -16,6 +16,7 @@ import type {
   FraudFlag,
   FraudFlagQueueItem,
   FraudFlagStatus,
+  Holiday,
   MisDashboardMetrics,
   OverviewMetrics,
   Site
@@ -30,7 +31,7 @@ import type {
 } from "./claim-repository";
 import { defaultClaimRecord } from "./claim-repository";
 import type { CreateLineItemInput } from "../validation/claim.schemas";
-import type { CreateContractInput, CreateSiteInput } from "../validation/claim.schemas";
+import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
 import { getSupabaseAdminClient } from "./supabase-client";
 
 type ClaimRow = {
@@ -97,6 +98,27 @@ function mapBillingAlert(row: Record<string, unknown>): BillingAlert {
     isResolved: Boolean(row.is_resolved),
     resolvedAt: row.resolved_at ? String(row.resolved_at) : null,
     resolvedByUserId: row.resolved_by_user_id ? String(row.resolved_by_user_id) : null
+  };
+}
+
+function mapEmployee(row: Record<string, unknown>): Employee {
+  return {
+    employeeId: String(row.employee_id),
+    fullName: String(row.full_name),
+    email: String(row.email),
+    role: row.role as Employee["role"],
+    directManagerId: row.direct_manager_id ? String(row.direct_manager_id) : null,
+    isHod: Boolean(row.is_hod),
+    approvalThresholdAmount: Number(row.approval_threshold_amount),
+    isActive: Boolean(row.is_active)
+  };
+}
+
+function mapHoliday(row: Record<string, unknown>): Holiday {
+  return {
+    holidayDate: String(row.holiday_date),
+    holidayName: String(row.holiday_name),
+    isNational: Boolean(row.is_national)
   };
 }
 
@@ -264,6 +286,83 @@ export class SupabaseClaimRepository implements ClaimRepository {
     };
   }
 
+  async listEmployees(): Promise<Employee[]> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db.from("employees").select("*").eq("is_active", true).order("full_name");
+
+    if (error) throw error;
+    return (data ?? []).map(mapEmployee);
+  }
+
+  async createEmployee(input: CreateEmployeeInput): Promise<Employee> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("employees")
+      .upsert(
+        {
+          employee_id: input.employeeId,
+          full_name: input.fullName,
+          email: input.email,
+          role: input.role,
+          direct_manager_id: input.directManagerId ?? null,
+          is_hod: input.isHod,
+          approval_threshold_amount: input.approvalThresholdAmount,
+          is_active: true
+        },
+        { onConflict: "employee_id" }
+      )
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapEmployee(data);
+  }
+
+  async deactivateEmployee(employeeId: string): Promise<Employee> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("employees")
+      .update({ is_active: false })
+      .eq("employee_id", employeeId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapEmployee(data);
+  }
+
+  async listHolidays(): Promise<Holiday[]> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db.from("holidays").select("*").order("holiday_date", { ascending: true });
+
+    if (error) throw error;
+    return (data ?? []).map(mapHoliday);
+  }
+
+  async createHoliday(input: CreateHolidayInput): Promise<Holiday> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("holidays")
+      .upsert(
+        {
+          holiday_date: input.holidayDate,
+          holiday_name: input.holidayName,
+          is_national: input.isNational
+        },
+        { onConflict: "holiday_date" }
+      )
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapHoliday(data);
+  }
+
+  async deleteHoliday(holidayDate: string): Promise<void> {
+    const db = await getSupabaseAdminClient();
+    const { error } = await db.from("holidays").delete().eq("holiday_date", holidayDate);
+    if (error) throw error;
+  }
 
   async listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]> {
     const db = await getSupabaseAdminClient();
@@ -536,16 +635,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (error && error.code !== "PGRST116") throw error;
     if (!data) return null;
 
-    return {
-      employeeId: String(data.employee_id),
-      fullName: String(data.full_name),
-      email: String(data.email),
-      role: data.role as Employee["role"],
-      directManagerId: data.direct_manager_id ? String(data.direct_manager_id) : null,
-      isHod: Boolean(data.is_hod),
-      approvalThresholdAmount: Number(data.approval_threshold_amount),
-      isActive: Boolean(data.is_active)
-    };
+    return mapEmployee(data);
   }
 
   async findManagingDirector(): Promise<Employee | null> {

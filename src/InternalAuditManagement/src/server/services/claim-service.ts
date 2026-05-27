@@ -236,7 +236,7 @@ export class ClaimService {
     };
   }
 
-  private async assertCanView(claim: ExpenseClaim, user: UserContext) {
+  private async assertCanView(claim: ClaimDetail, user: UserContext) {
     if (["Finance", "FinanceHOD", "MD"].includes(user.role)) {
       return;
     }
@@ -245,7 +245,7 @@ export class ClaimService {
       return;
     }
 
-    const pendingStep = await this.claims.getPendingApprovalStep(claim.claimId);
+    const pendingStep = claim.approvalSteps.find((step) => step.decision === "Pending");
     if (
       pendingStep &&
       pendingStep.assignedApproverId === user.userId &&

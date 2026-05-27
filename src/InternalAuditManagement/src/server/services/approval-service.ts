@@ -23,7 +23,7 @@ export class ApprovalService {
     const claim = await this.claims.getClaimDetail(claimId);
     if (!claim) throw notFound("Claim was not found.");
 
-    const step = await this.claims.getPendingApprovalStep(claimId);
+    const step = claim.approvalSteps.find((item) => item.decision === "Pending");
     if (!step) throw conflict("This claim has no pending approval step.");
 
     if (step.requiredApproverRole !== user.role || step.assignedApproverId !== user.userId) {
@@ -39,18 +39,23 @@ export class ApprovalService {
     }
 
     const newStatus = user.role === "MD" ? "MdApproved" : "HodApproved";
-    await this.claims.decideApprovalStep(step.stepId, "Approved", input.remarks ?? null);
-    const updated = await this.claims.submitClaim(claimId, newStatus);
-    await this.claims.createFinanceApprovalStep(claimId);
-    await this.claims.appendAuditLog({
-      claimId,
-      actorUserId: user.userId,
-      actionType: user.role === "MD" ? "MD_APPROVE" : "HOD_APPROVE",
-      preActionStatus: claim.status,
-      postActionStatus: updated.status,
-      auditRemarks: input.remarks ?? null,
-      correlationId: user.correlationId
-    });
+    const [updated] = await Promise.all([
+      this.claims.submitClaim(claimId, newStatus),
+      this.claims.decideApprovalStep(step.stepId, "Approved", input.remarks ?? null)
+    ]);
+
+    await Promise.all([
+      this.claims.createFinanceApprovalStep(claimId),
+      this.claims.appendAuditLog({
+        claimId,
+        actorUserId: user.userId,
+        actionType: user.role === "MD" ? "MD_APPROVE" : "HOD_APPROVE",
+        preActionStatus: claim.status,
+        postActionStatus: updated.status,
+        auditRemarks: input.remarks ?? null,
+        correlationId: user.correlationId
+      })
+    ]);
 
     return {
       claimId,
@@ -65,7 +70,7 @@ export class ApprovalService {
     const claim = await this.claims.getClaimDetail(claimId);
     if (!claim) throw notFound("Claim was not found.");
 
-    const step = await this.claims.getPendingApprovalStep(claimId);
+    const step = claim.approvalSteps.find((item) => item.decision === "Pending");
     if (!step) throw conflict("This claim has no pending approval step.");
 
     const isFinanceStep = step.requiredApproverRole === "Finance" && ["Finance", "FinanceHOD"].includes(user.role);
@@ -75,8 +80,10 @@ export class ApprovalService {
       throw forbidden("Only the assigned approver can reject this claim.");
     }
 
-    await this.claims.decideApprovalStep(step.stepId, "Rejected", input.reason);
-    const updated = await this.claims.rejectClaim(claimId, input.reason);
+    const [updated] = await Promise.all([
+      this.claims.rejectClaim(claimId, input.reason),
+      this.claims.decideApprovalStep(step.stepId, "Rejected", input.reason)
+    ]);
     await this.claims.appendAuditLog({
       claimId,
       actorUserId: user.userId,

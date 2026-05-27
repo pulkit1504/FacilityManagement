@@ -63,6 +63,8 @@ export interface ClaimRepository {
   getClaimDetail(claimId: string): Promise<ClaimDetail | null>;
   createClaim(input: CreateClaimRecord): Promise<ExpenseClaim>;
   addLineItem(claimId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
+  updateLineItem(claimId: string, lineItemId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
+  deleteLineItem(claimId: string, lineItemId: string): Promise<void>;
   submitClaim(claimId: string, nextStatus: ClaimStatus): Promise<ExpenseClaim>;
   updateClaimTotal(claimId: string): Promise<void>;
   createApprovalSteps(steps: Omit<ApprovalStep, "stepId" | "decision" | "decisionAt" | "remarks">[]): Promise<void>;

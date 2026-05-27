@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Paperclip, Plus, RotateCcw, Send } from "lucide-react";
+import { Check, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
 
 type ExpenseTag = "AlreadyBilled" | "PendingBilling" | "ContractPartCost" | "BackendCTC";
 
@@ -20,6 +20,8 @@ type SavedLineItem = {
   amount: number;
   transactionDate: string;
   expenseTag: ExpenseTag;
+  clientInvoiceNumber: string | null;
+  siteId: string | null;
   missingReceiptFlag: boolean;
   attachmentHash?: string;
 };
@@ -69,6 +71,7 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
   const [proformaPeriodStart, setProformaPeriodStart] = useState("");
   const [proformaPeriodEnd, setProformaPeriodEnd] = useState("");
   const [lineItem, setLineItem] = useState<LineItemDraft>(emptyLineItem);
+  const [editingLineItemId, setEditingLineItemId] = useState<string | null>(null);
   const [savedLineItems, setSavedLineItems] = useState<SavedLineItem[]>([]);
   const [submissionResult, setSubmissionResult] = useState<SubmissionResult | null>(null);
   const [message, setMessage] = useState<string>("");
@@ -83,6 +86,10 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
     !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
   const canCreateDraft = Boolean(siteId) && hasValidProformaPeriod;
   const submitGateMessages = useMemo(() => {
+    if (editingLineItemId) {
+      return ["Save or cancel the line item edit before submitting the claim."];
+    }
+
     if (requiresProformaPeriod && savedLineItems.length < 2) {
       return ["Periodic proforma requires at least two saved line items before submission."];
     }
@@ -92,7 +99,7 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
     }
 
     return [];
-  }, [requiresProformaPeriod, savedLineItems.length]);
+  }, [editingLineItemId, requiresProformaPeriod, savedLineItems.length]);
   const canSubmitClaim = submitGateMessages.length === 0;
   const isReturned = claimStatus === "Rejected";
   const isDraft = !claimStatus || claimStatus === "Draft";
@@ -133,6 +140,8 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
             amount: item.amount,
             transactionDate: item.transactionDate,
             expenseTag: item.expenseTag,
+            clientInvoiceNumber: item.clientInvoiceNumber,
+            siteId: item.siteId,
             missingReceiptFlag: item.missingReceiptFlag,
             attachmentHash: item.attachments[0]?.contentHash?.slice(0, 12)
           }))
@@ -188,20 +197,23 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
     setClaimStatus(null);
     setRejectionReason(null);
     setLineItem(emptyLineItem);
+    setEditingLineItemId(null);
     setSavedLineItems([]);
     setSubmissionResult(null);
     setErrorMessages([]);
     setMessage("Draft cleared. Choose the entry method and create a new draft.");
   }
 
-  async function addLineItem() {
+  async function saveLineItem() {
     if (!claimId || !isDraft) return;
     setBusy(true);
     setMessage("");
     setErrorMessages([]);
     try {
-      const response = await fetch(`/api/v1/claims/${claimId}/line-items`, {
-        method: "POST",
+      const response = await fetch(
+        editingLineItemId ? `/api/v1/claims/${claimId}/line-items/${editingLineItemId}` : `/api/v1/claims/${claimId}/line-items`,
+        {
+        method: editingLineItemId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description: lineItem.description,
@@ -212,28 +224,93 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
           siteId: requiresSite ? lineItem.siteId : null,
           sortOrder: savedLineItems.length
         })
-      });
+        }
+      );
       const data = await response.json();
       if (!response.ok) {
-        setErrorMessages(getProblemMessages(data, "Could not add line item."));
+        setErrorMessages(getProblemMessages(data, editingLineItemId ? "Could not update line item." : "Could not add line item."));
         return;
       }
 
-      setSavedLineItems((current) => [
-        ...current,
-        {
-          lineItemId: data.lineItemId,
-          description: lineItem.description,
-          amount: Number(lineItem.amount),
-          transactionDate: lineItem.transactionDate,
-          expenseTag: lineItem.expenseTag,
-          missingReceiptFlag: true
-        }
-      ]);
+      if (editingLineItemId) {
+        setSavedLineItems((current) =>
+          current.map((item) =>
+            item.lineItemId === editingLineItemId
+              ? {
+                  ...item,
+                  description: lineItem.description,
+                  amount: Number(lineItem.amount),
+                  transactionDate: lineItem.transactionDate,
+                  expenseTag: lineItem.expenseTag,
+                  clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
+                  siteId: requiresSite ? lineItem.siteId : null
+                }
+              : item
+          )
+        );
+      } else {
+        setSavedLineItems((current) => [
+          ...current,
+          {
+            lineItemId: data.lineItemId,
+            description: lineItem.description,
+            amount: Number(lineItem.amount),
+            transactionDate: lineItem.transactionDate,
+            expenseTag: lineItem.expenseTag,
+            clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
+            siteId: requiresSite ? lineItem.siteId : null,
+            missingReceiptFlag: true
+          }
+        ]);
+      }
+      setEditingLineItemId(null);
       setLineItem(emptyLineItem);
-      setMessage("Line item saved. Attach a receipt from the saved line below.");
+      setMessage(editingLineItemId ? "Line item updated." : "Line item saved. Attach a receipt from the saved line below.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not add line item.");
+      setMessage(error instanceof Error ? error.message : "Could not save line item.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEditLineItem(item: SavedLineItem) {
+    setEditingLineItemId(item.lineItemId);
+    setLineItem({
+      description: item.description,
+      amount: String(item.amount),
+      transactionDate: item.transactionDate,
+      expenseTag: item.expenseTag,
+      clientInvoiceNumber: item.clientInvoiceNumber ?? "",
+      siteId: item.siteId ?? ""
+    });
+    setMessage("Editing saved line item. Save changes before submitting.");
+  }
+
+  function cancelEditLineItem() {
+    setEditingLineItemId(null);
+    setLineItem(emptyLineItem);
+    setMessage("");
+  }
+
+  async function deleteLineItem(lineItemId: string) {
+    if (!claimId || !isDraft) return;
+    setBusy(true);
+    setMessage("");
+    setErrorMessages([]);
+    try {
+      const response = await fetch(`/api/v1/claims/${claimId}/line-items/${lineItemId}`, { method: "DELETE" });
+      const data = await response.json();
+      if (!response.ok) {
+        setErrorMessages(getProblemMessages(data, "Could not remove line item."));
+        return;
+      }
+      setSavedLineItems((current) => current.filter((item) => item.lineItemId !== lineItemId));
+      if (editingLineItemId === lineItemId) {
+        cancelEditLineItem();
+      }
+      setMessage(data.message ?? "Line item removed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not remove line item.");
     } finally {
       setBusy(false);
     }
@@ -419,7 +496,7 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
 
           {!submissionResult && isDraft ? (
           <section className="panel">
-            <h2>Add Line Item</h2>
+            <h2>{editingLineItemId ? "Edit Line Item" : "Add Line Item"}</h2>
             <div className="grid cols-3">
               <label>
                 <span className="muted">Description</span>
@@ -475,10 +552,16 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
               ) : null}
             </div>
             <div className="actions" style={{ marginTop: 14 }}>
-              <button className="button secondary" disabled={busy || !canAddLine} onClick={addLineItem} type="button">
-                <Plus size={18} />
-                Save line item
+              <button className="button secondary" disabled={busy || !canAddLine} onClick={saveLineItem} type="button">
+                {editingLineItemId ? <Check size={18} /> : <Plus size={18} />}
+                {editingLineItemId ? "Update line item" : "Save line item"}
               </button>
+              {editingLineItemId ? (
+                <button className="button secondary" disabled={busy} onClick={cancelEditLineItem} type="button">
+                  <X size={18} />
+                  Cancel edit
+                </button>
+              ) : null}
             </div>
           </section>
           ) : null}
@@ -530,18 +613,28 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
                       {submissionResult ? (
                         <span className="muted">Locked</span>
                       ) : (
-                        <label className={`button secondary ${busy ? "disabled-label" : ""}`}>
-                          <Paperclip size={18} />
-                          {item.missingReceiptFlag ? "Attach" : "Replace"}
-                          <input
-                            accept="image/jpeg,image/png,image/heic,application/pdf"
-                            capture="environment"
-                            disabled={busy}
-                            hidden
-                            onChange={(event) => void uploadReceipt(item.lineItemId, event.target.files?.[0])}
-                            type="file"
-                          />
-                        </label>
+                        <div className="actions">
+                          <button className="button secondary" disabled={busy} onClick={() => startEditLineItem(item)} type="button">
+                            <Pencil size={18} />
+                            Edit
+                          </button>
+                          <button className="button secondary" disabled={busy} onClick={() => void deleteLineItem(item.lineItemId)} type="button">
+                            <Trash2 size={18} />
+                            Delete
+                          </button>
+                          <label className={`button secondary ${busy ? "disabled-label" : ""}`}>
+                            <Paperclip size={18} />
+                            {item.missingReceiptFlag ? "Attach" : "Replace"}
+                            <input
+                              accept="image/jpeg,image/png,image/heic,application/pdf"
+                              capture="environment"
+                              disabled={busy}
+                              hidden
+                              onChange={(event) => void uploadReceipt(item.lineItemId, event.target.files?.[0])}
+                              type="file"
+                            />
+                          </label>
+                        </div>
                       )}
                     </td>
                   </tr>

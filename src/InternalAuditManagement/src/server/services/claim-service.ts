@@ -73,15 +73,65 @@ export class ClaimService {
     }
 
     this.assertOwnDraftClaim(claim, user);
-
-    if (
-      claim.submissionMode === "Proforma" &&
-      (input.transactionDate < claim.proformaPeriodStart! || input.transactionDate > claim.proformaPeriodEnd!)
-    ) {
-      throw conflict("Line item date must fall within the declared proforma period.");
-    }
+    this.assertLineItemDateIsValidForClaim(claim, input);
 
     return this.claims.addLineItem(claimId, input);
+  }
+
+  async updateLineItem(claimId: string, lineItemId: string, input: CreateLineItemInput, user: UserContext) {
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) {
+      throw notFound("Claim was not found.");
+    }
+
+    this.assertOwnDraftClaim(claim, user);
+    this.assertLineItemBelongsToClaim(claim, lineItemId);
+    this.assertLineItemDateIsValidForClaim(claim, input);
+
+    const updatedLine = await this.claims.updateLineItem(claimId, lineItemId, input);
+
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: "DRAFT_SAVED",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks: `Line item ${lineItemId} updated in draft.`,
+      correlationId: user.correlationId
+    });
+
+    return {
+      lineItemId: updatedLine.lineItemId,
+      missingReceiptFlag: updatedLine.missingReceiptFlag,
+      message: "Line item updated."
+    };
+  }
+
+  async deleteLineItem(claimId: string, lineItemId: string, user: UserContext) {
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) {
+      throw notFound("Claim was not found.");
+    }
+
+    this.assertOwnDraftClaim(claim, user);
+    this.assertLineItemBelongsToClaim(claim, lineItemId);
+
+    await this.claims.deleteLineItem(claimId, lineItemId);
+
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: "DRAFT_SAVED",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks: `Line item ${lineItemId} removed from draft.`,
+      correlationId: user.correlationId
+    });
+
+    return {
+      lineItemId,
+      message: "Line item removed."
+    };
   }
 
   async submitClaim(claimId: string, user: UserContext) {
@@ -207,6 +257,21 @@ export class ClaimService {
 
     if (claim.status !== "Draft") {
       throw conflict("Only Draft claims can be edited.");
+    }
+  }
+
+  private assertLineItemBelongsToClaim(claim: ClaimDetail, lineItemId: string) {
+    if (!claim.lineItems.some((item) => item.lineItemId === lineItemId)) {
+      throw notFound("Line item was not found on this claim.");
+    }
+  }
+
+  private assertLineItemDateIsValidForClaim(claim: ClaimDetail, input: CreateLineItemInput) {
+    if (
+      claim.submissionMode === "Proforma" &&
+      (input.transactionDate < claim.proformaPeriodStart! || input.transactionDate > claim.proformaPeriodEnd!)
+    ) {
+      throw conflict("Line item date must fall within the declared proforma period.");
     }
   }
 

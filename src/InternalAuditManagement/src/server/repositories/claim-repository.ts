@@ -74,6 +74,7 @@ export interface ClaimRepository {
   getPendingApprovalStep(claimId: string): Promise<ApprovalStep | null>;
   decideApprovalStep(stepId: string, decision: "Approved" | "Rejected", remarks?: string | null): Promise<void>;
   rejectClaim(claimId: string, reason: string): Promise<ExpenseClaim>;
+  reopenRejectedClaim(claimId: string): Promise<ExpenseClaim>;
   confirmPhysicalReceipt(claimId: string, confirmedAt: string, confirmedBy: string): Promise<ExpenseClaim>;
   createFinanceApprovalStep(claimId: string): Promise<void>;
   createAttachment(input: CreateAttachmentRecord): Promise<ExpenseAttachment>;

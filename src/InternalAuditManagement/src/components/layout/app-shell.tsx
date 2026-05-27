@@ -1,5 +1,8 @@
 import type { UserRole } from "@/server/domain/types";
 import { PrimaryNav } from "./primary-nav";
+import { cookies } from "next/headers";
+import { CurrentTestUser } from "@/components/auth/current-test-user";
+import { parseTestUserCookie, testUserCookieName } from "@/server/auth/test-users";
 
 type NavLink = {
   href: string;
@@ -18,8 +21,10 @@ const links: NavLink[] = [
   { href: "/audit", label: "Audit Review", icon: "ShieldCheck", allowedRoles: ["Finance", "FinanceHOD", "MD"] satisfies UserRole[] }
 ];
 
-export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
-  const currentRole = (process.env.DEV_USER_ROLE ?? "Claimant") as UserRole;
+export async function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
+  const cookieStore = await cookies();
+  const testUser = parseTestUserCookie(cookieStore.get(testUserCookieName)?.value);
+  const currentRole = testUser?.role ?? ((process.env.DEV_USER_ROLE ?? "Claimant") as UserRole);
   const visibleLinks = links.filter((link) => !link.allowedRoles || link.allowedRoles.includes(currentRole));
 
   return (
@@ -29,6 +34,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           <strong>Facility Control</strong>
           <span>Expense, billing, and audit workflow</span>
         </div>
+        <CurrentTestUser name={testUser?.name ?? "Development User"} role={currentRole} />
         <PrimaryNav links={visibleLinks} />
       </aside>
       <main className="main">{children}</main>

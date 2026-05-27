@@ -2,9 +2,14 @@ import { cookies, headers } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { forbidden } from "../errors/application-error";
 import { userRoles, type UserContext, type UserRole } from "../domain/types";
+import { timeAsync } from "../observability/performance";
 import { parseTestUserCookie, testUserCookieName } from "./test-users";
 
 export async function getUserContext(): Promise<UserContext> {
+  return timeAsync("auth.getUserContext", resolveUserContext);
+}
+
+async function resolveUserContext(): Promise<UserContext> {
   const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
   const correlationId = headerStore.get("x-correlation-id") ?? randomUUID();
   const testUser = parseTestUserCookie(cookieStore.get(testUserCookieName)?.value);

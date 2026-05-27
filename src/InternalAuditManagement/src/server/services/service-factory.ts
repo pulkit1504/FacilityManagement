@@ -8,6 +8,7 @@ import { FinanceService } from "./finance-service";
 import { FraudService } from "./fraud-service";
 import { ReceiptService } from "./receipt-service";
 import { AzureBlobFileStorageService } from "../storage/file-storage-service";
+import { instrumentAsyncMethods } from "../observability/performance";
 
 let claimService: ClaimService | null = null;
 let adminService: AdminService | null = null;
@@ -21,50 +22,50 @@ let repository: SupabaseClaimRepository | null = null;
 let fileStorage: AzureBlobFileStorageService | null = null;
 
 export function getRepository() {
-  repository ??= new SupabaseClaimRepository();
+  repository ??= instrumentAsyncMethods(new SupabaseClaimRepository(), "repository.supabaseClaim");
   return repository;
 }
 
 export function getClaimService() {
   if (!claimService) {
-    claimService = new ClaimService(getRepository());
+    claimService = instrumentAsyncMethods(new ClaimService(getRepository()), "service.claim");
   }
 
   return claimService;
 }
 
 export function getApprovalService() {
-  approvalService ??= new ApprovalService(getRepository());
+  approvalService ??= instrumentAsyncMethods(new ApprovalService(getRepository()), "service.approval");
   return approvalService;
 }
 
 export function getAdminService() {
-  adminService ??= new AdminService(getRepository());
+  adminService ??= instrumentAsyncMethods(new AdminService(getRepository()), "service.admin");
   return adminService;
 }
 
 export function getBillingService() {
-  billingService ??= new BillingService(getRepository());
+  billingService ??= instrumentAsyncMethods(new BillingService(getRepository()), "service.billing");
   return billingService;
 }
 
 export function getDashboardService() {
-  dashboardService ??= new DashboardService(getRepository());
+  dashboardService ??= instrumentAsyncMethods(new DashboardService(getRepository()), "service.dashboard");
   return dashboardService;
 }
 
 export function getFinanceService() {
-  financeService ??= new FinanceService(getRepository());
+  financeService ??= instrumentAsyncMethods(new FinanceService(getRepository()), "service.finance");
   return financeService;
 }
 
 export function getFraudService() {
-  fraudService ??= new FraudService(getRepository());
+  fraudService ??= instrumentAsyncMethods(new FraudService(getRepository()), "service.fraud");
   return fraudService;
 }
 
 export function getReceiptService() {
   fileStorage ??= new AzureBlobFileStorageService();
-  receiptService ??= new ReceiptService(getRepository(), fileStorage);
+  receiptService ??= instrumentAsyncMethods(new ReceiptService(getRepository(), fileStorage), "service.receipt");
   return receiptService;
 }

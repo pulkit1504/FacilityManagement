@@ -7,7 +7,7 @@ import { parseTestUserCookie, testUserCookieName } from "@/server/auth/test-user
 type NavLink = {
   href: string;
   label: string;
-  icon: "BarChart3" | "ClipboardCheck" | "FileText" | "Link2" | "ReceiptText" | "ShieldCheck";
+  icon: "BarChart3" | "ClipboardCheck" | "FileText" | "Link2" | "ReceiptText" | "ShieldCheck" | "Settings";
   exact?: boolean;
   allowedRoles?: UserRole[];
 };
@@ -20,7 +20,8 @@ const links: NavLink[] = [
   { href: "/approvals", label: "Approvals", icon: "ClipboardCheck", allowedRoles: ["HOD", "MD"] satisfies UserRole[] },
   { href: "/finance", label: "Finance Queue", icon: "FileText", allowedRoles: ["Finance", "FinanceHOD"] satisfies UserRole[] },
   { href: "/billing", label: "Billing Alerts", icon: "Link2", allowedRoles: ["BillingTeam", "Finance", "FinanceHOD"] satisfies UserRole[] },
-  { href: "/audit", label: "Audit Review", icon: "ShieldCheck", allowedRoles: ["Finance", "FinanceHOD", "MD"] satisfies UserRole[] }
+  { href: "/audit", label: "Audit Review", icon: "ShieldCheck", allowedRoles: ["Finance", "FinanceHOD", "MD"] satisfies UserRole[] },
+  { href: "/admin", label: "Admin", icon: "Settings", allowedRoles: ["FinanceHOD", "MD"] satisfies UserRole[] }
 ];
 
 export async function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {

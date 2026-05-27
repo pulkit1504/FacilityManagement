@@ -78,6 +78,15 @@ export type Site = {
   contractDescription: string | null;
 };
 
+export type ClientContract = {
+  contractId: string;
+  clientName: string;
+  description: string | null;
+  startDate: string;
+  endDate: string | null;
+  isActive: boolean;
+};
+
 export type ExpenseClaim = {
   claimId: string;
   submitterEmployeeId: string;

@@ -7,6 +7,7 @@ import type {
   BillingAlertQueueItem,
   ClaimDetail,
   ClaimStatus,
+  ClientContract,
   Employee,
   FinanceQueueItem,
   ExpenseAttachment,
@@ -29,6 +30,7 @@ import type {
 } from "./claim-repository";
 import { defaultClaimRecord } from "./claim-repository";
 import type { CreateLineItemInput } from "../validation/claim.schemas";
+import type { CreateContractInput, CreateSiteInput } from "../validation/claim.schemas";
 import { getSupabaseAdminClient } from "./supabase-client";
 
 type ClaimRow = {
@@ -130,7 +132,57 @@ function mapFraudFlag(row: Record<string, unknown>): FraudFlag {
   };
 }
 
+function slugify(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function mapContract(row: Record<string, unknown>): ClientContract {
+  return {
+    contractId: String(row.contract_id),
+    clientName: String(row.client_name),
+    description: row.description ? String(row.description) : null,
+    startDate: String(row.start_date),
+    endDate: row.end_date ? String(row.end_date) : null,
+    isActive: Boolean(row.is_active)
+  };
+}
+
 export class SupabaseClaimRepository implements ClaimRepository {
+  async listContracts(): Promise<ClientContract[]> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("client_contracts")
+      .select("*")
+      .order("client_name");
+
+    if (error) throw error;
+    return (data ?? []).map(mapContract);
+  }
+
+  async createContract(input: CreateContractInput): Promise<ClientContract> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("client_contracts")
+      .insert({
+        contract_id: `ctr-${slugify(input.clientName)}-${randomUUID().slice(0, 8)}`,
+        client_name: input.clientName,
+        description: input.description ?? null,
+        start_date: input.startDate,
+        end_date: input.endDate ?? null,
+        is_active: true
+      })
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapContract(data);
+  }
+
   async listActiveSites(): Promise<Site[]> {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db
@@ -154,6 +206,50 @@ export class SupabaseClaimRepository implements ClaimRepository {
       };
     });
   }
+
+  async createSite(input: CreateSiteInput): Promise<Site> {
+    const db = await getSupabaseAdminClient();
+    const siteId = `site-${slugify(input.siteName)}-${randomUUID().slice(0, 8)}`;
+    const { error } = await db
+      .from("sites")
+      .insert({
+        site_id: siteId,
+        site_name: input.siteName,
+        site_address: input.siteAddress ?? null,
+        service_type: input.serviceType,
+        contract_id: input.contractId,
+        is_active: true
+      });
+
+    if (error) throw error;
+    const sites = await this.listActiveSites();
+    return sites.find((site) => site.siteId === siteId) ?? {
+      siteId,
+      siteName: input.siteName,
+      siteAddress: input.siteAddress ?? null,
+      serviceType: input.serviceType,
+      contractId: input.contractId,
+      clientName: null,
+      contractDescription: null
+    };
+  }
+
+  async deactivateSite(siteId: string): Promise<Site> {
+    const db = await getSupabaseAdminClient();
+    const { error } = await db.from("sites").update({ is_active: false }).eq("site_id", siteId);
+    if (error) throw error;
+
+    return {
+      siteId,
+      siteName: siteId,
+      siteAddress: null,
+      serviceType: "Both",
+      contractId: null,
+      clientName: null,
+      contractDescription: null
+    };
+  }
+
 
   async listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]> {
     const db = await getSupabaseAdminClient();

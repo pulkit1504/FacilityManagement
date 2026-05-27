@@ -92,8 +92,24 @@ export const reviewFraudFlagSchema = z.object({
   remarks: z.string().trim().min(5).max(1000)
 });
 
+export const createContractSchema = z.object({
+  clientName: z.string().trim().min(2).max(200),
+  description: z.string().trim().max(500).nullable().optional(),
+  startDate: z.string().date(),
+  endDate: z.string().date().nullable().optional()
+});
+
+export const createSiteSchema = z.object({
+  siteName: z.string().trim().min(2).max(200),
+  siteAddress: z.string().trim().max(500).nullable().optional(),
+  serviceType: z.enum(["Housekeeping", "Security", "Both"]),
+  contractId: z.string().trim().min(1)
+});
+
 export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
 export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
 export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptSchema>;
 export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;
 export type ReviewFraudFlagInput = z.infer<typeof reviewFraudFlagSchema>;
+export type CreateContractInput = z.infer<typeof createContractSchema>;
+export type CreateSiteInput = z.infer<typeof createSiteSchema>;

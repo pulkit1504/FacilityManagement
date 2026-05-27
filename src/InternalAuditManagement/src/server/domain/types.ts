@@ -68,6 +68,16 @@ export type Employee = {
   isActive: boolean;
 };
 
+export type Site = {
+  siteId: string;
+  siteName: string;
+  siteAddress: string | null;
+  serviceType: "Housekeeping" | "Security" | "Both";
+  contractId: string | null;
+  clientName: string | null;
+  contractDescription: string | null;
+};
+
 export type ExpenseClaim = {
   claimId: string;
   submitterEmployeeId: string;

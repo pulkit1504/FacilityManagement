@@ -14,6 +14,14 @@ type LineItemDraft = {
   siteId: string;
 };
 
+type SiteOption = {
+  siteId: string;
+  siteName: string;
+  clientName: string | null;
+  siteAddress: string | null;
+  serviceType: string;
+};
+
 type SavedLineItem = {
   lineItemId: string;
   description: string;
@@ -67,7 +75,8 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
   const [claimStatus, setClaimStatus] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [submissionMode, setSubmissionMode] = useState<"SingleVoucher" | "Proforma">("SingleVoucher");
-  const [siteId, setSiteId] = useState("site-ansal-a");
+  const [sites, setSites] = useState<SiteOption[]>([]);
+  const [siteId, setSiteId] = useState("");
   const [proformaPeriodStart, setProformaPeriodStart] = useState("");
   const [proformaPeriodEnd, setProformaPeriodEnd] = useState("");
   const [lineItem, setLineItem] = useState<LineItemDraft>(emptyLineItem);
@@ -112,6 +121,23 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
   }, [lineItem, requiresInvoice, requiresSite]);
 
   useEffect(() => {
+    async function loadSites() {
+      const response = await fetch("/api/v1/sites", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) {
+        setErrorMessages(getProblemMessages(data, "Could not load sites."));
+        return;
+      }
+
+      const loadedSites = (data.items ?? []) as SiteOption[];
+      setSites(loadedSites);
+      setSiteId((current) => current || loadedSites[0]?.siteId || "");
+    }
+
+    void loadSites();
+  }, []);
+
+  useEffect(() => {
     if (!initialClaimId) return;
 
     async function loadClaim() {
@@ -130,7 +156,7 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
         setClaimStatus(data.status);
         setRejectionReason(data.rejectionReason);
         setSubmissionMode(data.submissionMode);
-        setSiteId(data.siteId ?? "site-ansal-a");
+        setSiteId(data.siteId ?? "");
         setProformaPeriodStart(data.proformaPeriodStart ?? "");
         setProformaPeriodEnd(data.proformaPeriodEnd ?? "");
         setSavedLineItems(
@@ -420,8 +446,13 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
           </label>
           <label>
             <span className="muted">Site</span>
-            <select disabled={Boolean(claimId)} value={siteId} onChange={(event) => setSiteId(event.target.value)}>
-              <option value="site-ansal-a">Ansal Heights Block A</option>
+            <select disabled={Boolean(claimId) || sites.length === 0} value={siteId} onChange={(event) => setSiteId(event.target.value)}>
+              <option value="">Select site</option>
+              {sites.map((site) => (
+                <option key={site.siteId} value={site.siteId}>
+                  {site.siteName}{site.clientName ? ` - ${site.clientName}` : ""}
+                </option>
+              ))}
             </select>
           </label>
           {requiresProformaPeriod ? (
@@ -546,7 +577,11 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
                   <span className="muted">Line site</span>
                   <select value={lineItem.siteId} onChange={(event) => setLineItem({ ...lineItem, siteId: event.target.value })}>
                     <option value="">Select site</option>
-                    <option value="site-ansal-a">Ansal Heights Block A</option>
+                    {sites.map((site) => (
+                      <option key={site.siteId} value={site.siteId}>
+                        {site.siteName}{site.clientName ? ` - ${site.clientName}` : ""}
+                      </option>
+                    ))}
                   </select>
                 </label>
               ) : null}

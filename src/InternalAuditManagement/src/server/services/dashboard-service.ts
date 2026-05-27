@@ -1,3 +1,4 @@
+import { forbidden } from "../errors/application-error";
 import type { UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 
@@ -13,7 +14,11 @@ export class DashboardService {
     };
   }
 
-  async getMisDashboard() {
+  async getMisDashboard(user: UserContext) {
+    if (user.role === "Claimant") {
+      throw forbidden("Claimant users cannot access the MIS dashboard.");
+    }
+
     const metrics = await this.claims.getMisDashboardMetrics();
 
     return {

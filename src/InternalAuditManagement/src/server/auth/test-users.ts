@@ -11,6 +11,12 @@ export const testUserCookieName = "fm_test_user";
 
 export const testUsers = [
   {
+    userId: "emp-admin-001",
+    role: "Admin",
+    name: "System Admin",
+    email: "admin@example.com"
+  },
+  {
     userId: "emp-claimant-001",
     role: "Claimant",
     name: "Site Supervisor",

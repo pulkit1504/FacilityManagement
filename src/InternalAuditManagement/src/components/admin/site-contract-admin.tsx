@@ -26,7 +26,7 @@ type Employee = {
   employeeId: string;
   fullName: string;
   email: string;
-  role: "Claimant" | "HOD" | "MD" | "Finance" | "BillingTeam" | "FinanceHOD";
+  role: "Claimant" | "HOD" | "MD" | "Finance" | "BillingTeam" | "FinanceHOD" | "Admin";
   directManagerId: string | null;
   isHod: boolean;
   approvalThresholdAmount: number;
@@ -40,7 +40,7 @@ type Holiday = {
 };
 
 const today = new Date().toISOString().slice(0, 10);
-const roles: Employee["role"][] = ["Claimant", "HOD", "MD", "Finance", "BillingTeam", "FinanceHOD"];
+const roles: Employee["role"][] = ["Claimant", "HOD", "MD", "Finance", "BillingTeam", "FinanceHOD", "Admin"];
 
 export function SiteContractAdmin() {
   const [contracts, setContracts] = useState<Contract[]>([]);

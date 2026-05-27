@@ -145,6 +145,40 @@ export class ClaimService {
     };
   }
 
+  async reopenReturnedClaim(claimId: string, user: UserContext) {
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) {
+      throw notFound("Claim was not found.");
+    }
+
+    if (claim.submitterEmployeeId !== user.userId) {
+      throw forbidden("Only the original claimant can reopen this claim.");
+    }
+
+    if (claim.status !== "Rejected") {
+      throw conflict("Only returned claims can be reopened for correction.");
+    }
+
+    const updatedClaim = await this.claims.reopenRejectedClaim(claimId);
+
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: "DRAFT_SAVED",
+      preActionStatus: claim.status,
+      postActionStatus: updatedClaim.status,
+      auditRemarks: "Returned claim reopened for correction.",
+      correlationId: user.correlationId
+    });
+
+    return {
+      claimId,
+      status: updatedClaim.status,
+      statusLabel: statusLabel(updatedClaim.status),
+      message: "Claim reopened. Apply corrections and submit again."
+    };
+  }
+
   private async assertCanView(claim: ExpenseClaim, user: UserContext) {
     if (["Finance", "FinanceHOD", "MD"].includes(user.role)) {
       return;

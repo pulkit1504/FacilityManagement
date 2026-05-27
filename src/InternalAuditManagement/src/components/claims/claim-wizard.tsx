@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Check, Paperclip, Plus, RotateCcw, Send } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Loader2, Paperclip, Plus, RotateCcw, Send } from "lucide-react";
 
 type ExpenseTag = "AlreadyBilled" | "PendingBilling" | "ContractPartCost" | "BackendCTC";
 
@@ -22,6 +22,18 @@ type SavedLineItem = {
   expenseTag: ExpenseTag;
   missingReceiptFlag: boolean;
   attachmentHash?: string;
+};
+
+type LoadedClaim = {
+  claimId: string;
+  submissionMode: "SingleVoucher" | "Proforma";
+  proformaPeriodStart: string | null;
+  proformaPeriodEnd: string | null;
+  status: string;
+  statusLabel: string;
+  siteId: string | null;
+  rejectionReason: string | null;
+  lineItems: Array<SavedLineItem & { attachments: Array<{ contentHash: string }> }>;
 };
 
 type SubmissionResult = {
@@ -48,8 +60,10 @@ const emptyLineItem: LineItemDraft = {
   siteId: ""
 };
 
-export function ClaimWizard() {
+export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: string }>) {
   const [claimId, setClaimId] = useState<string | null>(null);
+  const [claimStatus, setClaimStatus] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [submissionMode, setSubmissionMode] = useState<"SingleVoucher" | "Proforma">("SingleVoucher");
   const [siteId, setSiteId] = useState("site-ansal-a");
   const [proformaPeriodStart, setProformaPeriodStart] = useState("");
@@ -60,6 +74,7 @@ export function ClaimWizard() {
   const [message, setMessage] = useState<string>("");
   const [errorMessages, setErrorMessages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [isLoadingClaim, setIsLoadingClaim] = useState(Boolean(initialClaimId));
 
   const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
   const requiresSite = lineItem.expenseTag === "ContractPartCost";
@@ -79,6 +94,8 @@ export function ClaimWizard() {
     return [];
   }, [requiresProformaPeriod, savedLineItems.length]);
   const canSubmitClaim = submitGateMessages.length === 0;
+  const isReturned = claimStatus === "Rejected";
+  const isDraft = !claimStatus || claimStatus === "Draft";
 
   const canAddLine = useMemo(() => {
     if (!lineItem.description || !lineItem.amount || Number(lineItem.amount) <= 0) return false;
@@ -86,6 +103,51 @@ export function ClaimWizard() {
     if (requiresSite && !lineItem.siteId) return false;
     return true;
   }, [lineItem, requiresInvoice, requiresSite]);
+
+  useEffect(() => {
+    if (!initialClaimId) return;
+
+    async function loadClaim() {
+      setIsLoadingClaim(true);
+      setMessage("");
+      setErrorMessages([]);
+      try {
+        const response = await fetch(`/api/v1/claims/${initialClaimId}`);
+        const data = (await response.json()) as LoadedClaim & ProblemResponse;
+        if (!response.ok) {
+          setErrorMessages(getProblemMessages(data, "Could not load claim."));
+          return;
+        }
+
+        setClaimId(data.claimId);
+        setClaimStatus(data.status);
+        setRejectionReason(data.rejectionReason);
+        setSubmissionMode(data.submissionMode);
+        setSiteId(data.siteId ?? "site-ansal-a");
+        setProformaPeriodStart(data.proformaPeriodStart ?? "");
+        setProformaPeriodEnd(data.proformaPeriodEnd ?? "");
+        setSavedLineItems(
+          data.lineItems.map((item) => ({
+            lineItemId: item.lineItemId,
+            description: item.description,
+            amount: item.amount,
+            transactionDate: item.transactionDate,
+            expenseTag: item.expenseTag,
+            missingReceiptFlag: item.missingReceiptFlag,
+            attachmentHash: item.attachments[0]?.contentHash?.slice(0, 12)
+          }))
+        );
+        setLineItem((current) => ({
+          ...current,
+          transactionDate: data.proformaPeriodStart ?? current.transactionDate
+        }));
+      } finally {
+        setIsLoadingClaim(false);
+      }
+    }
+
+    void loadClaim();
+  }, [initialClaimId]);
 
   async function createDraft() {
     setBusy(true);
@@ -108,6 +170,8 @@ export function ClaimWizard() {
         return;
       }
       setClaimId(data.claimId);
+      setClaimStatus("Draft");
+      setRejectionReason(null);
       if (requiresProformaPeriod) {
         setLineItem((current) => ({ ...current, transactionDate: proformaPeriodStart }));
       }
@@ -121,6 +185,8 @@ export function ClaimWizard() {
 
   function resetDraft() {
     setClaimId(null);
+    setClaimStatus(null);
+    setRejectionReason(null);
     setLineItem(emptyLineItem);
     setSavedLineItems([]);
     setSubmissionResult(null);
@@ -129,7 +195,7 @@ export function ClaimWizard() {
   }
 
   async function addLineItem() {
-    if (!claimId) return;
+    if (!claimId || !isDraft) return;
     setBusy(true);
     setMessage("");
     setErrorMessages([]);
@@ -174,7 +240,7 @@ export function ClaimWizard() {
   }
 
   async function submitClaim() {
-    if (!claimId) return;
+    if (!claimId || !isDraft) return;
     setBusy(true);
     setMessage("");
     setErrorMessages([]);
@@ -189,6 +255,7 @@ export function ClaimWizard() {
         assignedTo: data.assignedTo,
         message: data.message
       });
+      setClaimStatus(data.status);
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not submit claim.");
@@ -198,7 +265,7 @@ export function ClaimWizard() {
   }
 
   async function uploadReceipt(lineItemId: string, file: File | undefined) {
-    if (!claimId || !file || submissionResult) return;
+    if (!claimId || !file || submissionResult || !isDraft) return;
     setBusy(true);
     setMessage("");
     setErrorMessages([]);
@@ -227,6 +294,39 @@ export function ClaimWizard() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function reopenReturnedClaim() {
+    if (!claimId) return;
+    setBusy(true);
+    setMessage("");
+    setErrorMessages([]);
+    try {
+      const response = await fetch(`/api/v1/claims/${claimId}/reopen`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) {
+        setErrorMessages(getProblemMessages(data, "Could not reopen claim."));
+        return;
+      }
+      setClaimStatus("Draft");
+      setRejectionReason(null);
+      setMessage(data.message ?? "Claim reopened for correction.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not reopen claim.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (isLoadingClaim) {
+    return (
+      <section className="panel">
+        <span className="loading-inline">
+          <Loader2 size={16} />
+          Loading claim...
+        </span>
+      </section>
+    );
   }
 
   return (
@@ -276,7 +376,7 @@ export function ClaimWizard() {
               <Check size={18} />
               {claimId ? "Draft ready" : "Create draft"}
             </button>
-            {claimId && !submissionResult ? (
+            {claimId && !submissionResult && !initialClaimId ? (
               <button className="button secondary" disabled={busy} onClick={resetDraft} type="button">
                 <RotateCcw size={18} />
                 Cancel draft
@@ -290,6 +390,16 @@ export function ClaimWizard() {
           </p>
         ) : null}
         {claimId ? <p className="muted" style={{ marginTop: 12 }}>Draft ID: {claimId}</p> : null}
+        {isReturned ? (
+          <div className="return-panel" style={{ marginTop: 12 }}>
+            <strong>Returned for correction</strong>
+            <p>{rejectionReason ?? "Review the claim details and reopen it before making changes."}</p>
+            <button className="button" disabled={busy} onClick={() => void reopenReturnedClaim()} type="button">
+              <RotateCcw size={18} />
+              Reopen for correction
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {claimId ? (
@@ -307,7 +417,7 @@ export function ClaimWizard() {
             </section>
           ) : null}
 
-          {!submissionResult ? (
+          {!submissionResult && isDraft ? (
           <section className="panel">
             <h2>Add Line Item</h2>
             <div className="grid cols-3">
@@ -381,7 +491,7 @@ export function ClaimWizard() {
                   {submissionResult ? "Submitted line items are locked for approval." : "Attach receipts to each saved line before submitting."}
                 </p>
               </div>
-              {!submissionResult ? (
+              {!submissionResult && isDraft ? (
                 <div className="grid" style={{ gap: 8, justifyItems: "end" }}>
                   <button className="button" disabled={busy || !canSubmitClaim} onClick={submitClaim} type="button">
                     <Send size={18} />

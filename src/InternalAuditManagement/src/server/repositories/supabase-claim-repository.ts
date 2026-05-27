@@ -473,6 +473,24 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return mapClaim(data as ClaimRow);
   }
 
+  async reopenRejectedClaim(claimId: string): Promise<ExpenseClaim> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_claims")
+      .update({
+        status: "Draft",
+        rejection_reason: null,
+        updated_at: new Date().toISOString()
+      })
+      .eq("claim_id", claimId)
+      .eq("status", "Rejected")
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapClaim(data as ClaimRow);
+  }
+
   async confirmPhysicalReceipt(claimId: string, confirmedAt: string, confirmedBy: string): Promise<ExpenseClaim> {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db

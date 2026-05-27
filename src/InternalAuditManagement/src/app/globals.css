@@ -332,6 +332,20 @@ h1 {
   gap: 14px;
 }
 
+.return-panel {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.return-panel p {
+  color: var(--danger);
+  margin: 0;
+}
+
 .success-icon {
   align-items: center;
   background: #dcfce7;

@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Eye, FileText, Loader2 } from "lucide-react";
+import Link from "next/link";
 
 type ClaimSummary = {
   claimId: string;
@@ -174,10 +175,17 @@ export function MyClaims() {
                   </td>
                   <td>{formatDate(claim.updatedAt)}</td>
                   <td>
-                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void toggleDetails(claim.claimId)} type="button">
-                      {busyAction === `details:${claim.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
-                      {expandedClaimId === claim.claimId ? "Hide details" : "View details"}
-                    </button>
+                    <div className="actions">
+                      {claim.status === "Draft" || claim.status === "Rejected" ? (
+                        <Link className="button" href={`/claims/${claim.claimId}/edit`}>
+                          {claim.status === "Draft" ? "Continue draft" : "Correct claim"}
+                        </Link>
+                      ) : null}
+                      <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void toggleDetails(claim.claimId)} type="button">
+                        {busyAction === `details:${claim.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
+                        {expandedClaimId === claim.claimId ? "Hide details" : "View details"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 {expandedClaimId === claim.claimId ? (

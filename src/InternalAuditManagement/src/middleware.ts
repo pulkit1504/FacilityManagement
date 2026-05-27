@@ -1,20 +1,23 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const testUserCookieName = "fm_test_user";
+const authSessionCookieName = "fm_session";
 
 export function middleware(request: NextRequest) {
   if (process.env.APP_AUTH_MODE === "development") {
     return NextResponse.next();
   }
 
-  const hasTestUser = Boolean(request.cookies.get(testUserCookieName)?.value);
+  const hasSession = Boolean(request.cookies.get(authSessionCookieName)?.value);
+  const hasTestUser = process.env.APP_AUTH_MODE === "test" && Boolean(request.cookies.get(testUserCookieName)?.value);
+  const isAuthenticated = hasSession || hasTestUser;
   const isLoginPage = request.nextUrl.pathname === "/login";
 
-  if (!hasTestUser && !isLoginPage) {
+  if (!isAuthenticated && !isLoginPage) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (hasTestUser && isLoginPage) {
+  if (isAuthenticated && isLoginPage) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

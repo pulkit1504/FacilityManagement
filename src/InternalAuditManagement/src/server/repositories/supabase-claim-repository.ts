@@ -638,6 +638,19 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return mapEmployee(data);
   }
 
+  async getEmployeeByEmail(email: string): Promise<Employee | null> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("employees")
+      .select("*")
+      .eq("email", email.toLowerCase())
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data ? mapEmployee(data) : null;
+  }
+
   async findManagingDirector(): Promise<Employee | null> {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db.from("employees").select("*").eq("role", "MD").eq("is_active", true).limit(1);

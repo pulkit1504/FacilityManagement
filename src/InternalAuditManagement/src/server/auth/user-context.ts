@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { forbidden } from "../errors/application-error";
 import { userRoles, type UserContext, type UserRole } from "../domain/types";
 import { timeAsync } from "../observability/performance";
+import { authSessionCookieName, parseSessionCookie, sessionToUserContext } from "./session";
 import { parseTestUserCookie, testUserCookieName } from "./test-users";
 
 export async function getUserContext(): Promise<UserContext> {
@@ -12,9 +13,14 @@ export async function getUserContext(): Promise<UserContext> {
 async function resolveUserContext(): Promise<UserContext> {
   const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
   const correlationId = headerStore.get("x-correlation-id") ?? randomUUID();
+  const session = parseSessionCookie(cookieStore.get(authSessionCookieName)?.value);
+  if (session) {
+    return sessionToUserContext(session, correlationId);
+  }
+
   const testUser = parseTestUserCookie(cookieStore.get(testUserCookieName)?.value);
 
-  if (testUser) {
+  if (testUser && process.env.APP_AUTH_MODE === "test") {
     return {
       userId: testUser.userId,
       role: testUser.role,

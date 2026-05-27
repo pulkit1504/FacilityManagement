@@ -2,6 +2,18 @@ import { NextResponse } from "next/server";
 import { findTestUser, serializeTestUserCookie, testUserCookieName } from "@/server/auth/test-users";
 
 export async function POST(request: Request) {
+  if (process.env.APP_AUTH_MODE !== "test") {
+    return NextResponse.json(
+      {
+        type: "https://httpstatuses.com/404",
+        title: "Not Found",
+        status: 404,
+        detail: "Test login is not enabled."
+      },
+      { status: 404 }
+    );
+  }
+
   const body = (await request.json()) as { userId?: string; role?: string };
   const selectedUser = body.userId && body.role ? findTestUser(body.userId, body.role) : null;
 
@@ -37,6 +49,10 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
+  if (process.env.APP_AUTH_MODE !== "test") {
+    return NextResponse.json({ message: "Test login is not enabled." }, { status: 404 });
+  }
+
   const response = NextResponse.json({ message: "Signed out." });
   response.cookies.set(testUserCookieName, "", {
     httpOnly: true,

@@ -271,28 +271,26 @@ export class SupabaseClaimRepository implements ClaimRepository {
   }
 
   async getClaimDetail(claimId: string): Promise<ClaimDetail | null> {
+    const [claim] = await this.getClaimDetails([claimId]);
+    return claim ?? null;
+  }
+
+  private async getClaimDetails(claimIds: string[]): Promise<ClaimDetail[]> {
+    const uniqueClaimIds = [...new Set(claimIds)].filter(Boolean);
+    if (uniqueClaimIds.length === 0) return [];
+
     const db = await getSupabaseAdminClient();
-    const { data: claim, error } = await db
-      .from("expense_claims")
-      .select("*")
-      .eq("claim_id", claimId)
-      .eq("is_deleted", false)
-      .single();
+    const [
+      { data: claims, error: claimsError },
+      { data: lines, error: linesError },
+      { data: approvals, error: approvalsError }
+    ] = await Promise.all([
+      db.from("expense_claims").select("*").in("claim_id", uniqueClaimIds).eq("is_deleted", false),
+      db.from("expense_line_items").select("*").in("claim_id", uniqueClaimIds).eq("is_deleted", false).order("sort_order"),
+      db.from("approval_steps").select("*").in("claim_id", uniqueClaimIds).order("step_order")
+    ]);
 
-    if (error && error.code !== "PGRST116") {
-      throw error;
-    }
-
-    if (!claim) {
-      return null;
-    }
-
-    const [{ data: lines, error: linesError }, { data: approvals, error: approvalsError }] =
-      await Promise.all([
-        db.from("expense_line_items").select("*").eq("claim_id", claimId).eq("is_deleted", false),
-        db.from("approval_steps").select("*").eq("claim_id", claimId).order("step_order")
-      ]);
-
+    if (claimsError) throw claimsError;
     if (linesError) throw linesError;
     if (approvalsError) throw approvalsError;
 
@@ -300,7 +298,6 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const { data: attachments, error: attachmentsError } = lineIds.length
       ? await db.from("expense_attachments").select("*").in("line_item_id", lineIds)
       : { data: [], error: null };
-
     if (attachmentsError) throw attachmentsError;
 
     const attachmentsByLineId = new Map<string, ExpenseAttachment[]>();
@@ -320,23 +317,51 @@ export class SupabaseClaimRepository implements ClaimRepository {
       attachmentsByLineId.set(lineId, [...(attachmentsByLineId.get(lineId) ?? []), mapped]);
     }
 
-    return {
-      ...mapClaim(claim as ClaimRow),
-      lineItems: (lines ?? []).map((line) => ({
-        ...mapLineItem(line),
-        attachments: attachmentsByLineId.get(String(line.line_item_id)) ?? []
-      })),
-      approvalSteps: (approvals ?? []).map((step) => ({
-        stepId: String(step.step_id),
-        claimId: String(step.claim_id),
-        stepOrder: Number(step.step_order),
-        requiredApproverRole: step.required_approver_role as ApprovalStep["requiredApproverRole"],
-        assignedApproverId: step.assigned_approver_id ? String(step.assigned_approver_id) : null,
-        decision: step.decision as ApprovalStep["decision"],
-        decisionAt: step.decision_at ? String(step.decision_at) : null,
-        remarks: step.remarks ? String(step.remarks) : null
-      }))
-    };
+    const lineItemsByClaimId = new Map<string, ClaimDetail["lineItems"]>();
+    for (const line of lines ?? []) {
+      const claimId = String(line.claim_id);
+      lineItemsByClaimId.set(claimId, [
+        ...(lineItemsByClaimId.get(claimId) ?? []),
+        {
+          ...mapLineItem(line),
+          attachments: attachmentsByLineId.get(String(line.line_item_id)) ?? []
+        }
+      ]);
+    }
+
+    const approvalsByClaimId = new Map<string, ApprovalStep[]>();
+    for (const step of approvals ?? []) {
+      const claimId = String(step.claim_id);
+      approvalsByClaimId.set(claimId, [
+        ...(approvalsByClaimId.get(claimId) ?? []),
+        {
+          stepId: String(step.step_id),
+          claimId: String(step.claim_id),
+          stepOrder: Number(step.step_order),
+          requiredApproverRole: step.required_approver_role as ApprovalStep["requiredApproverRole"],
+          assignedApproverId: step.assigned_approver_id ? String(step.assigned_approver_id) : null,
+          decision: step.decision as ApprovalStep["decision"],
+          decisionAt: step.decision_at ? String(step.decision_at) : null,
+          remarks: step.remarks ? String(step.remarks) : null
+        }
+      ]);
+    }
+
+    const claimById = new Map(
+      (claims ?? []).map((claim) => {
+        const mappedClaim = mapClaim(claim as ClaimRow);
+        return [
+          mappedClaim.claimId,
+          {
+            ...mappedClaim,
+            lineItems: lineItemsByClaimId.get(mappedClaim.claimId) ?? [],
+            approvalSteps: approvalsByClaimId.get(mappedClaim.claimId) ?? []
+          } satisfies ClaimDetail
+        ];
+      })
+    );
+
+    return uniqueClaimIds.map((claimId) => claimById.get(claimId)).filter((claim): claim is ClaimDetail => Boolean(claim));
   }
 
   async createClaim(input: CreateClaimRecord): Promise<ExpenseClaim> {
@@ -536,12 +561,8 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (error) throw error;
     const siteNames = await this.getSiteNameMap();
 
-    const items = await Promise.all(
-      (data ?? []).map(async (step) => {
-        const detail = await this.getClaimDetail(String(step.claim_id));
-        return detail ? this.toApprovalQueueItem(detail, siteNames) : null;
-      })
-    );
+    const details = await this.getClaimDetails((data ?? []).map((step) => String(step.claim_id)));
+    const items = details.map((detail) => this.toApprovalQueueItem(detail, siteNames));
 
     return items.filter((item): item is ApprovalQueueItem => Boolean(item));
   }
@@ -559,20 +580,17 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (error) throw error;
     const siteNames = await this.getSiteNameMap();
 
-    const items = await Promise.all(
-      (data ?? []).map(async (row) => {
-        const detail = await this.getClaimDetail(String(row.claim_id));
-        if (!detail) return null;
-        const pendingBillingItemCount = detail.lineItems.filter((item) => item.expenseTag === "PendingBilling").length;
-        return {
-          ...this.toApprovalQueueItem(detail, siteNames),
-          physicalReceiptRequired: true,
-          physicalReceiptConfirmed: Boolean(detail.physicalReceiptConfirmedAt),
-          hasPendingBillingItems: pendingBillingItemCount > 0,
-          pendingBillingItemCount
-        };
-      })
-    );
+    const details = await this.getClaimDetails((data ?? []).map((row) => String(row.claim_id)));
+    const items = details.map((detail) => {
+      const pendingBillingItemCount = detail.lineItems.filter((item) => item.expenseTag === "PendingBilling").length;
+      return {
+        ...this.toApprovalQueueItem(detail, siteNames),
+        physicalReceiptRequired: true,
+        physicalReceiptConfirmed: Boolean(detail.physicalReceiptConfirmedAt),
+        hasPendingBillingItems: pendingBillingItemCount > 0,
+        pendingBillingItemCount
+      };
+    });
 
     return items.filter((item): item is FinanceQueueItem => Boolean(item));
   }
@@ -798,25 +816,26 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (error) throw error;
     const siteNames = await this.getSiteNameMap();
 
-    const items = await Promise.all(
-      (data ?? []).map(async (row) => {
-        const alert = mapBillingAlert(row);
-        const detail = await this.getClaimDetail(alert.claimId);
-        const lineItem = detail?.lineItems.find((item) => item.lineItemId === alert.lineItemId);
-        const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(alert.createdAt).getTime()) / 86_400_000));
+    const alerts = (data ?? []).map(mapBillingAlert);
+    const details = await this.getClaimDetails(alerts.map((alert) => alert.claimId));
+    const detailsByClaimId = new Map(details.map((detail) => [detail.claimId, detail]));
 
-        return {
-          ...alert,
-          lineItemDescription: lineItem?.description ?? "Line item unavailable",
-          amount: lineItem?.amount ?? 0,
-          claimantName: detail?.submitterEmployeeId ?? "Unknown",
-          siteName: detail?.siteId ? siteNames.get(detail.siteId) ?? detail.siteId : null,
-          daysOpen,
-          urgencyLabel:
-            daysOpen >= 7 ? "Escalate to Finance HOD" : daysOpen >= 2 ? "Needs billing follow-up" : "Within 48-hour window"
-        };
-      })
-    );
+    const items = alerts.map((alert) => {
+      const detail = detailsByClaimId.get(alert.claimId);
+      const lineItem = detail?.lineItems.find((item) => item.lineItemId === alert.lineItemId);
+      const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(alert.createdAt).getTime()) / 86_400_000));
+
+      return {
+        ...alert,
+        lineItemDescription: lineItem?.description ?? "Line item unavailable",
+        amount: lineItem?.amount ?? 0,
+        claimantName: detail?.submitterEmployeeId ?? "Unknown",
+        siteName: detail?.siteId ? siteNames.get(detail.siteId) ?? detail.siteId : null,
+        daysOpen,
+        urgencyLabel:
+          daysOpen >= 7 ? "Escalate to Finance HOD" : daysOpen >= 2 ? "Needs billing follow-up" : "Within 48-hour window"
+      };
+    });
 
     return items;
   }
@@ -882,11 +901,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     if (error) throw error;
 
-    const claims = await Promise.all(
-      (data ?? []).map(async (row) => this.getClaimDetail(String(row.claim_id)))
-    );
-
-    return claims.filter((claim): claim is ClaimDetail => Boolean(claim));
+    return this.getClaimDetails((data ?? []).map((row) => String(row.claim_id)));
   }
 
   async createFraudFlag(input: CreateFraudFlagRecord): Promise<FraudFlag | null> {
@@ -945,28 +960,28 @@ export class SupabaseClaimRepository implements ClaimRepository {
       }
     };
 
-    return Promise.all(
-      (data ?? []).map(async (row) => {
-        const flag = mapFraudFlag(row);
-        const claim = await this.getClaimDetail(flag.primaryClaimId);
-        const relatedClaims = await Promise.all(
-          flag.relatedClaimIds.map(async (claimId) => this.getClaimDetail(claimId))
-        );
-        const claimGroup = [claim, ...relatedClaims].filter((item): item is ClaimDetail => Boolean(item));
-        const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(flag.flaggedAt).getTime()) / 86_400_000));
-        const ruleText = labels[flag.ruleName];
+    const flags = (data ?? []).map(mapFraudFlag);
+    const claimIds = flags.flatMap((flag) => [flag.primaryClaimId, ...flag.relatedClaimIds]);
+    const claims = await this.getClaimDetails(claimIds);
+    const claimsById = new Map(claims.map((claim) => [claim.claimId, claim]));
 
-        return {
-          ...flag,
-          ruleLabel: ruleText.label,
-          ruleDescription: ruleText.description,
-          relatedClaimCount: flag.relatedClaimIds.length,
-          daysOpen,
-          employeeName: claim?.submitterEmployeeId ?? "Unknown",
-          flaggedLineItems: this.findFlaggedLineItems(flag.ruleName, claimGroup)
-        };
-      })
-    );
+    return flags.map((flag) => {
+      const claim = claimsById.get(flag.primaryClaimId) ?? null;
+      const relatedClaims = flag.relatedClaimIds.map((claimId) => claimsById.get(claimId) ?? null);
+      const claimGroup = [claim, ...relatedClaims].filter((item): item is ClaimDetail => Boolean(item));
+      const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(flag.flaggedAt).getTime()) / 86_400_000));
+      const ruleText = labels[flag.ruleName];
+
+      return {
+        ...flag,
+        ruleLabel: ruleText.label,
+        ruleDescription: ruleText.description,
+        relatedClaimCount: flag.relatedClaimIds.length,
+        daysOpen,
+        employeeName: claim?.submitterEmployeeId ?? "Unknown",
+        flaggedLineItems: this.findFlaggedLineItems(flag.ruleName, claimGroup)
+      };
+    });
   }
 
   async reviewFraudFlag(
@@ -1024,9 +1039,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (fraudFlagError) throw fraudFlagError;
     if (approvedClaimsError) throw approvedClaimsError;
 
-    const claimDetails = await Promise.all(
-      (approvedClaims ?? []).map(async (row) => this.getClaimDetail(String(row.claim_id)))
-    );
+    const claimDetails = await this.getClaimDetails((approvedClaims ?? []).map((row) => String(row.claim_id)));
 
     let totalBillable = 0;
     let totalBilled = 0;
@@ -1071,9 +1084,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (approvedClaimsError) throw approvedClaimsError;
     if (billingAlertsError) throw billingAlertsError;
 
-    const claimDetails = await Promise.all(
-      (approvedClaims ?? []).map(async (row) => this.getClaimDetail(String(row.claim_id)))
-    );
+    const claimDetails = await this.getClaimDetails((approvedClaims ?? []).map((row) => String(row.claim_id)));
 
     let totalBillableApproved = 0;
     let totalBilled = 0;

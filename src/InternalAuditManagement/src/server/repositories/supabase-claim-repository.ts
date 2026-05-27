@@ -153,6 +153,8 @@ function mapContract(row: Record<string, unknown>): ClientContract {
 }
 
 export class SupabaseClaimRepository implements ClaimRepository {
+  private activeSitesPromise: Promise<Site[]> | null = null;
+
   async listContracts(): Promise<ClientContract[]> {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db
@@ -184,6 +186,16 @@ export class SupabaseClaimRepository implements ClaimRepository {
   }
 
   async listActiveSites(): Promise<Site[]> {
+    this.activeSitesPromise ??= this.fetchActiveSites();
+    try {
+      return await this.activeSitesPromise;
+    } catch (error) {
+      this.activeSitesPromise = null;
+      throw error;
+    }
+  }
+
+  private async fetchActiveSites(): Promise<Site[]> {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db
       .from("sites")
@@ -222,6 +234,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       });
 
     if (error) throw error;
+    this.activeSitesPromise = null;
     const sites = await this.listActiveSites();
     return sites.find((site) => site.siteId === siteId) ?? {
       siteId,
@@ -238,6 +251,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const db = await getSupabaseAdminClient();
     const { error } = await db.from("sites").update({ is_active: false }).eq("site_id", siteId);
     if (error) throw error;
+    this.activeSitesPromise = null;
 
     return {
       siteId,
@@ -569,30 +583,50 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
   async listFinanceQueue(): Promise<FinanceQueueItem[]> {
     const db = await getSupabaseAdminClient();
-    const { data, error } = await db
-      .from("expense_claims")
-      .select("claim_id")
-      .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed"])
-      .eq("is_deleted", false)
-      .order("updated_at", { ascending: false })
-      .limit(50);
+    const [{ data, error }, siteNames] = await Promise.all([
+      db
+        .from("expense_claims")
+        .select("claim_id,submitter_employee_id,total_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
+        .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed"])
+        .eq("is_deleted", false)
+        .order("updated_at", { ascending: false })
+        .limit(50),
+      this.getSiteNameMap()
+    ]);
 
     if (error) throw error;
-    const siteNames = await this.getSiteNameMap();
+    const claims = data ?? [];
+    const lineStats = await this.getQueueLineStats(claims.map((row) => String(row.claim_id)));
 
-    const details = await this.getClaimDetails((data ?? []).map((row) => String(row.claim_id)));
-    const items = details.map((detail) => {
-      const pendingBillingItemCount = detail.lineItems.filter((item) => item.expenseTag === "PendingBilling").length;
+    const items: FinanceQueueItem[] = claims.map((claim) => {
+      const claimId = String(claim.claim_id);
+      const stats = lineStats.get(claimId) ?? {
+        lineItemCount: 0,
+        missingReceiptCount: 0,
+        pendingBillingItemCount: 0
+      };
+      const submittedAt = String(claim.updated_at ?? claim.created_at);
+      const daysPending = Math.max(0, Math.floor((Date.now() - new Date(submittedAt).getTime()) / 86_400_000));
+      const siteId = claim.site_id ? String(claim.site_id) : null;
       return {
-        ...this.toApprovalQueueItem(detail, siteNames),
+        claimId,
+        submittedBy: String(claim.submitter_employee_id),
+        submittedByRole: "Claimant" as const,
+        siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
+        totalAmount: Number(claim.total_amount),
+        lineItemCount: stats.lineItemCount,
+        missingReceiptCount: stats.missingReceiptCount,
+        submittedAt,
+        daysPending,
+        urgencyLevel: daysPending > 5 ? "Overdue" as const : daysPending >= 3 ? "Attention" as const : "Normal" as const,
         physicalReceiptRequired: true,
-        physicalReceiptConfirmed: Boolean(detail.physicalReceiptConfirmedAt),
-        hasPendingBillingItems: pendingBillingItemCount > 0,
-        pendingBillingItemCount
+        physicalReceiptConfirmed: Boolean(claim.physical_receipt_confirmed_at),
+        hasPendingBillingItems: stats.pendingBillingItemCount > 0,
+        pendingBillingItemCount: stats.pendingBillingItemCount
       };
     });
 
-    return items.filter((item): item is FinanceQueueItem => Boolean(item));
+    return items;
   }
 
   async getPendingApprovalStep(claimId: string): Promise<ApprovalStep | null> {
@@ -1197,6 +1231,45 @@ export class SupabaseClaimRepository implements ClaimRepository {
   private async getSiteNameMap() {
     const sites = await this.listActiveSites();
     return new Map(sites.map((site) => [site.siteId, site.siteName]));
+  }
+
+  private async getQueueLineStats(claimIds: string[]) {
+    const uniqueClaimIds = [...new Set(claimIds)].filter(Boolean);
+    const stats = new Map<
+      string,
+      { lineItemCount: number; missingReceiptCount: number; pendingBillingItemCount: number }
+    >();
+    if (uniqueClaimIds.length === 0) {
+      return stats;
+    }
+
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_line_items")
+      .select("claim_id,expense_tag,missing_receipt_flag")
+      .in("claim_id", uniqueClaimIds)
+      .eq("is_deleted", false);
+
+    if (error) throw error;
+
+    for (const line of data ?? []) {
+      const claimId = String(line.claim_id);
+      const current = stats.get(claimId) ?? {
+        lineItemCount: 0,
+        missingReceiptCount: 0,
+        pendingBillingItemCount: 0
+      };
+      current.lineItemCount += 1;
+      if (line.missing_receipt_flag) {
+        current.missingReceiptCount += 1;
+      }
+      if (line.expense_tag === "PendingBilling") {
+        current.pendingBillingItemCount += 1;
+      }
+      stats.set(claimId, current);
+    }
+
+    return stats;
   }
 
   private toApprovalQueueItem(claim: ClaimDetail, siteNames: Map<string, string>): ApprovalQueueItem {

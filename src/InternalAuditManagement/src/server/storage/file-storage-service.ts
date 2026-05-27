@@ -29,6 +29,8 @@ export interface FileStorageService {
 
 export class AzureBlobFileStorageService implements FileStorageService {
   private client: BlobServiceClient | null = null;
+  private clientPromise: Promise<BlobServiceClient> | null = null;
+  private containerReadyPromise: Promise<unknown> | null = null;
 
   async uploadReceipt(input: { claimId: string; lineItemId: string; file: File }): Promise<StoredFile> {
     const client = await this.getClient();
@@ -42,10 +44,7 @@ export class AzureBlobFileStorageService implements FileStorageService {
     );
     const contentHash = createHash("sha256").update(bytes).digest("hex");
 
-    const container = client.getContainerClient(receiptsContainerName);
-    await timeAsync("blob.container.createIfNotExists", () => container.createIfNotExists(), {
-      containerName: receiptsContainerName
-    });
+    const container = await this.getReceiptsContainer(client);
     await timeAsync(
       "blob.receipt.upload",
       () =>
@@ -100,13 +99,33 @@ export class AzureBlobFileStorageService implements FileStorageService {
 
   private async getClient() {
     if (!this.client) {
-      this.client = await timeAsync(
+      this.clientPromise ??= timeAsync(
         "blob.client.create",
         async () => BlobServiceClient.fromConnectionString(await getRequiredSecret("AZURE_STORAGE_CONNECTION_STRING"))
       );
+      try {
+        this.client = await this.clientPromise;
+      } catch (error) {
+        this.clientPromise = null;
+        throw error;
+      }
     }
 
     return this.client;
+  }
+
+  private async getReceiptsContainer(client: BlobServiceClient) {
+    const container = client.getContainerClient(receiptsContainerName);
+    this.containerReadyPromise ??= timeAsync("blob.container.createIfNotExists", () => container.createIfNotExists(), {
+      containerName: receiptsContainerName
+    });
+    try {
+      await this.containerReadyPromise;
+    } catch (error) {
+      this.containerReadyPromise = null;
+      throw error;
+    }
+    return container;
   }
 
   private extractConnectionStringValue(connectionString: string, key: string): string {

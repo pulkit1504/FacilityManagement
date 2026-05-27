@@ -175,23 +175,24 @@ export class ClaimService {
     const nextStatus = "Submitted";
     const updatedClaim = await this.claims.submitClaim(claimId, nextStatus);
 
-    await this.claims.createApprovalSteps([
-      {
+    await Promise.all([
+      this.claims.createApprovalSteps([
+        {
+          claimId,
+          stepOrder: 1,
+          requiredApproverRole: submitter.isHod ? "MD" : "HOD",
+          assignedApproverId: firstApprover.employeeId
+        }
+      ]),
+      this.claims.appendAuditLog({
         claimId,
-        stepOrder: 1,
-        requiredApproverRole: submitter.isHod ? "MD" : "HOD",
-        assignedApproverId: firstApprover.employeeId
-      }
+        actorUserId: user.userId,
+        actionType: "SUBMIT",
+        preActionStatus: claim.status,
+        postActionStatus: updatedClaim.status,
+        correlationId: user.correlationId
+      })
     ]);
-
-    await this.claims.appendAuditLog({
-      claimId,
-      actorUserId: user.userId,
-      actionType: "SUBMIT",
-      preActionStatus: claim.status,
-      postActionStatus: updatedClaim.status,
-      correlationId: user.correlationId
-    });
 
     return {
       status: updatedClaim.status,
@@ -235,7 +236,7 @@ export class ClaimService {
     };
   }
 
-  private async assertCanView(claim: ExpenseClaim, user: UserContext) {
+  private async assertCanView(claim: ClaimDetail, user: UserContext) {
     if (["Finance", "FinanceHOD", "MD"].includes(user.role)) {
       return;
     }
@@ -244,7 +245,7 @@ export class ClaimService {
       return;
     }
 
-    const pendingStep = await this.claims.getPendingApprovalStep(claim.claimId);
+    const pendingStep = claim.approvalSteps.find((step) => step.decision === "Pending");
     if (
       pendingStep &&
       pendingStep.assignedApproverId === user.userId &&

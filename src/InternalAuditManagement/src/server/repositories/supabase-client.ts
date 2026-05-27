@@ -3,13 +3,14 @@ import { getRequiredSecret } from "../config/secrets";
 import { timeAsync } from "../observability/performance";
 
 let client: SupabaseClient | null = null;
+let clientPromise: Promise<SupabaseClient> | null = null;
 
 export async function getSupabaseAdminClient() {
   if (client) {
     return client;
   }
 
-  client = await timeAsync("supabase.client.create", async () => {
+  clientPromise ??= timeAsync("supabase.client.create", async () => {
     const [url, key] = await Promise.all([
       getRequiredSecret("SUPABASE_URL"),
       getRequiredSecret("SUPABASE_SERVICE_ROLE_KEY")
@@ -23,5 +24,11 @@ export async function getSupabaseAdminClient() {
     });
   });
 
+  try {
+    client = await clientPromise;
+  } catch (error) {
+    clientPromise = null;
+    throw error;
+  }
   return client;
 }

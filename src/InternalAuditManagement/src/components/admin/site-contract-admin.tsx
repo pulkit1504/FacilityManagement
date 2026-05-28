@@ -46,6 +46,15 @@ type Holiday = {
   isNational: boolean;
 };
 
+type NotificationItem = {
+  notificationId: string;
+  recipientEmail: string;
+  subject: string;
+  relatedClaimId: string | null;
+  status: "Queued" | "Sent" | "Failed";
+  createdAt: string;
+};
+
 const today = new Date().toISOString().slice(0, 10);
 const roles: Employee["role"][] = ["Claimant", "ClusterHead", "HOD", "MD", "Finance", "BillingTeam", "FinanceHOD", "Admin"];
 
@@ -54,6 +63,7 @@ export function SiteContractAdmin() {
   const [sites, setSites] = useState<Site[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -106,8 +116,12 @@ export function SiteContractAdmin() {
 
   async function load() {
     try {
-      const response = await fetch("/api/v1/admin/master-data", { cache: "no-store" });
+      const [response, notificationsResponse] = await Promise.all([
+        fetch("/api/v1/admin/master-data", { cache: "no-store" }),
+        fetch("/api/v1/admin/notifications", { cache: "no-store" })
+      ]);
       const data = await response.json();
+      const notificationData = await notificationsResponse.json();
       if (!response.ok) {
         setMessage(data.detail ?? "Could not load master data.");
         return;
@@ -116,6 +130,9 @@ export function SiteContractAdmin() {
       setSites(data.sites ?? []);
       setEmployees(data.employees ?? []);
       setHolidays(data.holidays ?? []);
+      if (notificationsResponse.ok) {
+        setNotifications(notificationData.items ?? []);
+      }
       setSiteDraft((current) => ({ ...current, contractId: current.contractId || data.contracts?.[0]?.contractId || "" }));
     } finally {
       setIsLoading(false);
@@ -511,6 +528,35 @@ export function SiteContractAdmin() {
             {holidays.length === 0 ? (
               <tr>
                 <td colSpan={4}>No holidays configured.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="panel">
+        <h2>Queued Notifications</h2>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Recipient</th>
+              <th>Subject</th>
+              <th>Claim</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {notifications.map((notification) => (
+              <tr key={notification.notificationId}>
+                <td>{notification.recipientEmail}</td>
+                <td>{notification.subject}</td>
+                <td>{notification.relatedClaimId ?? "N/A"}</td>
+                <td>{new Date(notification.createdAt).toLocaleString("en-IN")}</td>
+              </tr>
+            ))}
+            {notifications.length === 0 ? (
+              <tr>
+                <td colSpan={4}>No queued notifications.</td>
               </tr>
             ) : null}
           </tbody>

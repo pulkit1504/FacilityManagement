@@ -21,6 +21,7 @@ import type {
   ImprestLedgerReportRow,
   MisDashboardMetrics,
   NotificationOutboxInput,
+  NotificationOutboxItem,
   OverviewMetrics,
   PendingAdvanceItem,
   Site,
@@ -83,7 +84,9 @@ export interface ClaimRepository {
   createClaim(input: CreateClaimRecord): Promise<ExpenseClaim>;
   addLineItem(claimId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
   updateLineItem(claimId: string, lineItemId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
+  reviewLineItem(claimId: string, lineItemId: string, decision: "Accepted" | "Rejected", remarks?: string | null): Promise<ExpenseLineItem>;
   deleteLineItem(claimId: string, lineItemId: string): Promise<void>;
+  invoiceReferenceExists(invoiceNumber: string, excludingLineItemId?: string): Promise<boolean>;
   submitClaim(claimId: string, nextStatus: ClaimStatus): Promise<ExpenseClaim>;
   updateClaimTotal(claimId: string): Promise<void>;
   createApprovalSteps(steps: Omit<ApprovalStep, "stepId" | "decision" | "decisionAt" | "remarks">[]): Promise<void>;
@@ -93,6 +96,7 @@ export interface ClaimRepository {
   authenticateEmployee(email: string, password: string): Promise<Employee | null>;
   findManagingDirector(): Promise<Employee | null>;
   enqueueNotification(input: NotificationOutboxInput): Promise<void>;
+  listNotifications(status?: "Queued" | "Sent" | "Failed"): Promise<NotificationOutboxItem[]>;
   listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
   listFinanceQueue(): Promise<FinanceQueueItem[]>;
   listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]>;

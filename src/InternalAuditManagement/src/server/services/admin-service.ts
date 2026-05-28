@@ -86,6 +86,15 @@ export class AdminService {
     };
   }
 
+  async listNotifications(user: UserContext) {
+    this.assertAdmin(user);
+    const items = await this.claims.listNotifications("Queued");
+    return {
+      items,
+      totalCount: items.length
+    };
+  }
+
   private assertAdmin(user: UserContext) {
     if (user.role !== "Admin") {
       throw forbidden("Only Admin users can manage operational setup.");

@@ -21,6 +21,7 @@ import type {
   ImprestLedgerReportRow,
   MisDashboardMetrics,
   NotificationOutboxInput,
+  NotificationOutboxItem,
   OverviewMetrics,
   PendingAdvanceItem,
   Site
@@ -104,6 +105,8 @@ function mapLineItem(row: Record<string, unknown>): ExpenseLineItem {
     siteOrDepartment: row.site_or_department ? String(row.site_or_department) : null,
     lineTicketId: row.line_ticket_id ? String(row.line_ticket_id) : null,
     invoiceValidationStatus: row.invoice_validation_status as ExpenseLineItem["invoiceValidationStatus"],
+    financeReviewStatus: (row.finance_review_status ?? "Pending") as ExpenseLineItem["financeReviewStatus"],
+    financeReviewRemarks: row.finance_review_remarks ? String(row.finance_review_remarks) : null,
     billingAlertCreated: Boolean(row.billing_alert_created),
     siteId: row.site_id ? String(row.site_id) : null,
     missingReceiptFlag: Boolean(row.missing_receipt_flag),
@@ -150,6 +153,20 @@ function mapHoliday(row: Record<string, unknown>): Holiday {
     holidayDate: String(row.holiday_date),
     holidayName: String(row.holiday_name),
     isNational: Boolean(row.is_national)
+  };
+}
+
+function mapNotification(row: Record<string, unknown>): NotificationOutboxItem {
+  return {
+    notificationId: String(row.notification_id),
+    recipientEmployeeId: String(row.recipient_employee_id),
+    recipientEmail: String(row.recipient_email),
+    subject: String(row.subject),
+    body: String(row.body),
+    relatedClaimId: row.related_claim_id ? String(row.related_claim_id) : null,
+    status: row.status as NotificationOutboxItem["status"],
+    createdAt: String(row.created_at),
+    sentAt: row.sent_at ? String(row.sent_at) : null
   };
 }
 
@@ -534,6 +551,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
   async createClaim(input: CreateClaimRecord): Promise<ExpenseClaim> {
     const db = await getSupabaseAdminClient();
     const claim = defaultClaimRecord(input, randomUUID(), new Date().toISOString());
+    claim.ticketId = await this.nextTicketId(input.claimKind ?? "Reimbursement");
     const { data, error } = await db
       .from("expense_claims")
       .insert({
@@ -624,6 +642,47 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (error) throw error;
     await this.updateClaimTotal(claimId);
     return mapLineItem(data);
+  }
+
+  async reviewLineItem(
+    claimId: string,
+    lineItemId: string,
+    decision: "Accepted" | "Rejected",
+    remarks?: string | null
+  ): Promise<ExpenseLineItem> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_line_items")
+      .update({
+        finance_review_status: decision,
+        finance_review_remarks: remarks ?? null
+      })
+      .eq("claim_id", claimId)
+      .eq("line_item_id", lineItemId)
+      .eq("is_deleted", false)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapLineItem(data);
+  }
+
+  async invoiceReferenceExists(invoiceNumber: string, excludingLineItemId?: string): Promise<boolean> {
+    const db = await getSupabaseAdminClient();
+    let query = db
+      .from("expense_line_items")
+      .select("line_item_id")
+      .or(`client_invoice_number.eq.${invoiceNumber},vendor_invoice_number.eq.${invoiceNumber}`)
+      .eq("is_deleted", false)
+      .limit(1);
+
+    if (excludingLineItemId) {
+      query = query.neq("line_item_id", excludingLineItemId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data ?? []).length > 0;
   }
 
   async deleteLineItem(claimId: string, lineItemId: string): Promise<void> {
@@ -796,6 +855,19 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (error) throw error;
   }
 
+  async listNotifications(status = "Queued" as NotificationOutboxItem["status"]): Promise<NotificationOutboxItem[]> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("notification_outbox")
+      .select("*")
+      .eq("status", status)
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+    return (data ?? []).map(mapNotification);
+  }
+
   async listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]> {
     if (!["ClusterHead", "HOD", "MD"].includes(role)) {
       return [];
@@ -829,7 +901,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
   async listFinanceQueue(): Promise<FinanceQueueItem[]> {
     const db = await getSupabaseAdminClient();
-    const [{ data, error }, siteNames] = await Promise.all([
+    const [{ data, error }, siteNames, employees] = await Promise.all([
       db
         .from("expense_claims")
         .select("claim_id,ticket_id,claim_kind,submitter_employee_id,total_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
@@ -837,15 +909,18 @@ export class SupabaseClaimRepository implements ClaimRepository {
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
         .limit(50),
-      this.getSiteNameMap()
+      this.getSiteNameMap(),
+      this.listEmployees()
     ]);
 
     if (error) throw error;
     const claims = data ?? [];
     const lineStats = await this.getQueueLineStats(claims.map((row) => String(row.claim_id)));
+    const employeesById = new Map(employees.map((employee) => [employee.employeeId, employee]));
 
     const items: FinanceQueueItem[] = claims.map((claim) => {
       const claimId = String(claim.claim_id);
+      const submitter = employeesById.get(String(claim.submitter_employee_id));
       const stats = lineStats.get(claimId) ?? {
         lineItemCount: 0,
         missingReceiptCount: 0,
@@ -870,7 +945,11 @@ export class SupabaseClaimRepository implements ClaimRepository {
         physicalReceiptRequired: claim.claim_kind !== "Advance",
         physicalReceiptConfirmed: claim.claim_kind === "Advance" || Boolean(claim.physical_receipt_confirmed_at),
         hasPendingBillingItems: stats.pendingBillingItemCount > 0,
-        pendingBillingItemCount: stats.pendingBillingItemCount
+        pendingBillingItemCount: stats.pendingBillingItemCount,
+        bankAccountHolderName: submitter?.bankAccountHolderName ?? null,
+        bankAccountNumber: submitter?.bankAccountNumber ?? null,
+        bankIfsc: submitter?.bankIfsc ?? null,
+        bankName: submitter?.bankName ?? null
       };
     });
 
@@ -999,6 +1078,13 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     if (error) throw error;
     return mapClaim(data as ClaimRow);
+  }
+
+  private async nextTicketId(claimKind: ExpenseClaim["claimKind"]) {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db.rpc("next_claim_ticket_id", { claim_kind_input: claimKind });
+    if (error) throw error;
+    return String(data);
   }
 
   async reopenRejectedClaim(claimId: string): Promise<ExpenseClaim> {

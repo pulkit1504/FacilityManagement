@@ -223,6 +223,21 @@ export type PendingAdvanceItem = {
   advanceBalance: number;
   paidAt: string;
   ageDays: number;
+  settlementStatus: "Open" | "Aging" | "Overdue";
+  settlementStatusLabel: string;
+};
+
+export type AuditLogEntry = {
+  auditId: string;
+  claimId: string;
+  actorUserId: string;
+  actorName: string | null;
+  actionType: AuditActionType;
+  preActionStatus: string | null;
+  postActionStatus: string;
+  auditRemarks: string | null;
+  correlationId: string;
+  actionTimestamp: string;
 };
 
 export type BillingAlert = {

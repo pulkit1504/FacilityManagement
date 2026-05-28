@@ -67,7 +67,12 @@ type PendingAdvance = {
   ticketId: string;
   siteName: string | null;
   advanceAmount: number;
+  settledAmount: number;
   advanceBalance: number;
+  paidAt: string;
+  ageDays: number;
+  settlementStatus: "Open" | "Aging" | "Overdue";
+  settlementStatusLabel: string;
 };
 
 type SubmissionResult = {
@@ -149,6 +154,24 @@ export function ClaimWizard({
   const requiresBillableAmount = lineItem.expenseTag === "PendingBilling";
   const requiresSiteOrDepartment = lineItem.expenseTag === "ContractPartCost" || lineItem.expenseTag === "BackendCTC";
   const requiresProformaPeriod = submissionMode === "Proforma";
+  const selectedAdvance = useMemo(
+    () => pendingAdvances.find((advance) => advance.claimId === advanceClaimId) ?? null,
+    [advanceClaimId, pendingAdvances]
+  );
+  const savedLineTotal = useMemo(
+    () => savedLineItems.reduce((sum, item) => sum + item.amount, 0),
+    [savedLineItems]
+  );
+  const editingLineAmount = useMemo(
+    () => savedLineItems.find((item) => item.lineItemId === editingLineItemId)?.amount ?? 0,
+    [editingLineItemId, savedLineItems]
+  );
+  const settlementDraftTotalAfterLine = savedLineTotal - editingLineAmount + (Number(lineItem.amount) || 0);
+  const settlementBalanceAfterLine = selectedAdvance
+    ? selectedAdvance.advanceBalance - settlementDraftTotalAfterLine
+    : null;
+  const exceedsAdvanceBalance =
+    claimKind === "Settlement" && Boolean(selectedAdvance) && settlementDraftTotalAfterLine > selectedAdvance!.advanceBalance;
   const hasValidProformaPeriod =
     !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
   const canCreateDraft = Boolean(siteId && claimPeriodMonth) && hasValidProformaPeriod && (claimKind !== "Settlement" || Boolean(advanceClaimId));
@@ -178,8 +201,9 @@ export function ClaimWizard({
     if (requiresBillableAmount && (!lineItem.billableAmount || Number(lineItem.billableAmount) <= 0)) return false;
     if (requiresSite && !lineItem.siteId) return false;
     if (requiresSiteOrDepartment && !lineItem.siteOrDepartment) return false;
+    if (exceedsAdvanceBalance) return false;
     return true;
-  }, [lineItem, requiresBillableAmount, requiresInvoice, requiresSite, requiresSiteOrDepartment]);
+  }, [exceedsAdvanceBalance, lineItem, requiresBillableAmount, requiresInvoice, requiresSite, requiresSiteOrDepartment]);
 
   useEffect(() => {
     async function loadSites() {
@@ -631,6 +655,32 @@ export function ClaimWizard({
           </p>
         ) : null}
         {claimId ? <p className="muted" style={{ marginTop: 12 }}>Draft ID: {claimId}</p> : null}
+        {claimKind === "Settlement" && selectedAdvance ? (
+          <div className="settlement-summary" style={{ marginTop: 12 }}>
+            <div>
+              <span className="muted">Advance</span>
+              <strong>{selectedAdvance.ticketId}</strong>
+            </div>
+            <div>
+              <span className="muted">Original</span>
+              <strong>Rs {selectedAdvance.advanceAmount.toLocaleString("en-IN")}</strong>
+            </div>
+            <div>
+              <span className="muted">Settled</span>
+              <strong>Rs {selectedAdvance.settledAmount.toLocaleString("en-IN")}</strong>
+            </div>
+            <div>
+              <span className="muted">Open balance</span>
+              <strong>Rs {selectedAdvance.advanceBalance.toLocaleString("en-IN")}</strong>
+            </div>
+            <div>
+              <span className="muted">Age</span>
+              <span className={`badge ${selectedAdvance.settlementStatus === "Overdue" ? "danger" : selectedAdvance.settlementStatus === "Aging" ? "warning" : "success"}`}>
+                {selectedAdvance.ageDays} days · {selectedAdvance.settlementStatusLabel}
+              </span>
+            </div>
+          </div>
+        ) : null}
         {isReturned ? (
           <div className="return-panel" style={{ marginTop: 12 }}>
             <strong>Returned for correction</strong>
@@ -765,6 +815,13 @@ export function ClaimWizard({
                 </button>
               ) : null}
             </div>
+            {claimKind === "Settlement" && selectedAdvance ? (
+              <p className="muted" style={{ marginTop: 10 }}>
+                Settlement draft total after this line: Rs {settlementDraftTotalAfterLine.toLocaleString("en-IN")}.
+                {" "}Remaining advance balance: Rs {Math.max(0, settlementBalanceAfterLine ?? selectedAdvance.advanceBalance).toLocaleString("en-IN")}.
+                {exceedsAdvanceBalance ? " This line exceeds the open advance balance." : ""}
+              </p>
+            ) : null}
           </section>
           ) : null}
 

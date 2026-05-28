@@ -183,6 +183,19 @@ export class FinanceService {
       }
     }
 
+    if (claim.claimKind === "Settlement") {
+      const advance = claim.advanceClaimId ? await this.claims.getClaimDetail(claim.advanceClaimId) : null;
+      if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
+        throw conflict("Settlement claims must be linked to a paid advance.");
+      }
+
+      if (claim.totalAmount > advance.advanceBalance) {
+        throw conflict("Settlement amount cannot be greater than the current open advance balance.", {
+          errors: [`Current open advance balance is Rs ${advance.advanceBalance.toLocaleString("en-IN")}.`]
+        });
+      }
+    }
+
     const updated = await this.claims.submitClaim(claimId, "PaymentReleased");
     await this.claims.applySettlementToAdvance(claimId);
     await this.createBillingAlertsForClaim(claimId, user);

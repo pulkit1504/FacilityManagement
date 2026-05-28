@@ -3,6 +3,7 @@ import { notFound } from "../errors/application-error";
 import type {
   ApprovalStep,
   ApprovalQueueItem,
+  AuditLogEntry,
   BillableClaimReportRow,
   BillingAlert,
   BillingAlertQueueItem,
@@ -167,6 +168,22 @@ function mapNotification(row: Record<string, unknown>): NotificationOutboxItem {
     status: row.status as NotificationOutboxItem["status"],
     createdAt: String(row.created_at),
     sentAt: row.sent_at ? String(row.sent_at) : null
+  };
+}
+
+function mapAuditLog(row: Record<string, unknown>, actorNames: Map<string, string>): AuditLogEntry {
+  const actorUserId = String(row.actor_user_id);
+  return {
+    auditId: String(row.log_id),
+    claimId: String(row.claim_id),
+    actorUserId,
+    actorName: actorNames.get(actorUserId) ?? null,
+    actionType: row.action_type as AuditLogEntry["actionType"],
+    preActionStatus: row.pre_action_status ? String(row.pre_action_status) : null,
+    postActionStatus: String(row.post_action_status),
+    auditRemarks: row.audit_remarks ? String(row.audit_remarks) : null,
+    correlationId: String(row.correlation_id),
+    actionTimestamp: String(row.action_timestamp)
   };
 }
 
@@ -855,6 +872,23 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (error) throw error;
   }
 
+  async listAuditLogForClaim(claimId: string): Promise<AuditLogEntry[]> {
+    const db = await getSupabaseAdminClient();
+    const [{ data, error }, employees] = await Promise.all([
+      db
+        .from("audit_log")
+        .select("*")
+        .eq("claim_id", claimId)
+        .order("action_timestamp", { ascending: true }),
+      this.listEmployees()
+    ]);
+
+    if (error) throw error;
+
+    const actorNames = new Map(employees.map((employee) => [employee.employeeId, employee.fullName]));
+    return (data ?? []).map((row) => mapAuditLog(row, actorNames));
+  }
+
   async listNotifications(status = "Queued" as NotificationOutboxItem["status"]): Promise<NotificationOutboxItem[]> {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db
@@ -978,6 +1012,8 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return (data ?? []).map((row) => {
       const paidAt = String(row.updated_at);
       const siteId = row.site_id ? String(row.site_id) : null;
+      const ageDays = Math.max(0, Math.floor((Date.now() - new Date(paidAt).getTime()) / 86_400_000));
+      const settlementStatus = ageDays > 30 ? "Overdue" : ageDays >= 15 ? "Aging" : "Open";
       return {
         claimId: String(row.claim_id),
         ticketId: row.ticket_id ? String(row.ticket_id) : `ADV-${String(row.claim_id).slice(0, 8).toUpperCase()}`,
@@ -988,7 +1024,10 @@ export class SupabaseClaimRepository implements ClaimRepository {
         settledAmount: Number(row.settled_amount),
         advanceBalance: Number(row.advance_balance),
         paidAt,
-        ageDays: Math.max(0, Math.floor((Date.now() - new Date(paidAt).getTime()) / 86_400_000))
+        ageDays,
+        settlementStatus,
+        settlementStatusLabel:
+          settlementStatus === "Overdue" ? "Overdue settlement" : settlementStatus === "Aging" ? "Aging settlement" : "Open settlement"
       };
     });
   }

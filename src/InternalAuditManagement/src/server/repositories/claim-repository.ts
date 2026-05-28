@@ -2,6 +2,7 @@ import type {
   ApprovalStep,
   ApprovalQueueItem,
   AuditActionType,
+  AuditLogEntry,
   BillingAlert,
   BillingAlertQueueItem,
   BillableClaimReportRow,
@@ -91,6 +92,7 @@ export interface ClaimRepository {
   updateClaimTotal(claimId: string): Promise<void>;
   createApprovalSteps(steps: Omit<ApprovalStep, "stepId" | "decision" | "decisionAt" | "remarks">[]): Promise<void>;
   appendAuditLog(input: AuditLogInput): Promise<void>;
+  listAuditLogForClaim(claimId: string): Promise<AuditLogEntry[]>;
   getEmployee(employeeId: string): Promise<Employee | null>;
   getEmployeeByEmail(email: string): Promise<Employee | null>;
   authenticateEmployee(email: string, password: string): Promise<Employee | null>;

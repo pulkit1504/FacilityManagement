@@ -34,8 +34,8 @@ export class ClaimService {
   }
 
   async createClaim(input: CreateClaimInput, user: UserContext) {
-    if (!["Claimant", "HOD"].includes(user.role)) {
-      throw forbidden("Only claimants and HODs can create expense claims.");
+    if (!["Claimant", "ClusterHead", "HOD"].includes(user.role)) {
+      throw forbidden("Only claimants, Cluster Heads, and HODs can create expense claims.");
     }
 
     const claim = await this.claims.createClaim({
@@ -89,7 +89,7 @@ export class ClaimService {
   }
 
   async listPendingAdvances(user: UserContext) {
-    if (!["Claimant", "HOD", "Finance", "FinanceHOD"].includes(user.role)) {
+    if (!["Claimant", "ClusterHead", "HOD", "Finance", "FinanceHOD"].includes(user.role)) {
       throw forbidden("You do not have access to imprest advances.");
     }
 
@@ -101,8 +101,8 @@ export class ClaimService {
   }
 
   async createAdvanceRequest(input: CreateAdvanceRequestInput, user: UserContext) {
-    if (!["Claimant", "HOD"].includes(user.role)) {
-      throw forbidden("Only claimants and HODs can request an advance.");
+    if (!["Claimant", "ClusterHead", "HOD"].includes(user.role)) {
+      throw forbidden("Only claimants, Cluster Heads, and HODs can request an advance.");
     }
 
     const employee = await this.claims.getEmployee(user.userId);
@@ -324,7 +324,17 @@ export class ClaimService {
     } else if (submitter.directManagerId) {
       const manager = await this.claims.getEmployee(submitter.directManagerId);
       if (manager) {
-        addStep(manager.role === "MD" ? "MD" : "HOD", manager);
+        if (manager.role === "ClusterHead") {
+          addStep("ClusterHead", manager);
+          if (manager.directManagerId) {
+            const hodManager = await this.claims.getEmployee(manager.directManagerId);
+            if (hodManager) {
+              addStep(hodManager.role === "MD" ? "MD" : "HOD", hodManager);
+            }
+          }
+        } else {
+          addStep(manager.role === "MD" ? "MD" : "HOD", manager);
+        }
       }
     }
 

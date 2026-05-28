@@ -6,12 +6,16 @@ import { timeAsync } from "../observability/performance";
 type SecretName =
   | "SUPABASE_URL"
   | "SUPABASE_SERVICE_ROLE_KEY"
-  | "AZURE_STORAGE_CONNECTION_STRING";
+  | "AZURE_STORAGE_CONNECTION_STRING"
+  | "RESEND_API_KEY"
+  | "NOTIFICATION_FROM_EMAIL";
 
 const keyVaultNameMap: Record<SecretName, string> = {
   SUPABASE_URL: "Supabase-Url",
   SUPABASE_SERVICE_ROLE_KEY: "Supabase-ServiceRoleKey",
-  AZURE_STORAGE_CONNECTION_STRING: "fmsstorage-connectionstring"
+  AZURE_STORAGE_CONNECTION_STRING: "fmsstorage-connectionstring",
+  RESEND_API_KEY: "Resend-ApiKey",
+  NOTIFICATION_FROM_EMAIL: "Notification-FromEmail"
 };
 
 const cache = new Map<SecretName, Promise<string>>();
@@ -26,6 +30,14 @@ export async function getRequiredSecret(name: SecretName): Promise<string> {
   const secretPromise = resolveSecret(name);
   cache.set(name, secretPromise);
   return secretPromise;
+}
+
+export async function getOptionalSecret(name: SecretName): Promise<string | null> {
+  try {
+    return await getRequiredSecret(name);
+  } catch {
+    return null;
+  }
 }
 
 async function resolveSecret(name: SecretName): Promise<string> {

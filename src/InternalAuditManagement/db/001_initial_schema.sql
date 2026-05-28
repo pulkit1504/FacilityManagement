@@ -193,6 +193,10 @@ create table if not exists notification_outbox (
   body text not null,
   related_claim_id uuid references expense_claims(claim_id),
   status text not null default 'Queued' check (status in ('Queued', 'Sent', 'Failed')),
+  delivery_attempts integer not null default 0,
+  last_attempt_at timestamptz,
+  last_error text,
+  provider_message_id text,
   created_at timestamptz not null default now(),
   sent_at timestamptz
 );

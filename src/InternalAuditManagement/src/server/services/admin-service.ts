@@ -1,10 +1,14 @@
 import { forbidden } from "../errors/application-error";
 import type { UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
+import type { NotificationService } from "./notification-service";
 import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
 
 export class AdminService {
-  constructor(private readonly claims: ClaimRepository) {}
+  constructor(
+    private readonly claims: ClaimRepository,
+    private readonly notifications: NotificationService
+  ) {}
 
   async listMasterData(user: UserContext) {
     this.assertAdmin(user);
@@ -87,11 +91,14 @@ export class AdminService {
   }
 
   async listNotifications(user: UserContext) {
-    this.assertAdmin(user);
-    const items = await this.claims.listNotifications("Queued");
+    return this.notifications.listNotifications(user);
+  }
+
+  async deliverNotifications(user: UserContext) {
+    const result = await this.notifications.deliverQueued(user);
     return {
-      items,
-      totalCount: items.length
+      ...result,
+      message: `Notification delivery attempted for ${result.attempted} item(s). Sent ${result.sent}, failed ${result.failed}.`
     };
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, CalendarPlus, Loader2, Plus, PowerOff, UserPlus, X } from "lucide-react";
+import { Building2, CalendarPlus, Loader2, MailCheck, Plus, PowerOff, UserPlus, X } from "lucide-react";
 
 type Contract = {
   contractId: string;
@@ -52,7 +52,12 @@ type NotificationItem = {
   subject: string;
   relatedClaimId: string | null;
   status: "Queued" | "Sent" | "Failed";
+  deliveryAttempts: number;
+  lastAttemptAt: string | null;
+  lastError: string | null;
+  providerMessageId: string | null;
   createdAt: string;
+  sentAt: string | null;
 };
 
 const today = new Date().toISOString().slice(0, 10);
@@ -247,6 +252,19 @@ export function SiteContractAdmin() {
       if (response.ok) {
         await load();
       }
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function deliverNotifications() {
+    setBusyAction("notifications:deliver");
+    setMessage("Delivering queued notifications...");
+    try {
+      const response = await fetch("/api/v1/admin/notifications", { method: "POST" });
+      const data = await response.json();
+      setMessage(data.message ?? data.detail ?? "Notification delivery attempted.");
+      await load();
     } finally {
       setBusyAction(null);
     }
@@ -535,28 +553,50 @@ export function SiteContractAdmin() {
       </section>
 
       <section className="panel">
-        <h2>Queued Notifications</h2>
+        <div className="topbar" style={{ marginBottom: 12 }}>
+          <h2>Notification Delivery</h2>
+          <button className="button secondary" disabled={busyAction !== null} onClick={() => void deliverNotifications()} type="button">
+            {busyAction === "notifications:deliver" ? <Loader2 size={18} /> : <MailCheck size={18} />}
+            Deliver queued
+          </button>
+        </div>
         <table className="table">
           <thead>
             <tr>
               <th>Recipient</th>
               <th>Subject</th>
+              <th>Status</th>
+              <th>Attempts</th>
               <th>Claim</th>
-              <th>Created</th>
+              <th>Last activity</th>
             </tr>
           </thead>
           <tbody>
             {notifications.map((notification) => (
               <tr key={notification.notificationId}>
                 <td>{notification.recipientEmail}</td>
-                <td>{notification.subject}</td>
+                <td>
+                  {notification.subject}
+                  {notification.lastError ? (
+                    <>
+                      <br />
+                      <span className="muted">{notification.lastError}</span>
+                    </>
+                  ) : null}
+                </td>
+                <td>
+                  <span className={`badge ${notification.status === "Sent" ? "success" : notification.status === "Failed" ? "danger" : "warning"}`}>
+                    {notification.status}
+                  </span>
+                </td>
+                <td>{notification.deliveryAttempts}</td>
                 <td>{notification.relatedClaimId ?? "N/A"}</td>
-                <td>{new Date(notification.createdAt).toLocaleString("en-IN")}</td>
+                <td>{new Date(notification.sentAt ?? notification.lastAttemptAt ?? notification.createdAt).toLocaleString("en-IN")}</td>
               </tr>
             ))}
             {notifications.length === 0 ? (
               <tr>
-                <td colSpan={4}>No queued notifications.</td>
+                <td colSpan={6}>No notifications found.</td>
               </tr>
             ) : null}
           </tbody>

@@ -166,6 +166,10 @@ function mapNotification(row: Record<string, unknown>): NotificationOutboxItem {
     body: String(row.body),
     relatedClaimId: row.related_claim_id ? String(row.related_claim_id) : null,
     status: row.status as NotificationOutboxItem["status"],
+    deliveryAttempts: Number(row.delivery_attempts ?? 0),
+    lastAttemptAt: row.last_attempt_at ? String(row.last_attempt_at) : null,
+    lastError: row.last_error ? String(row.last_error) : null,
+    providerMessageId: row.provider_message_id ? String(row.provider_message_id) : null,
     createdAt: String(row.created_at),
     sentAt: row.sent_at ? String(row.sent_at) : null
   };
@@ -857,17 +861,63 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return this.getEmployee(String(employee.employee_id));
   }
 
-  async enqueueNotification(input: NotificationOutboxInput): Promise<void> {
+  async enqueueNotification(input: NotificationOutboxInput): Promise<NotificationOutboxItem> {
     const db = await getSupabaseAdminClient();
-    const { error } = await db.from("notification_outbox").insert({
-      notification_id: randomUUID(),
-      recipient_employee_id: input.recipientEmployeeId,
-      recipient_email: input.recipientEmail,
-      subject: input.subject,
-      body: input.body,
-      related_claim_id: input.relatedClaimId,
-      status: "Queued"
-    });
+    const { data, error } = await db
+      .from("notification_outbox")
+      .insert({
+        notification_id: randomUUID(),
+        recipient_employee_id: input.recipientEmployeeId,
+        recipient_email: input.recipientEmail,
+        subject: input.subject,
+        body: input.body,
+        related_claim_id: input.relatedClaimId,
+        status: "Queued"
+      })
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapNotification(data);
+  }
+
+  async listNotifications(status = "Queued" as NotificationOutboxItem["status"] | "All"): Promise<NotificationOutboxItem[]> {
+    const db = await getSupabaseAdminClient();
+    let query = db
+      .from("notification_outbox")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (status !== "All") {
+      query = query.eq("status", status);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data ?? []).map(mapNotification);
+  }
+
+  async markNotificationSent(notificationId: string, providerMessageId: string | null): Promise<void> {
+    const db = await getSupabaseAdminClient();
+    const { data: current, error: readError } = await db
+      .from("notification_outbox")
+      .select("delivery_attempts")
+      .eq("notification_id", notificationId)
+      .single();
+    if (readError) throw readError;
+
+    const { error } = await db
+      .from("notification_outbox")
+      .update({
+        status: "Sent",
+        delivery_attempts: Number(current?.delivery_attempts ?? 0) + 1,
+        last_attempt_at: new Date().toISOString(),
+        last_error: null,
+        provider_message_id: providerMessageId,
+        sent_at: new Date().toISOString()
+      })
+      .eq("notification_id", notificationId);
 
     if (error) throw error;
   }
@@ -889,17 +939,26 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return (data ?? []).map((row) => mapAuditLog(row, actorNames));
   }
 
-  async listNotifications(status = "Queued" as NotificationOutboxItem["status"]): Promise<NotificationOutboxItem[]> {
+  async markNotificationFailed(notificationId: string, errorMessage: string): Promise<void> {
     const db = await getSupabaseAdminClient();
-    const { data, error } = await db
+    const { data: current, error: readError } = await db
       .from("notification_outbox")
-      .select("*")
-      .eq("status", status)
-      .order("created_at", { ascending: false })
-      .limit(100);
+      .select("delivery_attempts")
+      .eq("notification_id", notificationId)
+      .single();
+    if (readError) throw readError;
+
+    const { error } = await db
+      .from("notification_outbox")
+      .update({
+        status: "Failed",
+        delivery_attempts: Number(current?.delivery_attempts ?? 0) + 1,
+        last_attempt_at: new Date().toISOString(),
+        last_error: errorMessage.slice(0, 1000)
+      })
+      .eq("notification_id", notificationId);
 
     if (error) throw error;
-    return (data ?? []).map(mapNotification);
   }
 
   async listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]> {

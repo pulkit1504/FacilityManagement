@@ -1,10 +1,14 @@
 import { conflict, forbidden, notFound } from "../errors/application-error";
 import { statusLabel, type UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
+import type { NotificationService } from "./notification-service";
 import type { ApproveClaimInput, RejectClaimInput } from "../validation/claim.schemas";
 
 export class ApprovalService {
-  constructor(private readonly claims: ClaimRepository) {}
+  constructor(
+    private readonly claims: ClaimRepository,
+    private readonly notifications: NotificationService
+  ) {}
 
   async listQueue(user: UserContext) {
     if (!["ClusterHead", "HOD", "MD"].includes(user.role)) {
@@ -60,7 +64,7 @@ export class ApprovalService {
       if (nextOperationalStep.assignedApproverId) {
         const nextApprover = await this.claims.getEmployee(nextOperationalStep.assignedApproverId);
         if (nextApprover) {
-          await this.claims.enqueueNotification({
+          await this.notifications.enqueueAndSend({
             recipientEmployeeId: nextApprover.employeeId,
             recipientEmail: nextApprover.email,
             subject: `Claim ${claim.ticketId} is pending your approval`,
@@ -101,7 +105,7 @@ export class ApprovalService {
     const financeRecipients = employees.filter((employee) => ["Finance", "FinanceHOD"].includes(employee.role));
     await Promise.all(
       financeRecipients.map((employee) =>
-        this.claims.enqueueNotification({
+        this.notifications.enqueueAndSend({
           recipientEmployeeId: employee.employeeId,
           recipientEmail: employee.email,
           subject: `Claim ${claim.ticketId} is ready for Finance review`,
@@ -150,7 +154,7 @@ export class ApprovalService {
 
     const submitter = await this.claims.getEmployee(claim.submitterEmployeeId);
     if (submitter) {
-      await this.claims.enqueueNotification({
+      await this.notifications.enqueueAndSend({
         recipientEmployeeId: submitter.employeeId,
         recipientEmail: submitter.email,
         subject: `Claim ${claim.ticketId} was returned`,

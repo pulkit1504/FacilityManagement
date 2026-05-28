@@ -11,3 +11,12 @@ export async function GET() {
     return toProblemResponse(error, user.correlationId);
   }
 }
+
+export async function POST() {
+  const user = await getUserContext();
+  try {
+    return NextResponse.json(await getAdminService().deliverNotifications(user));
+  } catch (error) {
+    return toProblemResponse(error, user.correlationId);
+  }
+}

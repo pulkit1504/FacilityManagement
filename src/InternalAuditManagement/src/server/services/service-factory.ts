@@ -6,6 +6,7 @@ import { ClaimService } from "./claim-service";
 import { DashboardService } from "./dashboard-service";
 import { FinanceService } from "./finance-service";
 import { FraudService } from "./fraud-service";
+import { NotificationService } from "./notification-service";
 import { ReceiptService } from "./receipt-service";
 import { AzureBlobFileStorageService } from "../storage/file-storage-service";
 import { instrumentAsyncMethods } from "../observability/performance";
@@ -17,6 +18,7 @@ let billingService: BillingService | null = null;
 let dashboardService: DashboardService | null = null;
 let financeService: FinanceService | null = null;
 let fraudService: FraudService | null = null;
+let notificationService: NotificationService | null = null;
 let receiptService: ReceiptService | null = null;
 let repository: SupabaseClaimRepository | null = null;
 let fileStorage: AzureBlobFileStorageService | null = null;
@@ -28,19 +30,19 @@ export function getRepository() {
 
 export function getClaimService() {
   if (!claimService) {
-    claimService = instrumentAsyncMethods(new ClaimService(getRepository()), "service.claim");
+    claimService = instrumentAsyncMethods(new ClaimService(getRepository(), getNotificationService()), "service.claim");
   }
 
   return claimService;
 }
 
 export function getApprovalService() {
-  approvalService ??= instrumentAsyncMethods(new ApprovalService(getRepository()), "service.approval");
+  approvalService ??= instrumentAsyncMethods(new ApprovalService(getRepository(), getNotificationService()), "service.approval");
   return approvalService;
 }
 
 export function getAdminService() {
-  adminService ??= instrumentAsyncMethods(new AdminService(getRepository()), "service.admin");
+  adminService ??= instrumentAsyncMethods(new AdminService(getRepository(), getNotificationService()), "service.admin");
   return adminService;
 }
 
@@ -62,6 +64,11 @@ export function getFinanceService() {
 export function getFraudService() {
   fraudService ??= instrumentAsyncMethods(new FraudService(getRepository()), "service.fraud");
   return fraudService;
+}
+
+export function getNotificationService() {
+  notificationService ??= instrumentAsyncMethods(new NotificationService(getRepository()), "service.notification");
+  return notificationService;
 }
 
 export function getReceiptService() {

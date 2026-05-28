@@ -1,7 +1,7 @@
 import { conflict, forbidden, notFound } from "../errors/application-error";
 import { statusLabel, type UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
-import type { ConfirmPhysicalReceiptInput } from "../validation/claim.schemas";
+import type { ConfirmPhysicalReceiptInput, FinanceLineReviewInput } from "../validation/claim.schemas";
 
 export class FinanceService {
   constructor(private readonly claims: ClaimRepository) {}
@@ -25,9 +25,9 @@ export class FinanceService {
     };
   }
 
-  async exportImprestLedger(user: UserContext) {
+  async exportImprestLedger(user: UserContext, filters: ReportFilters = {}) {
     this.assertFinance(user);
-    const rows = await this.claims.listImprestLedgerReport();
+    const rows = (await this.claims.listImprestLedgerReport()).filter((row) => matchesReportFilters(row, filters, row.paidAt));
     return toCsv(
       ["Ticket", "Claimant", "Site", "Advance Amount", "Settled Amount", "Open Balance", "Status", "Paid At"],
       rows.map((row) => [
@@ -43,9 +43,9 @@ export class FinanceService {
     );
   }
 
-  async exportBillableClaims(user: UserContext) {
+  async exportBillableClaims(user: UserContext, filters: ReportFilters = {}) {
     this.assertFinance(user);
-    const rows = await this.claims.listBillableClaimReport();
+    const rows = (await this.claims.listBillableClaimReport()).filter((row) => matchesReportFilters(row, filters, row.transactionDate));
     return toCsv(
       [
         "Ticket",
@@ -123,18 +123,64 @@ export class FinanceService {
     };
   }
 
+  async reviewLineItem(claimId: string, lineItemId: string, input: FinanceLineReviewInput, user: UserContext) {
+    this.assertFinance(user);
+
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) throw notFound("Claim was not found.");
+
+    if (!["HodApproved", "MdApproved", "FinanceConfirmed"].includes(claim.status)) {
+      throw conflict("Line items can be reviewed only after operational approval.");
+    }
+
+    const lineItem = claim.lineItems.find((item) => item.lineItemId === lineItemId);
+    if (!lineItem) throw notFound("Line item was not found on this claim.");
+
+    const updated = await this.claims.reviewLineItem(claimId, lineItemId, input.decision, input.remarks ?? null);
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: input.decision === "Accepted" ? "FINANCE_LINE_ACCEPT" : "FINANCE_LINE_REJECT",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks: input.remarks ?? `${input.decision} line item ${lineItemId}`,
+      correlationId: user.correlationId
+    });
+
+    return {
+      lineItemId: updated.lineItemId,
+      financeReviewStatus: updated.financeReviewStatus,
+      financeReviewRemarks: updated.financeReviewRemarks,
+      message: input.decision === "Accepted" ? "Line item accepted." : "Line item rejected. Return the claim to claimant for correction."
+    };
+  }
+
   async releasePayment(claimId: string, user: UserContext) {
     this.assertFinance(user);
 
     const claim = await this.claims.getClaimDetail(claimId);
     if (!claim) throw notFound("Claim was not found.");
 
-    if (claim.status !== "FinanceConfirmed") {
+    if (claim.claimKind === "Advance" && ["HodApproved", "MdApproved"].includes(claim.status)) {
+      const step = await this.claims.getPendingApprovalStep(claimId);
+      if (step?.requiredApproverRole === "Finance") {
+        await this.claims.decideApprovalStep(step.stepId, "Approved", "Advance released without physical receipt gate.");
+      }
+    } else if (claim.status !== "FinanceConfirmed") {
       throw conflict("Only Finance-confirmed claims can be released for payment.");
     }
 
     if (claim.claimKind !== "Advance" && !claim.physicalReceiptConfirmedAt) {
       throw conflict("Physical receipt confirmation is required before payment can be released.");
+    }
+
+    if (claim.claimKind !== "Advance") {
+      const unaccepted = claim.lineItems.filter((item) => item.financeReviewStatus !== "Accepted");
+      if (unaccepted.length > 0) {
+        throw conflict("All line items must be accepted by Finance before payment release.", {
+          errors: [`${unaccepted.length} line item(s) still need Finance acceptance.`]
+        });
+      }
     }
 
     const updated = await this.claims.submitClaim(claimId, "PaymentReleased");
@@ -188,6 +234,19 @@ export class FinanceService {
       }
     }
   }
+}
+
+type ReportFilters = {
+  site?: string | null;
+  claimant?: string | null;
+  month?: string | null;
+};
+
+function matchesReportFilters(row: { siteName: string | null; claimantName: string }, filters: ReportFilters, dateValue?: string | null) {
+  if (filters.site && row.siteName !== filters.site) return false;
+  if (filters.claimant && row.claimantName !== filters.claimant) return false;
+  if (filters.month && (!dateValue || !dateValue.startsWith(filters.month))) return false;
+  return true;
 }
 
 function toCsv(headers: string[], rows: Array<Array<string | number>>) {

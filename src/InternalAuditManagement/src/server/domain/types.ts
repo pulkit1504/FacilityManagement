@@ -48,6 +48,8 @@ export const auditActionTypes = [
   "HOD_APPROVE",
   "MD_APPROVE",
   "FINANCE_CONFIRM",
+  "FINANCE_LINE_ACCEPT",
+  "FINANCE_LINE_REJECT",
   "PHYSICAL_RECEIPT_CONFIRM",
   "PAYMENT_RELEASE",
   "REJECT",
@@ -148,6 +150,8 @@ export type ExpenseLineItem = {
   siteOrDepartment: string | null;
   lineTicketId: string | null;
   invoiceValidationStatus: "Valid" | "Invalid" | "NotApplicable" | "PendingErpValidation";
+  financeReviewStatus: "Pending" | "Accepted" | "Rejected";
+  financeReviewRemarks: string | null;
   billingAlertCreated: boolean;
   siteId: string | null;
   missingReceiptFlag: boolean;
@@ -202,6 +206,10 @@ export type FinanceQueueItem = ApprovalQueueItem & {
   physicalReceiptConfirmed: boolean;
   hasPendingBillingItems: boolean;
   pendingBillingItemCount: number;
+  bankAccountHolderName: string | null;
+  bankAccountNumber: string | null;
+  bankIfsc: string | null;
+  bankName: string | null;
 };
 
 export type PendingAdvanceItem = {
@@ -329,6 +337,18 @@ export type NotificationOutboxInput = {
   subject: string;
   body: string;
   relatedClaimId: string | null;
+};
+
+export type NotificationOutboxItem = {
+  notificationId: string;
+  recipientEmployeeId: string;
+  recipientEmail: string;
+  subject: string;
+  body: string;
+  relatedClaimId: string | null;
+  status: "Queued" | "Sent" | "Failed";
+  createdAt: string;
+  sentAt: string | null;
 };
 
 export function statusLabel(status: ClaimStatus): string {

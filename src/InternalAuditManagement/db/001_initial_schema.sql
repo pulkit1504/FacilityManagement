@@ -1,5 +1,37 @@
 create extension if not exists "pgcrypto";
 
+create table if not exists ticket_counters (
+  ticket_prefix text primary key,
+  last_number integer not null default 0
+);
+
+create or replace function next_claim_ticket_id(claim_kind_input text)
+returns text
+language plpgsql
+as $$
+declare
+  prefix text;
+  next_number integer;
+begin
+  prefix := case claim_kind_input
+    when 'Advance' then 'ADV'
+    when 'Settlement' then 'SET'
+    else 'EXP'
+  end;
+
+  insert into ticket_counters(ticket_prefix, last_number)
+  values (prefix, 0)
+  on conflict (ticket_prefix) do nothing;
+
+  update ticket_counters
+  set last_number = last_number + 1
+  where ticket_prefix = prefix
+  returning last_number into next_number;
+
+  return prefix || '-' || lpad(next_number::text, 6, '0');
+end;
+$$;
+
 create table if not exists employees (
   employee_id text primary key,
   full_name text not null,
@@ -39,7 +71,7 @@ create table if not exists sites (
 
 create table if not exists expense_claims (
   claim_id uuid primary key default gen_random_uuid(),
-  ticket_id text not null unique default ('EXP-' || to_char(now(), 'YYMMDD') || '-' || upper(left(gen_random_uuid()::text, 4))),
+  ticket_id text not null unique default next_claim_ticket_id('Reimbursement'),
   submitter_employee_id text not null references employees(employee_id),
   claim_kind text not null default 'Reimbursement' check (claim_kind in ('Advance', 'Settlement', 'Reimbursement')),
   submission_mode text not null check (submission_mode in ('SingleVoucher', 'Proforma')),
@@ -85,6 +117,8 @@ create table if not exists expense_line_items (
   invoice_validation_status text not null default 'NotApplicable' check (
     invoice_validation_status in ('Valid', 'Invalid', 'NotApplicable', 'PendingErpValidation')
   ),
+  finance_review_status text not null default 'Pending' check (finance_review_status in ('Pending', 'Accepted', 'Rejected')),
+  finance_review_remarks text,
   billing_alert_created boolean not null default false,
   site_id text references sites(site_id),
   missing_receipt_flag boolean not null default true,
@@ -188,6 +222,8 @@ create index if not exists ix_audit_log_claim_id on audit_log(claim_id);
 create index if not exists ix_audit_log_timestamp on audit_log(action_timestamp desc);
 create index if not exists ix_billing_alerts_next_send on billing_alerts(next_send_at) where is_resolved = false;
 create index if not exists ix_line_items_date_amount on expense_line_items(transaction_date, amount) where is_deleted = false;
+create index if not exists ix_line_items_finance_review on expense_line_items(finance_review_status) where is_deleted = false;
+create unique index if not exists ux_line_items_client_invoice_number on expense_line_items(lower(client_invoice_number)) where client_invoice_number is not null and is_deleted = false;
 create index if not exists ix_employees_manager on employees(direct_manager_id) where is_active = true;
 create index if not exists ix_employees_imprest_limit on employees(imprest_advance_limit) where is_active = true and imprest_advance_limit > 0;
 create index if not exists ix_sites_cluster_head on sites(cluster_head_employee_id) where is_active = true;

@@ -66,7 +66,7 @@ export class ReceiptService {
     const claim = await this.claims.getClaimDetail(input.claimId);
     if (!claim) throw notFound("Claim was not found.");
 
-    if (claim.submitterEmployeeId !== user.userId && !["HOD", "MD", "Finance", "FinanceHOD"].includes(user.role)) {
+    if (claim.submitterEmployeeId !== user.userId && !["ClusterHead", "HOD", "MD", "Finance", "FinanceHOD"].includes(user.role)) {
       throw forbidden("You do not have access to this receipt.");
     }
 

@@ -127,6 +127,19 @@ export const rejectClaimSchema = z.object({
   reason: z.string().trim().min(5).max(1000)
 });
 
+export const financeLineReviewSchema = z.object({
+  decision: z.enum(["Accepted", "Rejected"]),
+  remarks: z.string().trim().max(1000).nullable().optional()
+}).superRefine((value, ctx) => {
+  if (value.decision === "Rejected" && !value.remarks) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["remarks"],
+      message: "Remarks are required when rejecting a line item."
+    });
+  }
+});
+
 export const confirmPhysicalReceiptSchema = z.object({
   physicalReceiptDate: z.string().date(),
   physicalReceiptTime: z.string().regex(/^\d{2}:\d{2}$/),
@@ -181,6 +194,7 @@ export const createHolidaySchema = z.object({
 
 export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
 export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
+export type FinanceLineReviewInput = z.infer<typeof financeLineReviewSchema>;
 export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptSchema>;
 export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;
 export type ReviewFraudFlagInput = z.infer<typeof reviewFraudFlagSchema>;

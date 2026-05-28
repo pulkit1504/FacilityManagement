@@ -13,6 +13,10 @@ type FinanceItem = {
   physicalReceiptRequired: boolean;
   physicalReceiptConfirmed: boolean;
   pendingBillingItemCount: number;
+  bankAccountHolderName: string | null;
+  bankAccountNumber: string | null;
+  bankIfsc: string | null;
+  bankName: string | null;
 };
 
 type PendingAdvance = {
@@ -32,6 +36,8 @@ type ClaimReceiptDetail = {
     description: string;
     amount: number;
     missingReceiptFlag: boolean;
+    financeReviewStatus: "Pending" | "Accepted" | "Rejected";
+    financeReviewRemarks: string | null;
     attachments: Array<{
       attachmentId: string;
       originalFileName: string;
@@ -49,6 +55,7 @@ export function FinanceQueue() {
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [reportMonth, setReportMonth] = useState("");
 
   async function load() {
     try {
@@ -159,17 +166,87 @@ export function FinanceQueue() {
     }
   }
 
+  async function reviewLine(claimId: string, lineItemId: string, decision: "Accepted" | "Rejected") {
+    const remarks = decision === "Rejected" ? window.prompt("Reason for rejecting this line item") : "";
+    if (decision === "Rejected" && !remarks) return;
+
+    setBusyAction(`review:${lineItemId}`);
+    setMessage(decision === "Accepted" ? "Accepting line item..." : "Rejecting line item...");
+    try {
+      const response = await fetch(`/api/v1/finance/${claimId}/line-items/${lineItemId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, remarks: remarks || null })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail ?? "Line review failed.");
+      setMessage(data.message ?? "Line item reviewed.");
+      setClaimDetails((current) => ({
+        ...current,
+        [claimId]: {
+          ...current[claimId],
+          lineItems: (current[claimId]?.lineItems ?? []).map((line) =>
+            line.lineItemId === lineItemId
+              ? {
+                  ...line,
+                  financeReviewStatus: data.financeReviewStatus,
+                  financeReviewRemarks: data.financeReviewRemarks
+                }
+              : line
+          )
+        }
+      }));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Line review failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function returnClaim(claimId: string) {
+    const reason = window.prompt("Reason for returning this claim to claimant");
+    if (!reason) return;
+
+    setBusyAction(`return:${claimId}`);
+    setMessage("Returning claim...");
+    try {
+      const response = await fetch(`/api/v1/approvals/${claimId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail ?? "Could not return claim.");
+      setMessage(data.message ?? "Claim returned.");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not return claim.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function allLinesAccepted(item: FinanceItem) {
+    if (item.claimKind === "Advance") return true;
+    const details = claimDetails[item.claimId];
+    if (!details) return false;
+    return details.lineItems.length > 0 && details.lineItems.every((line) => line.financeReviewStatus === "Accepted");
+  }
+
+  const reportQuery = reportMonth ? `?month=${encodeURIComponent(reportMonth)}` : "";
+
   return (
     <div className="grid" style={{ gap: 16 }}>
       <section className="panel">
         <div className="topbar" style={{ marginBottom: 12 }}>
           <h2>Finance Queue</h2>
           <div className="actions">
-            <a className="button secondary" href="/api/v1/finance/reports/imprest">
+            <input aria-label="Report month" type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} />
+            <a className="button secondary" href={`/api/v1/finance/reports/imprest${reportQuery}`}>
               <Download size={16} />
               Imprest CSV
             </a>
-            <a className="button secondary" href="/api/v1/finance/reports/billable">
+            <a className="button secondary" href={`/api/v1/finance/reports/billable${reportQuery}`}>
               <Download size={16} />
               Billable CSV
             </a>
@@ -181,6 +258,7 @@ export function FinanceQueue() {
           <tr>
             <th>Claim</th>
             <th>Amount</th>
+            <th>Beneficiary</th>
             <th>Receipt gate</th>
             <th>Billing</th>
             <th>Actions</th>
@@ -189,7 +267,7 @@ export function FinanceQueue() {
         <tbody>
           {isLoading ? (
             <tr>
-              <td colSpan={5}>
+              <td colSpan={6}>
                 <span className="loading-inline">
                   <Loader2 size={16} />
                   Loading finance queue...
@@ -206,6 +284,13 @@ export function FinanceQueue() {
                   <span className="muted">{item.claimKind} · {item.submittedBy}</span>
                 </td>
                 <td>Rs {item.totalAmount.toLocaleString("en-IN")}</td>
+                <td>
+                  {item.bankName ?? "Bank not captured"}
+                  <br />
+                  <span className="muted">
+                    {item.bankAccountNumber ? `${item.bankAccountHolderName ?? "Account"} ${maskAccount(item.bankAccountNumber)} ${item.bankIfsc ?? ""}` : "No beneficiary details"}
+                  </span>
+                </td>
                 <td>
                   <span className={`badge ${item.physicalReceiptConfirmed ? "success" : "warning"}`}>
                     {!item.physicalReceiptRequired ? "Not required" : item.physicalReceiptConfirmed ? "Confirmed" : "Pending"}
@@ -229,20 +314,28 @@ export function FinanceQueue() {
                     </button>
                     <button
                       className="button"
-                      disabled={(item.physicalReceiptRequired && !item.physicalReceiptConfirmed) || busyAction === `release:${item.claimId}`}
+                      disabled={
+                        (item.physicalReceiptRequired && !item.physicalReceiptConfirmed) ||
+                        !allLinesAccepted(item) ||
+                        busyAction === `release:${item.claimId}`
+                      }
                       onClick={() => void releasePayment(item.claimId)}
                       type="button"
                       title={!item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release payment" : "Confirm receipt before releasing payment"}
                     >
                       {busyAction === `release:${item.claimId}` ? <Loader2 size={16} /> : <Banknote size={16} />}
-                      {!item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release" : "Receipt pending"}
+                      {!allLinesAccepted(item) ? "Review lines" : !item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release" : "Receipt pending"}
+                    </button>
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void returnClaim(item.claimId)} type="button">
+                      {busyAction === `return:${item.claimId}` ? <Loader2 size={16} /> : null}
+                      Return
                     </button>
                   </div>
                 </td>
               </tr>
               {expandedClaimId === item.claimId ? (
                 <tr key={`${item.claimId}-receipts`}>
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <div className="receipt-review">
                       {(claimDetails[item.claimId]?.lineItems ?? []).map((line) => (
                         <div className="receipt-row" key={line.lineItemId}>
@@ -254,7 +347,16 @@ export function FinanceQueue() {
                           <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
                             {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
                           </span>
+                          <span className={`badge ${line.financeReviewStatus === "Accepted" ? "success" : line.financeReviewStatus === "Rejected" ? "danger" : "warning"}`}>
+                            {line.financeReviewStatus}
+                          </span>
                           <div className="actions">
+                            <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void reviewLine(item.claimId, line.lineItemId, "Accepted")} type="button">
+                              Accept
+                            </button>
+                            <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void reviewLine(item.claimId, line.lineItemId, "Rejected")} type="button">
+                              Reject
+                            </button>
                             {line.attachments.map((attachment) => (
                               <button
                                 className="button secondary"
@@ -278,7 +380,7 @@ export function FinanceQueue() {
           ))}
           {!isLoading && items.length === 0 ? (
             <tr>
-              <td colSpan={5}>No finance items pending.</td>
+              <td colSpan={6}>No finance items pending.</td>
             </tr>
           ) : null}
         </tbody>
@@ -335,4 +437,9 @@ export function FinanceQueue() {
       </section>
     </div>
   );
+}
+
+function maskAccount(value: string) {
+  if (value.length <= 4) return value;
+  return `****${value.slice(-4)}`;
 }

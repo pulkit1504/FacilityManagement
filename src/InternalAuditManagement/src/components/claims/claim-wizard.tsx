@@ -54,6 +54,7 @@ type LoadedClaim = {
   submissionMode: "SingleVoucher" | "Proforma";
   proformaPeriodStart: string | null;
   proformaPeriodEnd: string | null;
+  claimPeriodMonth: string | null;
   status: string;
   statusLabel: string;
   siteId: string | null;
@@ -129,6 +130,7 @@ export function ClaimWizard({
   const [claimStatus, setClaimStatus] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [submissionMode, setSubmissionMode] = useState<"SingleVoucher" | "Proforma">("SingleVoucher");
+  const [claimPeriodMonth, setClaimPeriodMonth] = useState(new Date().toISOString().slice(0, 7));
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [siteId, setSiteId] = useState("");
   const [proformaPeriodStart, setProformaPeriodStart] = useState("");
@@ -149,7 +151,7 @@ export function ClaimWizard({
   const requiresProformaPeriod = submissionMode === "Proforma";
   const hasValidProformaPeriod =
     !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
-  const canCreateDraft = Boolean(siteId) && hasValidProformaPeriod && (claimKind !== "Settlement" || Boolean(advanceClaimId));
+  const canCreateDraft = Boolean(siteId && claimPeriodMonth) && hasValidProformaPeriod && (claimKind !== "Settlement" || Boolean(advanceClaimId));
   const submitGateMessages = useMemo(() => {
     if (editingLineItemId) {
       return ["Save or cancel the line item edit before submitting the claim."];
@@ -229,6 +231,7 @@ export function ClaimWizard({
         setAdvanceClaimId(data.advanceClaimId ?? "");
         setRejectionReason(data.rejectionReason);
         setSubmissionMode(data.submissionMode);
+        setClaimPeriodMonth(data.claimPeriodMonth?.slice(0, 7) ?? new Date().toISOString().slice(0, 7));
         setSiteId(data.siteId ?? "");
         setProformaPeriodStart(data.proformaPeriodStart ?? "");
         setProformaPeriodEnd(data.proformaPeriodEnd ?? "");
@@ -275,6 +278,7 @@ export function ClaimWizard({
           submissionMode,
           claimKind,
           siteId,
+          claimPeriodMonth: `${claimPeriodMonth}-01`,
           advanceClaimId: claimKind === "Settlement" ? advanceClaimId : null,
           proformaPeriodStart: requiresProformaPeriod ? proformaPeriodStart : null,
           proformaPeriodEnd: requiresProformaPeriod ? proformaPeriodEnd : null
@@ -562,6 +566,10 @@ export function ClaimWizard({
               </select>
             </label>
           ) : null}
+          <label>
+            <span className="muted">Claim month</span>
+            <input disabled={Boolean(claimId)} type="month" value={claimPeriodMonth} onChange={(event) => setClaimPeriodMonth(event.target.value)} />
+          </label>
           <label>
             <span className="muted">Entry method</span>
             <select disabled={Boolean(claimId)} value={submissionMode} onChange={(event) => setSubmissionMode(event.target.value as typeof submissionMode)}>

@@ -83,6 +83,7 @@ export class ClaimService {
 
     this.assertOwnDraftClaim(claim, user);
     this.assertLineItemDateIsValidForClaim(claim, input);
+    await this.assertInvoiceReferenceIsUnique(input);
 
     return this.claims.addLineItem(claimId, input);
   }
@@ -170,6 +171,7 @@ export class ClaimService {
     this.assertOwnDraftClaim(claim, user);
     this.assertLineItemBelongsToClaim(claim, lineItemId);
     this.assertLineItemDateIsValidForClaim(claim, input);
+    await this.assertInvoiceReferenceIsUnique(input, lineItemId);
 
     const updatedLine = await this.claims.updateLineItem(claimId, lineItemId, input);
 
@@ -428,6 +430,17 @@ export class ClaimService {
       (input.transactionDate < claim.proformaPeriodStart! || input.transactionDate > claim.proformaPeriodEnd!)
     ) {
       throw conflict("Line item date must fall within the declared proforma period.");
+    }
+  }
+
+  private async assertInvoiceReferenceIsUnique(input: CreateLineItemInput, excludingLineItemId?: string) {
+    const invoiceNumber = input.clientInvoiceNumber?.trim() || input.vendorInvoiceNumber?.trim();
+    if (!invoiceNumber) return;
+
+    if (await this.claims.invoiceReferenceExists(invoiceNumber, excludingLineItemId)) {
+      throw conflict("Duplicate invoice number detected.", {
+        errors: [`Invoice number ${invoiceNumber} is already used on another claim line.`]
+      });
     }
   }
 

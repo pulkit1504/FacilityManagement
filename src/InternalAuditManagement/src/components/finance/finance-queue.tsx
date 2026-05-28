@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Banknote, ClipboardCheck, Eye, Loader2 } from "lucide-react";
+import { Banknote, ClipboardCheck, Download, Eye, Loader2 } from "lucide-react";
 
 type FinanceItem = {
   claimId: string;
@@ -162,7 +162,19 @@ export function FinanceQueue() {
   return (
     <div className="grid" style={{ gap: 16 }}>
       <section className="panel">
-        <h2>Finance Queue</h2>
+        <div className="topbar" style={{ marginBottom: 12 }}>
+          <h2>Finance Queue</h2>
+          <div className="actions">
+            <a className="button secondary" href="/api/v1/finance/reports/imprest">
+              <Download size={16} />
+              Imprest CSV
+            </a>
+            <a className="button secondary" href="/api/v1/finance/reports/billable">
+              <Download size={16} />
+              Billable CSV
+            </a>
+          </div>
+        </div>
         {message ? <p className="muted">{message}</p> : null}
         <table className="table">
         <thead>

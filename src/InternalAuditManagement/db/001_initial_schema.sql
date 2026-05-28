@@ -9,6 +9,7 @@ create table if not exists employees (
   direct_manager_id text references employees(employee_id),
   is_hod boolean not null default false,
   approval_threshold_amount numeric(18,2) not null default 0,
+  imprest_advance_limit numeric(18,2) not null default 0,
   bank_account_holder_name text,
   bank_account_number text,
   bank_ifsc text,
@@ -175,6 +176,7 @@ create index if not exists ix_audit_log_timestamp on audit_log(action_timestamp 
 create index if not exists ix_billing_alerts_next_send on billing_alerts(next_send_at) where is_resolved = false;
 create index if not exists ix_line_items_date_amount on expense_line_items(transaction_date, amount) where is_deleted = false;
 create index if not exists ix_employees_manager on employees(direct_manager_id) where is_active = true;
+create index if not exists ix_employees_imprest_limit on employees(imprest_advance_limit) where is_active = true and imprest_advance_limit > 0;
 
 create or replace function prevent_audit_log_mutation()
 returns trigger

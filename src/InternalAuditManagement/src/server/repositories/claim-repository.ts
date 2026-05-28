@@ -4,6 +4,7 @@ import type {
   AuditActionType,
   BillingAlert,
   BillingAlertQueueItem,
+  BillableClaimReportRow,
   ClaimDetail,
   ClaimStatus,
   ClientContract,
@@ -17,6 +18,7 @@ import type {
   FraudFlagStatus,
   Holiday,
   FraudRuleName,
+  ImprestLedgerReportRow,
   MisDashboardMetrics,
   OverviewMetrics,
   PendingAdvanceItem,
@@ -113,6 +115,8 @@ export interface ClaimRepository {
   listHolidayDates(): Promise<string[]>;
   getOverviewMetrics(userId: string, role: string): Promise<OverviewMetrics>;
   getMisDashboardMetrics(): Promise<MisDashboardMetrics>;
+  listImprestLedgerReport(): Promise<ImprestLedgerReportRow[]>;
+  listBillableClaimReport(): Promise<BillableClaimReportRow[]>;
 }
 
 export type ClaimSummary = Pick<

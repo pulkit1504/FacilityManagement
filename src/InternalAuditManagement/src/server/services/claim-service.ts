@@ -104,6 +104,17 @@ export class ClaimService {
       throw forbidden("Only claimants and HODs can request an advance.");
     }
 
+    const employee = await this.claims.getEmployee(user.userId);
+    if (!employee) {
+      throw conflict("Employee profile is missing or inactive.");
+    }
+
+    if (employee.imprestAdvanceLimit > 0 && input.amount > employee.imprestAdvanceLimit) {
+      throw conflict("Advance request exceeds the configured employee limit.", {
+        errors: [`Configured advance limit is Rs ${employee.imprestAdvanceLimit.toLocaleString("en-IN")}.`]
+      });
+    }
+
     const claim = await this.claims.createClaim({
       submitterEmployeeId: user.userId,
       claimKind: "Advance",

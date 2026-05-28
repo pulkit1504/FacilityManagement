@@ -18,7 +18,13 @@ export class AdminService {
       this.claims.listHolidays()
     ]);
 
-    return { contracts, sites, employees, holidays };
+    const employeeNames = new Map(employees.map((employee) => [employee.employeeId, employee.fullName]));
+    const sitesWithClusterHeads = sites.map((site) => ({
+      ...site,
+      clusterHeadName: site.clusterHeadEmployeeId ? employeeNames.get(site.clusterHeadEmployeeId) ?? site.clusterHeadEmployeeId : null
+    }));
+
+    return { contracts, sites: sitesWithClusterHeads, employees, holidays };
   }
 
   async createContract(input: CreateContractInput, user: UserContext) {

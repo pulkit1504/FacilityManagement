@@ -4,7 +4,7 @@ create table if not exists employees (
   employee_id text primary key,
   full_name text not null,
   email text not null unique,
-  role text not null check (role in ('Claimant', 'HOD', 'MD', 'Finance', 'BillingTeam', 'FinanceHOD', 'Admin')),
+  role text not null check (role in ('Claimant', 'ClusterHead', 'HOD', 'MD', 'Finance', 'BillingTeam', 'FinanceHOD', 'Admin')),
   password_hash text,
   direct_manager_id text references employees(employee_id),
   is_hod boolean not null default false,
@@ -33,6 +33,7 @@ create table if not exists sites (
   site_address text,
   service_type text not null check (service_type in ('Housekeeping', 'Security', 'Both')),
   contract_id text references client_contracts(contract_id),
+  cluster_head_employee_id text references employees(employee_id),
   is_active boolean not null default true
 );
 
@@ -110,7 +111,7 @@ create table if not exists approval_steps (
   step_id uuid primary key default gen_random_uuid(),
   claim_id uuid not null references expense_claims(claim_id),
   step_order integer not null,
-  required_approver_role text not null check (required_approver_role in ('HOD', 'MD', 'Finance')),
+  required_approver_role text not null check (required_approver_role in ('ClusterHead', 'HOD', 'MD', 'Finance')),
   assigned_approver_id text references employees(employee_id),
   decision text not null default 'Pending' check (decision in ('Pending', 'Approved', 'Rejected')),
   decision_at timestamptz,
@@ -150,6 +151,18 @@ create table if not exists holidays (
   is_national boolean not null default true
 );
 
+create table if not exists notification_outbox (
+  notification_id uuid primary key default gen_random_uuid(),
+  recipient_employee_id text not null references employees(employee_id),
+  recipient_email text not null,
+  subject text not null,
+  body text not null,
+  related_claim_id uuid references expense_claims(claim_id),
+  status text not null default 'Queued' check (status in ('Queued', 'Sent', 'Failed')),
+  created_at timestamptz not null default now(),
+  sent_at timestamptz
+);
+
 create table if not exists audit_log (
   log_id bigint generated always as identity primary key,
   claim_id text not null,
@@ -177,6 +190,8 @@ create index if not exists ix_billing_alerts_next_send on billing_alerts(next_se
 create index if not exists ix_line_items_date_amount on expense_line_items(transaction_date, amount) where is_deleted = false;
 create index if not exists ix_employees_manager on employees(direct_manager_id) where is_active = true;
 create index if not exists ix_employees_imprest_limit on employees(imprest_advance_limit) where is_active = true and imprest_advance_limit > 0;
+create index if not exists ix_sites_cluster_head on sites(cluster_head_employee_id) where is_active = true;
+create index if not exists ix_notification_outbox_status on notification_outbox(status, created_at);
 
 create or replace function prevent_audit_log_mutation()
 returns trigger

@@ -20,13 +20,15 @@ type Site = {
   contractId: string | null;
   clientName: string | null;
   contractDescription: string | null;
+  clusterHeadEmployeeId: string | null;
+  clusterHeadName: string | null;
 };
 
 type Employee = {
   employeeId: string;
   fullName: string;
   email: string;
-  role: "Claimant" | "HOD" | "MD" | "Finance" | "BillingTeam" | "FinanceHOD" | "Admin";
+  role: "Claimant" | "ClusterHead" | "HOD" | "MD" | "Finance" | "BillingTeam" | "FinanceHOD" | "Admin";
   directManagerId: string | null;
   isHod: boolean;
   approvalThresholdAmount: number;
@@ -45,7 +47,7 @@ type Holiday = {
 };
 
 const today = new Date().toISOString().slice(0, 10);
-const roles: Employee["role"][] = ["Claimant", "HOD", "MD", "Finance", "BillingTeam", "FinanceHOD", "Admin"];
+const roles: Employee["role"][] = ["Claimant", "ClusterHead", "HOD", "MD", "Finance", "BillingTeam", "FinanceHOD", "Admin"];
 
 export function SiteContractAdmin() {
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -65,7 +67,8 @@ export function SiteContractAdmin() {
     siteName: "",
     siteAddress: "",
     serviceType: "Both" as Site["serviceType"],
-    contractId: ""
+    contractId: "",
+    clusterHeadEmployeeId: ""
   });
   const [employeeDraft, setEmployeeDraft] = useState({
     employeeId: "",
@@ -89,7 +92,11 @@ export function SiteContractAdmin() {
   });
 
   const managerOptions = useMemo(
-    () => employees.filter((employee) => ["HOD", "MD", "FinanceHOD", "Finance"].includes(employee.role)),
+    () => employees.filter((employee) => ["ClusterHead", "HOD", "MD", "FinanceHOD", "Finance"].includes(employee.role)),
+    [employees]
+  );
+  const clusterHeadOptions = useMemo(
+    () => employees.filter((employee) => employee.role === "ClusterHead"),
     [employees]
   );
   const employeeNames = useMemo(
@@ -157,9 +164,17 @@ export function SiteContractAdmin() {
   }
 
   async function createSite() {
-    const saved = await postJson("/api/v1/admin/sites", siteDraft, "site:create", "Site saved.");
+    const saved = await postJson(
+      "/api/v1/admin/sites",
+      {
+        ...siteDraft,
+        clusterHeadEmployeeId: siteDraft.clusterHeadEmployeeId || null
+      },
+      "site:create",
+      "Site saved."
+    );
     if (saved) {
-      setSiteDraft((current) => ({ siteName: "", siteAddress: "", serviceType: "Both", contractId: current.contractId }));
+      setSiteDraft((current) => ({ siteName: "", siteAddress: "", serviceType: "Both", contractId: current.contractId, clusterHeadEmployeeId: current.clusterHeadEmployeeId }));
     }
   }
 
@@ -291,6 +306,17 @@ export function SiteContractAdmin() {
                   {contracts.map((contract) => (
                     <option key={contract.contractId} value={contract.contractId}>
                       {contract.clientName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className="muted">Cluster head</span>
+                <select value={siteDraft.clusterHeadEmployeeId} onChange={(event) => setSiteDraft({ ...siteDraft, clusterHeadEmployeeId: event.target.value })}>
+                  <option value="">No cluster head</option>
+                  {clusterHeadOptions.map((employee) => (
+                    <option key={employee.employeeId} value={employee.employeeId}>
+                      {employee.fullName}
                     </option>
                   ))}
                 </select>
@@ -499,6 +525,7 @@ export function SiteContractAdmin() {
               <th>Site</th>
               <th>Client / Contract</th>
               <th>Service</th>
+              <th>Cluster Head</th>
               <th>Status</th>
               <th>Action</th>
             </tr>
@@ -517,6 +544,7 @@ export function SiteContractAdmin() {
                   <span className="muted">{site.contractDescription ?? site.contractId ?? "No contract description"}</span>
                 </td>
                 <td>{site.serviceType}</td>
+                <td>{site.clusterHeadName ?? "Not mapped"}</td>
                 <td><span className="badge success">Active</span></td>
                 <td>
                   <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/sites/${site.siteId}/deactivate`, "POST", `site:${site.siteId}`, "Site updated.")} type="button">
@@ -528,7 +556,7 @@ export function SiteContractAdmin() {
             ))}
             {sites.length === 0 ? (
               <tr>
-                <td colSpan={5}>No active sites found.</td>
+                <td colSpan={6}>No active sites found.</td>
               </tr>
             ) : null}
           </tbody>

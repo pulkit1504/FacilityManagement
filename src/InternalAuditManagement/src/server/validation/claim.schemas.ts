@@ -153,7 +153,8 @@ export const createSiteSchema = z.object({
   siteName: z.string().trim().min(2).max(200),
   siteAddress: z.string().trim().max(500).nullable().optional(),
   serviceType: z.enum(["Housekeeping", "Security", "Both"]),
-  contractId: z.string().trim().min(1)
+  contractId: z.string().trim().min(1),
+  clusterHeadEmployeeId: z.string().trim().min(1).nullable().optional()
 });
 
 export const createEmployeeSchema = z.object({

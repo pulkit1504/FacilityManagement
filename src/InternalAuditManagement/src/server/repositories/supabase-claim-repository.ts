@@ -20,6 +20,7 @@ import type {
   Holiday,
   ImprestLedgerReportRow,
   MisDashboardMetrics,
+  NotificationOutboxInput,
   OverviewMetrics,
   PendingAdvanceItem,
   Site
@@ -260,7 +261,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db
       .from("sites")
-      .select("site_id, site_name, site_address, service_type, contract_id, client_contracts(client_name, description)")
+      .select("site_id, site_name, site_address, service_type, contract_id, cluster_head_employee_id, client_contracts(client_name, description)")
       .eq("is_active", true)
       .order("site_name");
 
@@ -275,7 +276,9 @@ export class SupabaseClaimRepository implements ClaimRepository {
         serviceType: row.service_type as Site["serviceType"],
         contractId: row.contract_id ? String(row.contract_id) : null,
         clientName: contract?.client_name ? String(contract.client_name) : null,
-        contractDescription: contract?.description ? String(contract.description) : null
+        contractDescription: contract?.description ? String(contract.description) : null,
+        clusterHeadEmployeeId: row.cluster_head_employee_id ? String(row.cluster_head_employee_id) : null,
+        clusterHeadName: null
       };
     });
   }
@@ -291,6 +294,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         site_address: input.siteAddress ?? null,
         service_type: input.serviceType,
         contract_id: input.contractId,
+        cluster_head_employee_id: input.clusterHeadEmployeeId ?? null,
         is_active: true
       });
 
@@ -304,7 +308,9 @@ export class SupabaseClaimRepository implements ClaimRepository {
       serviceType: input.serviceType,
       contractId: input.contractId,
       clientName: null,
-      contractDescription: null
+      contractDescription: null,
+      clusterHeadEmployeeId: input.clusterHeadEmployeeId ?? null,
+      clusterHeadName: null
     };
   }
 
@@ -321,7 +327,9 @@ export class SupabaseClaimRepository implements ClaimRepository {
       serviceType: "Both",
       contractId: null,
       clientName: null,
-      contractDescription: null
+      contractDescription: null,
+      clusterHeadEmployeeId: null,
+      clusterHeadName: null
     };
   }
 
@@ -773,8 +781,23 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return this.getEmployee(String(employee.employee_id));
   }
 
+  async enqueueNotification(input: NotificationOutboxInput): Promise<void> {
+    const db = await getSupabaseAdminClient();
+    const { error } = await db.from("notification_outbox").insert({
+      notification_id: randomUUID(),
+      recipient_employee_id: input.recipientEmployeeId,
+      recipient_email: input.recipientEmail,
+      subject: input.subject,
+      body: input.body,
+      related_claim_id: input.relatedClaimId,
+      status: "Queued"
+    });
+
+    if (error) throw error;
+  }
+
   async listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]> {
-    if (!["HOD", "MD"].includes(role)) {
+    if (!["ClusterHead", "HOD", "MD"].includes(role)) {
       return [];
     }
 
@@ -792,7 +815,14 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const siteNames = await this.getSiteNameMap();
 
     const details = await this.getClaimDetails((data ?? []).map((step) => String(step.claim_id)));
-    const items = details.map((detail) => this.toApprovalQueueItem(detail, siteNames));
+    const items = details
+      .filter((detail) => {
+        const currentStep = detail.approvalSteps
+          .filter((step) => step.decision === "Pending")
+          .sort((a, b) => a.stepOrder - b.stepOrder)[0];
+        return currentStep?.assignedApproverId === userId && currentStep.requiredApproverRole === role;
+      })
+      .map((detail) => this.toApprovalQueueItem(detail, siteNames));
 
     return items.filter((item): item is ApprovalQueueItem => Boolean(item));
   }

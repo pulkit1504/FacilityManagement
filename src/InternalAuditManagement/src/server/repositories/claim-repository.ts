@@ -20,6 +20,7 @@ import type {
   FraudRuleName,
   ImprestLedgerReportRow,
   MisDashboardMetrics,
+  NotificationOutboxInput,
   OverviewMetrics,
   PendingAdvanceItem,
   Site,
@@ -91,6 +92,7 @@ export interface ClaimRepository {
   getEmployeeByEmail(email: string): Promise<Employee | null>;
   authenticateEmployee(email: string, password: string): Promise<Employee | null>;
   findManagingDirector(): Promise<Employee | null>;
+  enqueueNotification(input: NotificationOutboxInput): Promise<void>;
   listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
   listFinanceQueue(): Promise<FinanceQueueItem[]>;
   listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]>;

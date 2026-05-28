@@ -2,6 +2,7 @@ import type { UserRole } from "@/server/domain/types";
 import { PrimaryNav } from "./primary-nav";
 import { cookies } from "next/headers";
 import { CurrentTestUser } from "@/components/auth/current-test-user";
+import { authSessionCookieName, parseSessionCookie } from "@/server/auth/session";
 import { parseTestUserCookie, testUserCookieName } from "@/server/auth/test-users";
 
 type NavLink = {
@@ -26,8 +27,12 @@ const links: NavLink[] = [
 
 export async function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
   const cookieStore = await cookies();
-  const testUser = parseTestUserCookie(cookieStore.get(testUserCookieName)?.value);
-  const currentRole = testUser?.role ?? ((process.env.DEV_USER_ROLE ?? "Claimant") as UserRole);
+  const session = parseSessionCookie(cookieStore.get(authSessionCookieName)?.value);
+  const testUser = process.env.APP_AUTH_MODE === "test"
+    ? parseTestUserCookie(cookieStore.get(testUserCookieName)?.value)
+    : null;
+  const currentRole = session?.role ?? testUser?.role ?? ((process.env.DEV_USER_ROLE ?? "Claimant") as UserRole);
+  const currentName = session?.name ?? testUser?.name ?? "Development User";
   const visibleLinks = links.filter((link) => !link.allowedRoles || link.allowedRoles.includes(currentRole));
 
   return (
@@ -37,7 +42,7 @@ export async function AppShell({ children }: Readonly<{ children: React.ReactNod
           <strong>Facility Control</strong>
           <span>Expense, billing, and audit workflow</span>
         </div>
-        <CurrentTestUser name={testUser?.name ?? "Development User"} role={currentRole} />
+        <CurrentTestUser name={currentName} role={currentRole} />
         <PrimaryNav links={visibleLinks} />
       </aside>
       <main className="main">{children}</main>

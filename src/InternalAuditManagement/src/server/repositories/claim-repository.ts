@@ -85,6 +85,8 @@ export interface ClaimRepository {
   createApprovalSteps(steps: Omit<ApprovalStep, "stepId" | "decision" | "decisionAt" | "remarks">[]): Promise<void>;
   appendAuditLog(input: AuditLogInput): Promise<void>;
   getEmployee(employeeId: string): Promise<Employee | null>;
+  getEmployeeByEmail(email: string): Promise<Employee | null>;
+  authenticateEmployee(email: string, password: string): Promise<Employee | null>;
   findManagingDirector(): Promise<Employee | null>;
   listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
   listFinanceQueue(): Promise<FinanceQueueItem[]>;

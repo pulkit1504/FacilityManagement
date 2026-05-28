@@ -69,7 +69,8 @@ export function SiteContractAdmin() {
     role: "Claimant" as Employee["role"],
     directManagerId: "",
     isHod: false,
-    approvalThresholdAmount: 0
+    approvalThresholdAmount: 0,
+    temporaryPassword: ""
   });
   const [holidayDraft, setHolidayDraft] = useState({
     holidayDate: today,
@@ -158,7 +159,8 @@ export function SiteContractAdmin() {
       {
         ...employeeDraft,
         directManagerId: employeeDraft.directManagerId || null,
-        isHod: employeeDraft.role === "HOD" || employeeDraft.isHod
+        isHod: employeeDraft.role === "HOD" || employeeDraft.isHod,
+        temporaryPassword: employeeDraft.temporaryPassword || null
       },
       "employee:create",
       "Employee saved."
@@ -171,7 +173,8 @@ export function SiteContractAdmin() {
         role: "Claimant",
         directManagerId: "",
         isHod: false,
-        approvalThresholdAmount: 0
+        approvalThresholdAmount: 0,
+        temporaryPassword: ""
       });
     }
   }
@@ -309,6 +312,10 @@ export function SiteContractAdmin() {
             <label>
               <span className="muted">Email</span>
               <input type="email" value={employeeDraft.email} onChange={(event) => setEmployeeDraft({ ...employeeDraft, email: event.target.value })} />
+            </label>
+            <label>
+              <span className="muted">Temporary password</span>
+              <input type="password" value={employeeDraft.temporaryPassword} onChange={(event) => setEmployeeDraft({ ...employeeDraft, temporaryPassword: event.target.value })} />
             </label>
             <div className="grid cols-2">
               <label>

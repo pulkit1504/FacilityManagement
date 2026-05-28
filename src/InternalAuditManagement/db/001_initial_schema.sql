@@ -5,6 +5,7 @@ create table if not exists employees (
   full_name text not null,
   email text not null unique,
   role text not null check (role in ('Claimant', 'HOD', 'MD', 'Finance', 'BillingTeam', 'FinanceHOD', 'Admin')),
+  password_hash text,
   direct_manager_id text references employees(employee_id),
   is_hod boolean not null default false,
   approval_threshold_amount numeric(18,2) not null default 0,

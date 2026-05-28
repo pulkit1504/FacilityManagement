@@ -14,7 +14,7 @@ export function CurrentTestUser({ name, role }: Readonly<CurrentTestUserProps>) 
 
   async function switchUser() {
     setIsBusy(true);
-    await fetch("/api/v1/auth/test-user", { method: "DELETE" });
+    await fetch("/api/v1/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
 
@@ -29,7 +29,7 @@ export function CurrentTestUser({ name, role }: Readonly<CurrentTestUserProps>) 
       </div>
       <button className="nav-action" disabled={isBusy} onClick={() => void switchUser()} type="button">
         <LogOut size={14} />
-        Switch
+        Sign out
       </button>
     </div>
   );

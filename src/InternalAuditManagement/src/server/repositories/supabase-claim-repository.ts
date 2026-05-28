@@ -3,6 +3,7 @@ import { notFound } from "../errors/application-error";
 import type {
   ApprovalStep,
   ApprovalQueueItem,
+  BillableClaimReportRow,
   BillingAlert,
   BillingAlertQueueItem,
   ClaimDetail,
@@ -17,6 +18,7 @@ import type {
   FraudFlagQueueItem,
   FraudFlagStatus,
   Holiday,
+  ImprestLedgerReportRow,
   MisDashboardMetrics,
   OverviewMetrics,
   PendingAdvanceItem,
@@ -133,6 +135,7 @@ function mapEmployee(row: Record<string, unknown>): Employee {
     directManagerId: row.direct_manager_id ? String(row.direct_manager_id) : null,
     isHod: Boolean(row.is_hod),
     approvalThresholdAmount: Number(row.approval_threshold_amount),
+    imprestAdvanceLimit: Number(row.imprest_advance_limit ?? 0),
     bankAccountHolderName: row.bank_account_holder_name ? String(row.bank_account_holder_name) : null,
     bankAccountNumber: row.bank_account_number ? String(row.bank_account_number) : null,
     bankIfsc: row.bank_ifsc ? String(row.bank_ifsc) : null,
@@ -344,6 +347,11 @@ export class SupabaseClaimRepository implements ClaimRepository {
           direct_manager_id: input.directManagerId ?? null,
           is_hod: input.isHod,
           approval_threshold_amount: input.approvalThresholdAmount,
+          imprest_advance_limit: input.imprestAdvanceLimit,
+          bank_account_holder_name: input.bankAccountHolderName ?? null,
+          bank_account_number: input.bankAccountNumber ?? null,
+          bank_ifsc: input.bankIfsc ?? null,
+          bank_name: input.bankName ?? null,
           ...(passwordHash ? { password_hash: passwordHash } : {}),
           is_active: true
         },
@@ -1503,6 +1511,105 @@ export class SupabaseClaimRepository implements ClaimRepository {
         }))
         .sort((a, b) => b.totalBillable - a.totalBillable)
     };
+  }
+
+  async listImprestLedgerReport(): Promise<ImprestLedgerReportRow[]> {
+    const db = await getSupabaseAdminClient();
+    const [{ data, error }, siteNames, employees] = await Promise.all([
+      db
+        .from("expense_claims")
+        .select("ticket_id,submitter_employee_id,site_id,advance_amount,settled_amount,advance_balance,status,updated_at")
+        .eq("claim_kind", "Advance")
+        .eq("is_deleted", false)
+        .order("updated_at", { ascending: false })
+        .limit(2_000),
+      this.getSiteNameMap(),
+      this.listEmployees()
+    ]);
+
+    if (error) throw error;
+
+    const employeeNames = new Map(employees.map((employee) => [employee.employeeId, employee.fullName]));
+    return (data ?? []).map((row) => {
+      const siteId = row.site_id ? String(row.site_id) : null;
+      const employeeId = String(row.submitter_employee_id);
+      return {
+        ticketId: String(row.ticket_id),
+        claimantName: employeeNames.get(employeeId) ?? employeeId,
+        siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
+        advanceAmount: Number(row.advance_amount ?? 0),
+        settledAmount: Number(row.settled_amount ?? 0),
+        advanceBalance: Number(row.advance_balance ?? 0),
+        status: row.status as ImprestLedgerReportRow["status"],
+        paidAt: row.status === "PaymentReleased" ? String(row.updated_at) : null
+      };
+    });
+  }
+
+  async listBillableClaimReport(): Promise<BillableClaimReportRow[]> {
+    const db = await getSupabaseAdminClient();
+    const [{ data: claims, error: claimsError }, siteNames, employees] = await Promise.all([
+      db
+        .from("expense_claims")
+        .select("claim_id,ticket_id,submitter_employee_id,site_id")
+        .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed", "PaymentReleased"])
+        .eq("is_deleted", false)
+        .order("updated_at", { ascending: false })
+        .limit(1_000),
+      this.getSiteNameMap(),
+      this.listEmployees()
+    ]);
+
+    if (claimsError) throw claimsError;
+
+    const claimIds = (claims ?? []).map((claim) => String(claim.claim_id));
+    const { data: lines, error: linesError } = claimIds.length
+      ? await db
+          .from("expense_line_items")
+          .select("claim_id,expense_head,description,amount,billable_amount,expense_tag,client_invoice_number,transaction_date")
+          .in("claim_id", claimIds)
+          .eq("is_deleted", false)
+          .limit(5_000)
+      : { data: [], error: null };
+
+    if (linesError) throw linesError;
+
+    const employeeNames = new Map(employees.map((employee) => [employee.employeeId, employee.fullName]));
+    const claimsById = new Map(
+      (claims ?? []).map((claim) => [
+        String(claim.claim_id),
+        {
+          ticketId: String(claim.ticket_id),
+          employeeId: String(claim.submitter_employee_id),
+          siteId: claim.site_id ? String(claim.site_id) : null
+        }
+      ])
+    );
+
+    return (lines ?? []).map((line) => {
+      const claim = claimsById.get(String(line.claim_id));
+      const siteName = claim?.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null;
+      const expenseTag = line.expense_tag as BillableClaimReportRow["expenseTag"];
+      const invoiceNumber = line.client_invoice_number ? String(line.client_invoice_number) : null;
+      return {
+        ticketId: claim?.ticketId ?? String(line.claim_id),
+        claimantName: claim ? employeeNames.get(claim.employeeId) ?? claim.employeeId : "Unknown",
+        siteName,
+        expenseHead: line.expense_head ? String(line.expense_head) : null,
+        description: String(line.description),
+        amount: Number(line.amount ?? 0),
+        billableAmount: Number(line.billable_amount ?? (expenseTag === "PendingBilling" || expenseTag === "AlreadyBilled" ? line.amount : 0)),
+        expenseTag,
+        invoiceNumber,
+        recoveryStatus:
+          expenseTag === "AlreadyBilled" && invoiceNumber
+            ? "Billed"
+            : expenseTag === "PendingBilling"
+              ? "Pending Billing"
+              : "Non Billable",
+        transactionDate: String(line.transaction_date)
+      };
+    });
   }
 
   private async getSiteNameMap() {

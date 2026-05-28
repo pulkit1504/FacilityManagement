@@ -30,6 +30,11 @@ type Employee = {
   directManagerId: string | null;
   isHod: boolean;
   approvalThresholdAmount: number;
+  imprestAdvanceLimit: number;
+  bankAccountHolderName: string | null;
+  bankAccountNumber: string | null;
+  bankIfsc: string | null;
+  bankName: string | null;
   isActive: boolean;
 };
 
@@ -70,6 +75,11 @@ export function SiteContractAdmin() {
     directManagerId: "",
     isHod: false,
     approvalThresholdAmount: 0,
+    imprestAdvanceLimit: 0,
+    bankAccountHolderName: "",
+    bankAccountNumber: "",
+    bankIfsc: "",
+    bankName: "",
     temporaryPassword: ""
   });
   const [holidayDraft, setHolidayDraft] = useState({
@@ -160,6 +170,10 @@ export function SiteContractAdmin() {
         ...employeeDraft,
         directManagerId: employeeDraft.directManagerId || null,
         isHod: employeeDraft.role === "HOD" || employeeDraft.isHod,
+        bankAccountHolderName: employeeDraft.bankAccountHolderName || null,
+        bankAccountNumber: employeeDraft.bankAccountNumber || null,
+        bankIfsc: employeeDraft.bankIfsc || null,
+        bankName: employeeDraft.bankName || null,
         temporaryPassword: employeeDraft.temporaryPassword || null
       },
       "employee:create",
@@ -174,6 +188,11 @@ export function SiteContractAdmin() {
         directManagerId: "",
         isHod: false,
         approvalThresholdAmount: 0,
+        imprestAdvanceLimit: 0,
+        bankAccountHolderName: "",
+        bankAccountNumber: "",
+        bankIfsc: "",
+        bankName: "",
         temporaryPassword: ""
       });
     }
@@ -334,6 +353,28 @@ export function SiteContractAdmin() {
                 <input type="number" min="0" value={employeeDraft.approvalThresholdAmount} onChange={(event) => setEmployeeDraft({ ...employeeDraft, approvalThresholdAmount: Number(event.target.value) })} />
               </label>
             </div>
+            <label>
+              <span className="muted">Imprest advance limit</span>
+              <input type="number" min="0" value={employeeDraft.imprestAdvanceLimit} onChange={(event) => setEmployeeDraft({ ...employeeDraft, imprestAdvanceLimit: Number(event.target.value) })} />
+            </label>
+            <div className="grid cols-2">
+              <label>
+                <span className="muted">Account holder</span>
+                <input value={employeeDraft.bankAccountHolderName} onChange={(event) => setEmployeeDraft({ ...employeeDraft, bankAccountHolderName: event.target.value })} />
+              </label>
+              <label>
+                <span className="muted">Bank name</span>
+                <input value={employeeDraft.bankName} onChange={(event) => setEmployeeDraft({ ...employeeDraft, bankName: event.target.value })} />
+              </label>
+              <label>
+                <span className="muted">Account number</span>
+                <input value={employeeDraft.bankAccountNumber} onChange={(event) => setEmployeeDraft({ ...employeeDraft, bankAccountNumber: event.target.value })} />
+              </label>
+              <label>
+                <span className="muted">IFSC</span>
+                <input value={employeeDraft.bankIfsc} onChange={(event) => setEmployeeDraft({ ...employeeDraft, bankIfsc: event.target.value.toUpperCase() })} />
+              </label>
+            </div>
             <label className="checkbox-row">
               <input type="checkbox" checked={employeeDraft.isHod || employeeDraft.role === "HOD"} onChange={(event) => setEmployeeDraft({ ...employeeDraft, isHod: event.target.checked })} />
               HOD approver
@@ -377,6 +418,8 @@ export function SiteContractAdmin() {
               <th>Role</th>
               <th>Manager</th>
               <th>Threshold</th>
+              <th>Imprest Limit</th>
+              <th>Bank</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -391,6 +434,12 @@ export function SiteContractAdmin() {
                 <td>{employee.role}{employee.isHod ? " / HOD" : ""}</td>
                 <td>{employee.directManagerId ? employeeNames.get(employee.directManagerId) ?? employee.directManagerId : "No manager"}</td>
                 <td>{employee.approvalThresholdAmount.toLocaleString()}</td>
+                <td>{employee.imprestAdvanceLimit.toLocaleString()}</td>
+                <td>
+                  {employee.bankName ?? "Not captured"}
+                  <br />
+                  <span className="muted">{employee.bankAccountNumber ? `Account ${maskAccount(employee.bankAccountNumber)}` : "No account"}</span>
+                </td>
                 <td>
                   <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/employees/${employee.employeeId}/deactivate`, "POST", `employee:${employee.employeeId}`, "Employee updated.")} type="button">
                     {busyAction === `employee:${employee.employeeId}` ? <Loader2 size={18} /> : <PowerOff size={18} />}
@@ -401,7 +450,7 @@ export function SiteContractAdmin() {
             ))}
             {employees.length === 0 ? (
               <tr>
-                <td colSpan={5}>No active employees found.</td>
+                <td colSpan={7}>No active employees found.</td>
               </tr>
             ) : null}
           </tbody>
@@ -487,4 +536,9 @@ export function SiteContractAdmin() {
       </section>
     </div>
   );
+}
+
+function maskAccount(value: string) {
+  if (value.length <= 4) return value;
+  return `****${value.slice(-4)}`;
 }

@@ -25,6 +25,57 @@ export class FinanceService {
     };
   }
 
+  async exportImprestLedger(user: UserContext) {
+    this.assertFinance(user);
+    const rows = await this.claims.listImprestLedgerReport();
+    return toCsv(
+      ["Ticket", "Claimant", "Site", "Advance Amount", "Settled Amount", "Open Balance", "Status", "Paid At"],
+      rows.map((row) => [
+        row.ticketId,
+        row.claimantName,
+        row.siteName ?? "",
+        row.advanceAmount,
+        row.settledAmount,
+        row.advanceBalance,
+        row.status,
+        row.paidAt ?? ""
+      ])
+    );
+  }
+
+  async exportBillableClaims(user: UserContext) {
+    this.assertFinance(user);
+    const rows = await this.claims.listBillableClaimReport();
+    return toCsv(
+      [
+        "Ticket",
+        "Claimant",
+        "Site",
+        "Expense Head",
+        "Description",
+        "Amount",
+        "Billable Amount",
+        "Expense Tag",
+        "Invoice Number",
+        "Recovery Status",
+        "Transaction Date"
+      ],
+      rows.map((row) => [
+        row.ticketId,
+        row.claimantName,
+        row.siteName ?? "",
+        row.expenseHead ?? "",
+        row.description,
+        row.amount,
+        row.billableAmount,
+        row.expenseTag,
+        row.invoiceNumber ?? "",
+        row.recoveryStatus,
+        row.transactionDate
+      ])
+    );
+  }
+
   async confirmPhysicalReceipt(claimId: string, input: ConfirmPhysicalReceiptInput, user: UserContext) {
     this.assertFinance(user);
 
@@ -137,4 +188,18 @@ export class FinanceService {
       }
     }
   }
+}
+
+function toCsv(headers: string[], rows: Array<Array<string | number>>) {
+  return [headers, ...rows]
+    .map((row) => row.map((value) => csvCell(String(value))).join(","))
+    .join("\n");
+}
+
+function csvCell(value: string) {
+  if (!/[",\n]/.test(value)) {
+    return value;
+  }
+
+  return `"${value.replaceAll("\"", "\"\"")}"`;
 }

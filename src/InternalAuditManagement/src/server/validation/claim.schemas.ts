@@ -164,6 +164,11 @@ export const createEmployeeSchema = z.object({
   directManagerId: z.string().trim().min(1).nullable().optional(),
   isHod: z.boolean().default(false),
   approvalThresholdAmount: z.coerce.number().nonnegative().default(0),
+  imprestAdvanceLimit: z.coerce.number().nonnegative().default(0),
+  bankAccountHolderName: z.string().trim().min(1).max(200).nullable().optional(),
+  bankAccountNumber: z.string().trim().min(4).max(40).nullable().optional(),
+  bankIfsc: z.string().trim().min(4).max(20).nullable().optional(),
+  bankName: z.string().trim().min(2).max(120).nullable().optional(),
   temporaryPassword: z.string().min(8).max(128).nullable().optional()
 });
 

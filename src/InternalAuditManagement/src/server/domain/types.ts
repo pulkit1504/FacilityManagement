@@ -72,6 +72,7 @@ export type Employee = {
   directManagerId: string | null;
   isHod: boolean;
   approvalThresholdAmount: number;
+  imprestAdvanceLimit: number;
   bankAccountHolderName: string | null;
   bankAccountNumber: string | null;
   bankIfsc: string | null;
@@ -291,6 +292,31 @@ export type MisDashboardMetrics = {
   billingRecoveryPct: number | null;
   oldestBillingAlertDays: number | null;
   recoveryMatrix: MisRecoveryMatrixRow[];
+};
+
+export type ImprestLedgerReportRow = {
+  ticketId: string;
+  claimantName: string;
+  siteName: string | null;
+  advanceAmount: number;
+  settledAmount: number;
+  advanceBalance: number;
+  status: ClaimStatus;
+  paidAt: string | null;
+};
+
+export type BillableClaimReportRow = {
+  ticketId: string;
+  claimantName: string;
+  siteName: string | null;
+  expenseHead: string | null;
+  description: string;
+  amount: number;
+  billableAmount: number;
+  expenseTag: ExpenseTag;
+  invoiceNumber: string | null;
+  recoveryStatus: "Billed" | "Pending Billing" | "Non Billable";
+  transactionDate: string;
 };
 
 export function statusLabel(status: ClaimStatus): string {

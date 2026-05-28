@@ -19,6 +19,7 @@ import type {
   Holiday,
   MisDashboardMetrics,
   OverviewMetrics,
+  PendingAdvanceItem,
   Site
 } from "../domain/types";
 import type {
@@ -37,10 +38,17 @@ import { hashPassword, verifyPassword } from "../auth/password";
 
 type ClaimRow = {
   claim_id: string;
+  ticket_id: string | null;
   submitter_employee_id: string;
+  claim_kind: string | null;
   submission_mode: string;
   proforma_period_start: string | null;
   proforma_period_end: string | null;
+  claim_period_month: string | null;
+  advance_claim_id: string | null;
+  advance_amount: number | null;
+  settled_amount: number | null;
+  advance_balance: number | null;
   status: string;
   total_amount: number;
   site_id: string | null;
@@ -54,10 +62,17 @@ type ClaimRow = {
 function mapClaim(row: ClaimRow): ExpenseClaim {
   return {
     claimId: row.claim_id,
+    ticketId: row.ticket_id ?? `EXP-${row.claim_id.slice(0, 8).toUpperCase()}`,
     submitterEmployeeId: row.submitter_employee_id,
+    claimKind: (row.claim_kind ?? "Reimbursement") as ExpenseClaim["claimKind"],
     submissionMode: row.submission_mode as ExpenseClaim["submissionMode"],
     proformaPeriodStart: row.proforma_period_start,
     proformaPeriodEnd: row.proforma_period_end,
+    claimPeriodMonth: row.claim_period_month,
+    advanceClaimId: row.advance_claim_id,
+    advanceAmount: Number(row.advance_amount ?? 0),
+    settledAmount: Number(row.settled_amount ?? 0),
+    advanceBalance: Number(row.advance_balance ?? 0),
     status: row.status as ClaimStatus,
     totalAmount: Number(row.total_amount),
     siteId: row.site_id,
@@ -73,11 +88,18 @@ function mapLineItem(row: Record<string, unknown>): ExpenseLineItem {
   return {
     lineItemId: String(row.line_item_id),
     claimId: String(row.claim_id),
+    expenseHead: row.expense_head ? String(row.expense_head) : null,
     description: String(row.description),
     amount: Number(row.amount),
     transactionDate: String(row.transaction_date),
+    paymentMode: row.payment_mode ? row.payment_mode as ExpenseLineItem["paymentMode"] : null,
     expenseTag: row.expense_tag as ExpenseLineItem["expenseTag"],
     clientInvoiceNumber: row.client_invoice_number ? String(row.client_invoice_number) : null,
+    vendorName: row.vendor_name ? String(row.vendor_name) : null,
+    vendorInvoiceNumber: row.vendor_invoice_number ? String(row.vendor_invoice_number) : null,
+    billableAmount: row.billable_amount === null || row.billable_amount === undefined ? null : Number(row.billable_amount),
+    siteOrDepartment: row.site_or_department ? String(row.site_or_department) : null,
+    lineTicketId: row.line_ticket_id ? String(row.line_ticket_id) : null,
     invoiceValidationStatus: row.invoice_validation_status as ExpenseLineItem["invoiceValidationStatus"],
     billingAlertCreated: Boolean(row.billing_alert_created),
     siteId: row.site_id ? String(row.site_id) : null,
@@ -111,6 +133,10 @@ function mapEmployee(row: Record<string, unknown>): Employee {
     directManagerId: row.direct_manager_id ? String(row.direct_manager_id) : null,
     isHod: Boolean(row.is_hod),
     approvalThresholdAmount: Number(row.approval_threshold_amount),
+    bankAccountHolderName: row.bank_account_holder_name ? String(row.bank_account_holder_name) : null,
+    bankAccountNumber: row.bank_account_number ? String(row.bank_account_number) : null,
+    bankIfsc: row.bank_ifsc ? String(row.bank_ifsc) : null,
+    bankName: row.bank_name ? String(row.bank_name) : null,
     isActive: Boolean(row.is_active)
   };
 }
@@ -496,10 +522,17 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .from("expense_claims")
       .insert({
         claim_id: claim.claimId,
+        ticket_id: claim.ticketId,
         submitter_employee_id: claim.submitterEmployeeId,
+        claim_kind: claim.claimKind,
         submission_mode: claim.submissionMode,
         proforma_period_start: claim.proformaPeriodStart,
         proforma_period_end: claim.proformaPeriodEnd,
+        claim_period_month: claim.claimPeriodMonth,
+        advance_claim_id: claim.advanceClaimId,
+        advance_amount: claim.advanceAmount,
+        settled_amount: claim.settledAmount,
+        advance_balance: claim.advanceBalance,
         status: claim.status,
         total_amount: claim.totalAmount,
         site_id: claim.siteId,
@@ -520,11 +553,18 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .insert({
         line_item_id: randomUUID(),
         claim_id: claimId,
+        expense_head: input.expenseHead ?? null,
         description: input.description,
         amount: input.amount,
         transaction_date: input.transactionDate,
+        payment_mode: input.paymentMode ?? null,
         expense_tag: input.expenseTag,
         client_invoice_number: input.expenseTag === "AlreadyBilled" ? input.clientInvoiceNumber ?? null : null,
+        vendor_name: input.vendorName ?? null,
+        vendor_invoice_number: input.vendorInvoiceNumber ?? null,
+        billable_amount: input.expenseTag === "PendingBilling" ? input.billableAmount ?? input.amount : input.billableAmount ?? null,
+        site_or_department: input.siteOrDepartment ?? null,
+        line_ticket_id: input.lineTicketId ?? null,
         invoice_validation_status: input.expenseTag === "AlreadyBilled" ? "PendingErpValidation" : "NotApplicable",
         site_id: input.expenseTag === "ContractPartCost" ? input.siteId ?? null : null,
         missing_receipt_flag: true,
@@ -546,8 +586,15 @@ export class SupabaseClaimRepository implements ClaimRepository {
         description: input.description,
         amount: input.amount,
         transaction_date: input.transactionDate,
+        expense_head: input.expenseHead ?? null,
+        payment_mode: input.paymentMode ?? null,
         expense_tag: input.expenseTag,
         client_invoice_number: input.expenseTag === "AlreadyBilled" ? input.clientInvoiceNumber ?? null : null,
+        vendor_name: input.vendorName ?? null,
+        vendor_invoice_number: input.vendorInvoiceNumber ?? null,
+        billable_amount: input.expenseTag === "PendingBilling" ? input.billableAmount ?? input.amount : input.billableAmount ?? null,
+        site_or_department: input.siteOrDepartment ?? null,
+        line_ticket_id: input.lineTicketId ?? null,
         invoice_validation_status: input.expenseTag === "AlreadyBilled" ? "PendingErpValidation" : "NotApplicable",
         site_id: input.expenseTag === "ContractPartCost" ? input.siteId ?? null : null,
         sort_order: input.sortOrder
@@ -600,9 +647,28 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (error) throw error;
 
     const total = (data ?? []).reduce((sum, row) => sum + Number(row.amount), 0);
+    const { data: claim, error: claimError } = await db
+      .from("expense_claims")
+      .select("claim_kind,settled_amount")
+      .eq("claim_id", claimId)
+      .single();
+
+    if (claimError) throw claimError;
+
+    const isAdvance = claim?.claim_kind === "Advance";
+    const settledAmount = Number(claim?.settled_amount ?? 0);
     const { error: updateError } = await db
       .from("expense_claims")
-      .update({ total_amount: total, updated_at: new Date().toISOString() })
+      .update({
+        total_amount: total,
+        ...(isAdvance
+          ? {
+              advance_amount: total,
+              advance_balance: Math.max(0, total - settledAmount)
+            }
+          : {}),
+        updated_at: new Date().toISOString()
+      })
       .eq("claim_id", claimId);
 
     if (updateError) throw updateError;
@@ -728,7 +794,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const [{ data, error }, siteNames] = await Promise.all([
       db
         .from("expense_claims")
-        .select("claim_id,submitter_employee_id,total_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
+        .select("claim_id,ticket_id,claim_kind,submitter_employee_id,total_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
         .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed"])
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
@@ -752,6 +818,8 @@ export class SupabaseClaimRepository implements ClaimRepository {
       const siteId = claim.site_id ? String(claim.site_id) : null;
       return {
         claimId,
+        ticketId: claim.ticket_id ? String(claim.ticket_id) : `EXP-${claimId.slice(0, 8).toUpperCase()}`,
+        claimKind: (claim.claim_kind ?? "Reimbursement") as FinanceQueueItem["claimKind"],
         submittedBy: String(claim.submitter_employee_id),
         submittedByRole: "Claimant" as const,
         siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
@@ -761,14 +829,81 @@ export class SupabaseClaimRepository implements ClaimRepository {
         submittedAt,
         daysPending,
         urgencyLevel: daysPending > 5 ? "Overdue" as const : daysPending >= 3 ? "Attention" as const : "Normal" as const,
-        physicalReceiptRequired: true,
-        physicalReceiptConfirmed: Boolean(claim.physical_receipt_confirmed_at),
+        physicalReceiptRequired: claim.claim_kind !== "Advance",
+        physicalReceiptConfirmed: claim.claim_kind === "Advance" || Boolean(claim.physical_receipt_confirmed_at),
         hasPendingBillingItems: stats.pendingBillingItemCount > 0,
         pendingBillingItemCount: stats.pendingBillingItemCount
       };
     });
 
     return items;
+  }
+
+  async listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]> {
+    const db = await getSupabaseAdminClient();
+    let query = db
+      .from("expense_claims")
+      .select("claim_id,ticket_id,submitter_employee_id,site_id,advance_amount,settled_amount,advance_balance,updated_at")
+      .eq("claim_kind", "Advance")
+      .eq("status", "PaymentReleased")
+      .gt("advance_balance", 0)
+      .eq("is_deleted", false)
+      .order("updated_at", { ascending: false })
+      .limit(100);
+
+    if (["Claimant", "HOD"].includes(role)) {
+      query = query.eq("submitter_employee_id", userId);
+    }
+
+    const [{ data, error }, siteNames] = await Promise.all([query, this.getSiteNameMap()]);
+    if (error) throw error;
+
+    return (data ?? []).map((row) => {
+      const paidAt = String(row.updated_at);
+      const siteId = row.site_id ? String(row.site_id) : null;
+      return {
+        claimId: String(row.claim_id),
+        ticketId: row.ticket_id ? String(row.ticket_id) : `ADV-${String(row.claim_id).slice(0, 8).toUpperCase()}`,
+        submittedBy: String(row.submitter_employee_id),
+        siteId,
+        siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
+        advanceAmount: Number(row.advance_amount),
+        settledAmount: Number(row.settled_amount),
+        advanceBalance: Number(row.advance_balance),
+        paidAt,
+        ageDays: Math.max(0, Math.floor((Date.now() - new Date(paidAt).getTime()) / 86_400_000))
+      };
+    });
+  }
+
+  async applySettlementToAdvance(settlementClaimId: string): Promise<void> {
+    const settlement = await this.getClaimDetail(settlementClaimId);
+    if (!settlement?.advanceClaimId || settlement.claimKind !== "Settlement") {
+      return;
+    }
+
+    const db = await getSupabaseAdminClient();
+    const { data: advance, error: advanceError } = await db
+      .from("expense_claims")
+      .select("advance_amount,settled_amount")
+      .eq("claim_id", settlement.advanceClaimId)
+      .eq("claim_kind", "Advance")
+      .single();
+
+    if (advanceError) throw advanceError;
+
+    const nextSettledAmount = Number(advance.settled_amount ?? 0) + settlement.totalAmount;
+    const nextBalance = Math.max(0, Number(advance.advance_amount ?? 0) - nextSettledAmount);
+    const { error } = await db
+      .from("expense_claims")
+      .update({
+        settled_amount: nextSettledAmount,
+        advance_balance: nextBalance,
+        updated_at: new Date().toISOString()
+      })
+      .eq("claim_id", settlement.advanceClaimId);
+
+    if (error) throw error;
   }
 
   async getPendingApprovalStep(claimId: string): Promise<ApprovalStep | null> {

@@ -16,6 +16,15 @@ export class FinanceService {
     };
   }
 
+  async listPendingAdvances(user: UserContext) {
+    this.assertFinance(user);
+    const items = await this.claims.listPendingAdvances(user.userId, user.role);
+    return {
+      items,
+      totalPending: items.length
+    };
+  }
+
   async confirmPhysicalReceipt(claimId: string, input: ConfirmPhysicalReceiptInput, user: UserContext) {
     this.assertFinance(user);
 
@@ -73,11 +82,12 @@ export class FinanceService {
       throw conflict("Only Finance-confirmed claims can be released for payment.");
     }
 
-    if (!claim.physicalReceiptConfirmedAt) {
+    if (claim.claimKind !== "Advance" && !claim.physicalReceiptConfirmedAt) {
       throw conflict("Physical receipt confirmation is required before payment can be released.");
     }
 
     const updated = await this.claims.submitClaim(claimId, "PaymentReleased");
+    await this.claims.applySettlementToAdvance(claimId);
     await this.createBillingAlertsForClaim(claimId, user);
     await this.claims.appendAuditLog({
       claimId,

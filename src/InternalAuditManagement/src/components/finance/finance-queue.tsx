@@ -5,11 +5,25 @@ import { Banknote, ClipboardCheck, Eye, Loader2 } from "lucide-react";
 
 type FinanceItem = {
   claimId: string;
+  ticketId: string;
+  claimKind: "Advance" | "Settlement" | "Reimbursement";
   submittedBy: string;
   siteName: string | null;
   totalAmount: number;
+  physicalReceiptRequired: boolean;
   physicalReceiptConfirmed: boolean;
   pendingBillingItemCount: number;
+};
+
+type PendingAdvance = {
+  claimId: string;
+  ticketId: string;
+  submittedBy: string;
+  siteName: string | null;
+  advanceAmount: number;
+  settledAmount: number;
+  advanceBalance: number;
+  ageDays: number;
 };
 
 type ClaimReceiptDetail = {
@@ -29,6 +43,7 @@ type ClaimReceiptDetail = {
 
 export function FinanceQueue() {
   const [items, setItems] = useState<FinanceItem[]>([]);
+  const [advances, setAdvances] = useState<PendingAdvance[]>([]);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
   const [claimDetails, setClaimDetails] = useState<Record<string, ClaimReceiptDetail>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -37,13 +52,20 @@ export function FinanceQueue() {
 
   async function load() {
     try {
-      const response = await fetch("/api/v1/finance/queue");
-      const data = await response.json();
-      if (!response.ok) {
+      const [queueResponse, advancesResponse] = await Promise.all([
+        fetch("/api/v1/finance/queue"),
+        fetch("/api/v1/finance/advances")
+      ]);
+      const data = await queueResponse.json();
+      const advancesData = await advancesResponse.json();
+      if (!queueResponse.ok) {
         setMessage(data.detail ?? "Could not load finance queue.");
         return;
       }
       setItems(data.items ?? []);
+      if (advancesResponse.ok) {
+        setAdvances(advancesData.items ?? []);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -138,10 +160,11 @@ export function FinanceQueue() {
   }
 
   return (
-    <section className="panel">
-      <h2>Finance Queue</h2>
-      {message ? <p className="muted">{message}</p> : null}
-      <table className="table">
+    <div className="grid" style={{ gap: 16 }}>
+      <section className="panel">
+        <h2>Finance Queue</h2>
+        {message ? <p className="muted">{message}</p> : null}
+        <table className="table">
         <thead>
           <tr>
             <th>Claim</th>
@@ -166,14 +189,14 @@ export function FinanceQueue() {
             <>
               <tr key={item.claimId}>
                 <td>
-                  <strong>{item.claimId.slice(0, 8)}</strong>
+                  <strong>{item.ticketId ?? item.claimId.slice(0, 8)}</strong>
                   <br />
-                  <span className="muted">{item.submittedBy}</span>
+                  <span className="muted">{item.claimKind} · {item.submittedBy}</span>
                 </td>
                 <td>Rs {item.totalAmount.toLocaleString("en-IN")}</td>
                 <td>
                   <span className={`badge ${item.physicalReceiptConfirmed ? "success" : "warning"}`}>
-                    {item.physicalReceiptConfirmed ? "Confirmed" : "Pending"}
+                    {!item.physicalReceiptRequired ? "Not required" : item.physicalReceiptConfirmed ? "Confirmed" : "Pending"}
                   </span>
                 </td>
                 <td>{item.pendingBillingItemCount} pending billing items</td>
@@ -185,22 +208,22 @@ export function FinanceQueue() {
                     </button>
                     <button
                       className="button secondary"
-                      disabled={item.physicalReceiptConfirmed || busyAction === `confirm:${item.claimId}`}
+                      disabled={!item.physicalReceiptRequired || item.physicalReceiptConfirmed || busyAction === `confirm:${item.claimId}`}
                       onClick={() => void confirmReceipt(item.claimId)}
                       type="button"
                     >
                       {busyAction === `confirm:${item.claimId}` ? <Loader2 size={16} /> : <ClipboardCheck size={16} />}
-                      {item.physicalReceiptConfirmed ? "Receipt confirmed" : "Confirm receipt"}
+                      {!item.physicalReceiptRequired ? "No receipt gate" : item.physicalReceiptConfirmed ? "Receipt confirmed" : "Confirm receipt"}
                     </button>
                     <button
                       className="button"
-                      disabled={!item.physicalReceiptConfirmed || busyAction === `release:${item.claimId}`}
+                      disabled={(item.physicalReceiptRequired && !item.physicalReceiptConfirmed) || busyAction === `release:${item.claimId}`}
                       onClick={() => void releasePayment(item.claimId)}
                       type="button"
-                      title={item.physicalReceiptConfirmed ? "Release payment" : "Confirm receipt before releasing payment"}
+                      title={!item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release payment" : "Confirm receipt before releasing payment"}
                     >
                       {busyAction === `release:${item.claimId}` ? <Loader2 size={16} /> : <Banknote size={16} />}
-                      {item.physicalReceiptConfirmed ? "Release" : "Receipt pending"}
+                      {!item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release" : "Receipt pending"}
                     </button>
                   </div>
                 </td>
@@ -247,7 +270,57 @@ export function FinanceQueue() {
             </tr>
           ) : null}
         </tbody>
-      </table>
-    </section>
+        </table>
+      </section>
+
+      <section className="panel">
+        <h2>Advances Pending Settlement</h2>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Advance</th>
+              <th>Claimant</th>
+              <th>Site</th>
+              <th>Advance</th>
+              <th>Settled</th>
+              <th>Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr>
+                <td colSpan={6}>
+                  <span className="loading-inline">
+                    <Loader2 size={16} />
+                    Loading advances...
+                  </span>
+                </td>
+              </tr>
+            ) : null}
+            {!isLoading && advances.map((advance) => (
+              <tr key={advance.claimId}>
+                <td>
+                  <strong>{advance.ticketId}</strong>
+                  <br />
+                  <span className="muted">{advance.ageDays} days open</span>
+                </td>
+                <td>{advance.submittedBy}</td>
+                <td>{advance.siteName ?? "No site linked"}</td>
+                <td>Rs {advance.advanceAmount.toLocaleString("en-IN")}</td>
+                <td>Rs {advance.settledAmount.toLocaleString("en-IN")}</td>
+                <td>
+                  <span className="badge warning">Rs {advance.advanceBalance.toLocaleString("en-IN")}</span>
+                </td>
+              </tr>
+            ))}
+            {!isLoading && advances.length === 0 ? (
+              <tr>
+                <td colSpan={6}>No paid advances pending settlement.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </section>
+    </div>
   );
 }

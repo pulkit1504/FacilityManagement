@@ -19,6 +19,7 @@ import type {
   FraudRuleName,
   MisDashboardMetrics,
   OverviewMetrics,
+  PendingAdvanceItem,
   Site,
   SubmissionMode
 } from "../domain/types";
@@ -90,6 +91,8 @@ export interface ClaimRepository {
   findManagingDirector(): Promise<Employee | null>;
   listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
   listFinanceQueue(): Promise<FinanceQueueItem[]>;
+  listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]>;
+  applySettlementToAdvance(settlementClaimId: string): Promise<void>;
   getPendingApprovalStep(claimId: string): Promise<ApprovalStep | null>;
   decideApprovalStep(stepId: string, decision: "Approved" | "Rejected", remarks?: string | null): Promise<void>;
   rejectClaim(claimId: string, reason: string): Promise<ExpenseClaim>;
@@ -116,6 +119,8 @@ export type ClaimSummary = Pick<
   ExpenseClaim,
   "claimId" | "submissionMode" | "status" | "totalAmount" | "siteId" | "createdAt" | "updatedAt"
 > & {
+  ticketId: string;
+  claimKind: ExpenseClaim["claimKind"];
   statusLabel: string;
   siteName: string | null;
 };
@@ -127,10 +132,22 @@ export function defaultClaimRecord(
 ): ExpenseClaim {
   return {
     claimId,
+    ticketId:
+      input.claimKind === "Advance"
+        ? `ADV-${claimId.slice(0, 8).toUpperCase()}`
+        : input.claimKind === "Settlement"
+          ? `SET-${claimId.slice(0, 8).toUpperCase()}`
+          : `EXP-${claimId.slice(0, 8).toUpperCase()}`,
     submitterEmployeeId: input.submitterEmployeeId,
+    claimKind: input.claimKind ?? "Reimbursement",
     submissionMode: input.submissionMode as SubmissionMode,
     proformaPeriodStart: input.proformaPeriodStart ?? null,
     proformaPeriodEnd: input.proformaPeriodEnd ?? null,
+    claimPeriodMonth: input.claimPeriodMonth ?? null,
+    advanceClaimId: input.advanceClaimId ?? null,
+    advanceAmount: 0,
+    settledAmount: 0,
+    advanceBalance: 0,
     status: "Draft",
     totalAmount: 0,
     siteId: input.siteId ?? null,

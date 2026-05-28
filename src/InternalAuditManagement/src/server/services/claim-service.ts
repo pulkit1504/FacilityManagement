@@ -2,7 +2,7 @@ import { conflict, forbidden, notFound } from "../errors/application-error";
 import type { ClaimDetail, ExpenseClaim, UserContext } from "../domain/types";
 import { statusLabel } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
-import type { CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
+import type { CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
 
 export class ClaimService {
   constructor(private readonly claims: ClaimRepository) {}
@@ -17,6 +17,8 @@ export class ClaimService {
     return {
       items: claims.map((claim) => ({
         claimId: claim.claimId,
+        ticketId: claim.ticketId,
+        claimKind: claim.claimKind,
         submissionMode: claim.submissionMode,
         status: claim.status,
         statusLabel: statusLabel(claim.status),
@@ -52,6 +54,7 @@ export class ClaimService {
 
     return {
       claimId: claim.claimId,
+      ticketId: claim.ticketId,
       status: claim.status,
       statusLabel: statusLabel(claim.status),
       createdAt: claim.createdAt
@@ -82,6 +85,69 @@ export class ClaimService {
     this.assertLineItemDateIsValidForClaim(claim, input);
 
     return this.claims.addLineItem(claimId, input);
+  }
+
+  async listPendingAdvances(user: UserContext) {
+    if (!["Claimant", "HOD", "Finance", "FinanceHOD"].includes(user.role)) {
+      throw forbidden("You do not have access to imprest advances.");
+    }
+
+    const items = await this.claims.listPendingAdvances(user.userId, user.role);
+    return {
+      items,
+      totalCount: items.length
+    };
+  }
+
+  async createAdvanceRequest(input: CreateAdvanceRequestInput, user: UserContext) {
+    if (!["Claimant", "HOD"].includes(user.role)) {
+      throw forbidden("Only claimants and HODs can request an advance.");
+    }
+
+    const claim = await this.claims.createClaim({
+      submitterEmployeeId: user.userId,
+      claimKind: "Advance",
+      submissionMode: "SingleVoucher",
+      siteId: input.siteId,
+      claimPeriodMonth: input.claimPeriodMonth ?? null,
+      proformaPeriodStart: null,
+      proformaPeriodEnd: null,
+      advanceClaimId: null
+    });
+
+    await this.claims.addLineItem(claim.claimId, {
+      expenseHead: "Imprest Advance",
+      description: input.description,
+      amount: input.amount,
+      transactionDate: new Date().toISOString().slice(0, 10),
+      paymentMode: "Cash",
+      expenseTag: "BackendCTC",
+      clientInvoiceNumber: null,
+      vendorName: null,
+      vendorInvoiceNumber: null,
+      billableAmount: null,
+      siteOrDepartment: input.siteId,
+      lineTicketId: claim.ticketId,
+      siteId: null,
+      sortOrder: 0
+    });
+
+    await this.claims.appendAuditLog({
+      claimId: claim.claimId,
+      actorUserId: user.userId,
+      actionType: "DRAFT_SAVED",
+      preActionStatus: null,
+      postActionStatus: "Draft",
+      auditRemarks: "Imprest advance request draft created.",
+      correlationId: user.correlationId
+    });
+
+    const submitted = await this.submitClaim(claim.claimId, user);
+    return {
+      claimId: claim.claimId,
+      ticketId: claim.ticketId,
+      ...submitted
+    };
   }
 
   async updateLineItem(claimId: string, lineItemId: string, input: CreateLineItemInput, user: UserContext) {
@@ -151,6 +217,19 @@ export class ClaimService {
     const gateErrors = this.validateSubmissionGates(claim);
     if (gateErrors.length > 0) {
       throw conflict("Claim cannot be submitted until all gate checks pass.", { errors: gateErrors });
+    }
+
+    if (claim.claimKind === "Settlement") {
+      const advance = claim.advanceClaimId ? await this.claims.getClaimDetail(claim.advanceClaimId) : null;
+      if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
+        throw conflict("Settlement claims must be linked to a paid advance.");
+      }
+
+      if (claim.totalAmount > advance.advanceBalance) {
+        throw conflict("Settlement amount cannot be greater than the open advance balance.", {
+          errors: [`Open advance balance is Rs ${advance.advanceBalance.toLocaleString("en-IN")}.`]
+        });
+      }
     }
 
     const submitter = await this.claims.getEmployee(claim.submitterEmployeeId);
@@ -287,6 +366,10 @@ export class ClaimService {
 
     if (claim.lineItems.length === 0) {
       errors.push("At least one line item is required.");
+    }
+
+    if (claim.claimKind === "Settlement" && !claim.advanceClaimId) {
+      errors.push("Settlement claims must be linked to a paid advance.");
     }
 
     if (claim.submissionMode === "Proforma" && claim.lineItems.length < 2) {

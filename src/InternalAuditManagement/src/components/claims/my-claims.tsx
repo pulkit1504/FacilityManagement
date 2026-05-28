@@ -6,6 +6,8 @@ import Link from "next/link";
 
 type ClaimSummary = {
   claimId: string;
+  ticketId: string;
+  claimKind: "Advance" | "Settlement" | "Reimbursement";
   submissionMode: "SingleVoucher" | "Proforma";
   status: string;
   statusLabel: string;
@@ -165,9 +167,9 @@ export function MyClaims() {
               <Fragment key={claim.claimId}>
                 <tr>
                   <td>
-                    <strong>{claim.claimId.slice(0, 8)}</strong>
+                    <strong>{claim.ticketId ?? claim.claimId.slice(0, 8)}</strong>
                     <br />
-                    <span className="muted">{claim.siteName ?? "No site linked"}</span>
+                    <span className="muted">{claim.claimKind} · {claim.siteName ?? "No site linked"}</span>
                   </td>
                   <td>{claim.submissionMode === "Proforma" ? "Periodic Proforma" : "Single Voucher"}</td>
                   <td>Rs {claim.totalAmount.toLocaleString("en-IN")}</td>

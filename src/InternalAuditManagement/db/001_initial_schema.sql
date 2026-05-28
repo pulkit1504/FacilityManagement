@@ -9,6 +9,10 @@ create table if not exists employees (
   direct_manager_id text references employees(employee_id),
   is_hod boolean not null default false,
   approval_threshold_amount numeric(18,2) not null default 0,
+  bank_account_holder_name text,
+  bank_account_number text,
+  bank_ifsc text,
+  bank_name text,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -33,10 +37,17 @@ create table if not exists sites (
 
 create table if not exists expense_claims (
   claim_id uuid primary key default gen_random_uuid(),
+  ticket_id text not null unique default ('EXP-' || upper(left(gen_random_uuid()::text, 8))),
   submitter_employee_id text not null references employees(employee_id),
+  claim_kind text not null default 'Reimbursement' check (claim_kind in ('Advance', 'Settlement', 'Reimbursement')),
   submission_mode text not null check (submission_mode in ('SingleVoucher', 'Proforma')),
   proforma_period_start date,
   proforma_period_end date,
+  claim_period_month date,
+  advance_claim_id uuid references expense_claims(claim_id),
+  advance_amount numeric(18,2) not null default 0,
+  settled_amount numeric(18,2) not null default 0,
+  advance_balance numeric(18,2) not null default 0,
   status text not null default 'Draft' check (
     status in ('Draft', 'Submitted', 'HodApproved', 'MdApproved', 'FinanceConfirmed', 'PaymentReleased', 'Rejected')
   ),
@@ -57,11 +68,18 @@ create table if not exists expense_claims (
 create table if not exists expense_line_items (
   line_item_id uuid primary key default gen_random_uuid(),
   claim_id uuid not null references expense_claims(claim_id),
+  expense_head text,
   description text not null check (length(description) between 3 and 500),
   amount numeric(18,2) not null check (amount > 0),
   transaction_date date not null,
+  payment_mode text check (payment_mode is null or payment_mode in ('Cash', 'UPI')),
   expense_tag text not null check (expense_tag in ('AlreadyBilled', 'PendingBilling', 'ContractPartCost', 'BackendCTC')),
   client_invoice_number text,
+  vendor_name text,
+  vendor_invoice_number text,
+  billable_amount numeric(18,2),
+  site_or_department text,
+  line_ticket_id text,
   invoice_validation_status text not null default 'NotApplicable' check (
     invoice_validation_status in ('Valid', 'Invalid', 'NotApplicable', 'PendingErpValidation')
   ),
@@ -150,6 +168,8 @@ create table if not exists audit_log (
 
 create index if not exists ix_claims_submitter on expense_claims(submitter_employee_id) where is_deleted = false;
 create index if not exists ix_claims_status on expense_claims(status) where is_deleted = false;
+create index if not exists ix_claims_kind_status on expense_claims(claim_kind, status) where is_deleted = false;
+create index if not exists ix_claims_advance_claim_id on expense_claims(advance_claim_id) where is_deleted = false;
 create index if not exists ix_audit_log_claim_id on audit_log(claim_id);
 create index if not exists ix_audit_log_timestamp on audit_log(action_timestamp desc);
 create index if not exists ix_billing_alerts_next_send on billing_alerts(next_send_at) where is_resolved = false;

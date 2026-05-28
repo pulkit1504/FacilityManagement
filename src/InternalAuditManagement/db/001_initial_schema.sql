@@ -37,7 +37,7 @@ create table if not exists sites (
 
 create table if not exists expense_claims (
   claim_id uuid primary key default gen_random_uuid(),
-  ticket_id text not null unique default ('EXP-' || upper(left(gen_random_uuid()::text, 8))),
+  ticket_id text not null unique default ('EXP-' || to_char(now(), 'YYMMDD') || '-' || upper(left(gen_random_uuid()::text, 4))),
   submitter_employee_id text not null references employees(employee_id),
   claim_kind text not null default 'Reimbursement' check (claim_kind in ('Advance', 'Settlement', 'Reimbursement')),
   submission_mode text not null check (submission_mode in ('SingleVoucher', 'Proforma')),

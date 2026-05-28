@@ -362,6 +362,10 @@ export type NotificationOutboxItem = {
   body: string;
   relatedClaimId: string | null;
   status: "Queued" | "Sent" | "Failed";
+  deliveryAttempts: number;
+  lastAttemptAt: string | null;
+  lastError: string | null;
+  providerMessageId: string | null;
   createdAt: string;
   sentAt: string | null;
 };

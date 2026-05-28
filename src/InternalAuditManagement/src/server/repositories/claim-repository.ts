@@ -97,8 +97,10 @@ export interface ClaimRepository {
   getEmployeeByEmail(email: string): Promise<Employee | null>;
   authenticateEmployee(email: string, password: string): Promise<Employee | null>;
   findManagingDirector(): Promise<Employee | null>;
-  enqueueNotification(input: NotificationOutboxInput): Promise<void>;
-  listNotifications(status?: "Queued" | "Sent" | "Failed"): Promise<NotificationOutboxItem[]>;
+  enqueueNotification(input: NotificationOutboxInput): Promise<NotificationOutboxItem>;
+  listNotifications(status?: "Queued" | "Sent" | "Failed" | "All"): Promise<NotificationOutboxItem[]>;
+  markNotificationSent(notificationId: string, providerMessageId: string | null): Promise<void>;
+  markNotificationFailed(notificationId: string, errorMessage: string): Promise<void>;
   listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
   listFinanceQueue(): Promise<FinanceQueueItem[]>;
   listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]>;

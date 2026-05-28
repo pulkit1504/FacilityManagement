@@ -2,10 +2,14 @@ import { conflict, forbidden, notFound } from "../errors/application-error";
 import type { ClaimDetail, ExpenseClaim, UserContext } from "../domain/types";
 import { statusLabel } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
+import type { NotificationService } from "./notification-service";
 import type { CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
 
 export class ClaimService {
-  constructor(private readonly claims: ClaimRepository) {}
+  constructor(
+    private readonly claims: ClaimRepository,
+    private readonly notifications: NotificationService
+  ) {}
 
   async listClaims(user: UserContext) {
     const [claims, sites] = await Promise.all([
@@ -358,7 +362,7 @@ export class ClaimService {
   }
 
   private async notifyEmployee(employee: NonNullable<Awaited<ReturnType<ClaimRepository["getEmployee"]>>>, subject: string, body: string, claimId: string) {
-    await this.claims.enqueueNotification({
+    await this.notifications.enqueueAndSend({
       recipientEmployeeId: employee.employeeId,
       recipientEmail: employee.email,
       subject,

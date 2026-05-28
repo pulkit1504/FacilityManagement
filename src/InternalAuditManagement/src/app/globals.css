@@ -385,6 +385,21 @@ h1 {
   gap: 8px;
 }
 
+.settlement-summary {
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  padding: 12px;
+}
+
+.settlement-summary > div {
+  display: grid;
+  gap: 4px;
+}
+
 .receipt-row {
   align-items: center;
   background: var(--surface);
@@ -460,6 +475,10 @@ h1 {
 
   .audit-evidence-row {
     align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .settlement-summary {
     grid-template-columns: 1fr;
   }
 }

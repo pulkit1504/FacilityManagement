@@ -28,9 +28,12 @@ type PendingAdvance = {
   settledAmount: number;
   advanceBalance: number;
   ageDays: number;
+  settlementStatus: "Open" | "Aging" | "Overdue";
+  settlementStatusLabel: string;
 };
 
 type ClaimReceiptDetail = {
+  ticketId: string;
   lineItems: Array<{
     lineItemId: string;
     description: string;
@@ -226,6 +229,31 @@ export function FinanceQueue() {
     }
   }
 
+  async function exportAuditTrail(claimId: string, ticketId: string) {
+    setBusyAction(`audit:${claimId}`);
+    try {
+      const response = await fetch(`/api/v1/claims/${claimId}/audit/export`);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail ?? "Could not export audit trail.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${ticketId}-audit-trail.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not export audit trail.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   function allLinesAccepted(item: FinanceItem) {
     if (item.claimKind === "Advance") return true;
     const details = claimDetails[item.claimId];
@@ -330,6 +358,10 @@ export function FinanceQueue() {
                       {busyAction === `return:${item.claimId}` ? <Loader2 size={16} /> : null}
                       Return
                     </button>
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void exportAuditTrail(item.claimId, item.ticketId)} type="button">
+                      {busyAction === `audit:${item.claimId}` ? <Loader2 size={16} /> : <Download size={16} />}
+                      Audit CSV
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -398,12 +430,13 @@ export function FinanceQueue() {
               <th>Advance</th>
               <th>Settled</th>
               <th>Balance</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <span className="loading-inline">
                     <Loader2 size={16} />
                     Loading advances...
@@ -425,11 +458,16 @@ export function FinanceQueue() {
                 <td>
                   <span className="badge warning">Rs {advance.advanceBalance.toLocaleString("en-IN")}</span>
                 </td>
+                <td>
+                  <span className={`badge ${advance.settlementStatus === "Overdue" ? "danger" : advance.settlementStatus === "Aging" ? "warning" : "success"}`}>
+                    {advance.settlementStatusLabel}
+                  </span>
+                </td>
               </tr>
             ))}
             {!isLoading && advances.length === 0 ? (
               <tr>
-                <td colSpan={6}>No paid advances pending settlement.</td>
+                <td colSpan={7}>No paid advances pending settlement.</td>
               </tr>
             ) : null}
           </tbody>

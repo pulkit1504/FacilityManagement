@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Eye, FileText, Loader2 } from "lucide-react";
+import { Download, Eye, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 type ClaimSummary = {
@@ -114,6 +114,31 @@ export function MyClaims() {
     }
   }
 
+  async function exportAuditTrail(claimId: string, ticketId: string) {
+    setBusyAction(`audit:${claimId}`);
+    try {
+      const response = await fetch(`/api/v1/claims/${claimId}/audit/export`);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail ?? "Could not export audit trail.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${ticketId}-audit-trail.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not export audit trail.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   return (
     <div className="grid" style={{ gap: 16 }}>
       <div className="grid cols-3">
@@ -198,6 +223,7 @@ export function MyClaims() {
                         claim={details[claim.claimId]}
                         isLoading={!details[claim.claimId]}
                         onOpenReceipt={(lineItemId, attachmentId) => void openReceipt(claim.claimId, lineItemId, attachmentId)}
+                        onExportAudit={() => void exportAuditTrail(claim.claimId, claim.ticketId)}
                         busyAction={busyAction}
                       />
                     </td>
@@ -221,11 +247,13 @@ function ClaimDetailPanel({
   claim,
   isLoading,
   onOpenReceipt,
+  onExportAudit,
   busyAction
 }: Readonly<{
   claim?: ClaimDetail;
   isLoading: boolean;
   onOpenReceipt: (lineItemId: string, attachmentId: string) => void;
+  onExportAudit: () => void;
   busyAction: string | null;
 }>) {
   if (isLoading || !claim) {
@@ -253,6 +281,10 @@ function ClaimDetailPanel({
           </span>
         ))}
         {claim.physicalReceiptConfirmedAt ? <span className="badge success">Receipt confirmed</span> : null}
+        <button className="button secondary" disabled={Boolean(busyAction?.startsWith("audit:"))} onClick={onExportAudit} type="button">
+          {busyAction?.startsWith("audit:") ? <Loader2 size={16} /> : <Download size={16} />}
+          Export audit trail
+        </button>
       </div>
       {claim.lineItems.map((line) => (
         <div className="approval-line-row" key={line.lineItemId}>

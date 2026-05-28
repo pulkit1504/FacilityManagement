@@ -19,6 +19,8 @@ type PendingAdvance = {
   advanceBalance: number;
   paidAt: string;
   ageDays: number;
+  settlementStatus: "Open" | "Aging" | "Overdue";
+  settlementStatusLabel: string;
 };
 
 export function ImprestWorkspace() {
@@ -147,13 +149,14 @@ export function ImprestWorkspace() {
               <th>Amount</th>
               <th>Settled</th>
               <th>Balance</th>
+              <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <span className="loading-inline">
                     <Loader2 size={16} />
                     Loading advances...
@@ -175,6 +178,11 @@ export function ImprestWorkspace() {
                   <span className="badge warning">Rs {advance.advanceBalance.toLocaleString("en-IN")}</span>
                 </td>
                 <td>
+                  <span className={`badge ${advance.settlementStatus === "Overdue" ? "danger" : advance.settlementStatus === "Aging" ? "warning" : "success"}`}>
+                    {advance.settlementStatusLabel}
+                  </span>
+                </td>
+                <td>
                   <Link className="button secondary" href={`/claims/new?kind=Settlement&advanceClaimId=${advance.claimId}`}>
                     <WalletCards size={16} />
                     Settle
@@ -184,7 +192,7 @@ export function ImprestWorkspace() {
             ))}
             {!isLoading && advances.length === 0 ? (
               <tr>
-                <td colSpan={6}>No paid advances pending settlement.</td>
+                <td colSpan={7}>No paid advances pending settlement.</td>
               </tr>
             ) : null}
           </tbody>

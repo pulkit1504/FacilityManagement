@@ -441,7 +441,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       ascending: false
     });
 
-    if (role === "Claimant" || role === "HOD") {
+    if (role === "Claimant" || role === "ClusterHead" || role === "HOD") {
       query = query.eq("submitter_employee_id", userId);
     }
 
@@ -968,7 +968,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .order("updated_at", { ascending: false })
       .limit(100);
 
-    if (["Claimant", "HOD"].includes(role)) {
+    if (["Claimant", "ClusterHead", "HOD"].includes(role)) {
       query = query.eq("submitter_employee_id", userId);
     }
 

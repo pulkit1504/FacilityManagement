@@ -248,32 +248,24 @@ export class ClaimService {
       throw conflict("Submitter employee record is missing or inactive.");
     }
 
-    const firstApprover = submitter.isHod
-      ? await this.claims.findManagingDirector()
-      : submitter.directManagerId
-        ? await this.claims.getEmployee(submitter.directManagerId)
-        : null;
-
+    const approvalSteps = await this.buildOperationalApprovalSteps(claim, submitter, user);
+    const firstApprover = approvalSteps[0]?.approver;
     if (!firstApprover) {
-      throw conflict("No approver is configured for this employee.");
-    }
-
-    if (firstApprover.employeeId === user.userId) {
-      throw conflict("A user cannot approve their own claim.");
+      throw conflict("No approver is configured for this claim.");
     }
 
     const nextStatus = "Submitted";
     const updatedClaim = await this.claims.submitClaim(claimId, nextStatus);
 
     await Promise.all([
-      this.claims.createApprovalSteps([
-        {
+      this.claims.createApprovalSteps(
+        approvalSteps.map((step, index) => ({
           claimId,
-          stepOrder: 1,
-          requiredApproverRole: submitter.isHod ? "MD" : "HOD",
-          assignedApproverId: firstApprover.employeeId
-        }
-      ]),
+          stepOrder: index + 1,
+          requiredApproverRole: step.role,
+          assignedApproverId: step.approver.employeeId
+        }))
+      ),
       this.claims.appendAuditLog({
         claimId,
         actorUserId: user.userId,
@@ -284,12 +276,79 @@ export class ClaimService {
       })
     ]);
 
+    await this.notifyEmployee(
+      firstApprover,
+      `Claim ${claim.ticketId} is pending your approval`,
+      `Claim ${claim.ticketId} for Rs ${claim.totalAmount.toLocaleString("en-IN")} has been submitted for your approval.`,
+      claimId
+    );
+
     return {
       status: updatedClaim.status,
       statusLabel: statusLabel(updatedClaim.status),
-      assignedTo: `${firstApprover.fullName} (${submitter.isHod ? "MD" : "HOD"})`,
+      assignedTo: `${firstApprover.fullName} (${approvalSteps[0].role})`,
       message: "Your claim has been submitted successfully."
     };
+  }
+
+  private async buildOperationalApprovalSteps(claim: ClaimDetail, submitter: Awaited<ReturnType<ClaimRepository["getEmployee"]>>, user: UserContext) {
+    if (!submitter) {
+      throw conflict("Submitter employee record is missing or inactive.");
+    }
+
+    const steps: Array<{ role: "ClusterHead" | "HOD" | "MD"; approver: NonNullable<typeof submitter> }> = [];
+    const addStep = (role: "ClusterHead" | "HOD" | "MD", approver: NonNullable<typeof submitter>) => {
+      if (approver.employeeId === user.userId) {
+        return;
+      }
+
+      if (!steps.some((step) => step.approver.employeeId === approver.employeeId && step.role === role)) {
+        steps.push({ role, approver });
+      }
+    };
+
+    const sites = await this.claims.listActiveSites();
+    const site = claim.siteId ? sites.find((item) => item.siteId === claim.siteId) : null;
+    if (site?.clusterHeadEmployeeId) {
+      const clusterHead = await this.claims.getEmployee(site.clusterHeadEmployeeId);
+      if (clusterHead?.role === "ClusterHead") {
+        addStep("ClusterHead", clusterHead);
+      }
+    }
+
+    if (submitter.isHod) {
+      const md = await this.claims.findManagingDirector();
+      if (md) addStep("MD", md);
+    } else if (submitter.directManagerId) {
+      const manager = await this.claims.getEmployee(submitter.directManagerId);
+      if (manager) {
+        addStep(manager.role === "MD" ? "MD" : "HOD", manager);
+      }
+    }
+
+    const cashTotal = claim.lineItems
+      .filter((item) => item.paymentMode === "Cash")
+      .reduce((sum, item) => sum + item.amount, 0);
+    if (cashTotal > 10_000 && !steps.some((step) => step.role === "MD")) {
+      const md = await this.claims.findManagingDirector();
+      if (md) addStep("MD", md);
+    }
+
+    if (steps.length === 0) {
+      throw conflict("No approver is configured for this employee or site.");
+    }
+
+    return steps;
+  }
+
+  private async notifyEmployee(employee: NonNullable<Awaited<ReturnType<ClaimRepository["getEmployee"]>>>, subject: string, body: string, claimId: string) {
+    await this.claims.enqueueNotification({
+      recipientEmployeeId: employee.employeeId,
+      recipientEmail: employee.email,
+      subject,
+      body,
+      relatedClaimId: claimId
+    });
   }
 
   async reopenReturnedClaim(claimId: string, user: UserContext) {

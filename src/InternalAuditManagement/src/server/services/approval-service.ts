@@ -7,8 +7,8 @@ export class ApprovalService {
   constructor(private readonly claims: ClaimRepository) {}
 
   async listQueue(user: UserContext) {
-    if (!["HOD", "MD"].includes(user.role)) {
-      throw forbidden("Only HOD and MD approvers can view approval queues.");
+    if (!["ClusterHead", "HOD", "MD"].includes(user.role)) {
+      throw forbidden("Only Cluster Head, HOD, and MD approvers can view approval queues.");
     }
 
     const items = await this.claims.listApprovalQueue(user.userId, user.role);
@@ -39,6 +39,46 @@ export class ApprovalService {
     }
 
     const newStatus = user.role === "MD" ? "MdApproved" : "HodApproved";
+    const nextOperationalStep = claim.approvalSteps
+      .filter((item) => item.decision === "Pending" && item.stepId !== step.stepId)
+      .sort((a, b) => a.stepOrder - b.stepOrder)[0];
+
+    if (nextOperationalStep) {
+      await Promise.all([
+        this.claims.decideApprovalStep(step.stepId, "Approved", input.remarks ?? null),
+        this.claims.appendAuditLog({
+          claimId,
+          actorUserId: user.userId,
+          actionType: approvalActionType(user.role),
+          preActionStatus: claim.status,
+          postActionStatus: claim.status,
+          auditRemarks: input.remarks ?? `Approved and routed to ${nextOperationalStep.requiredApproverRole}.`,
+          correlationId: user.correlationId
+        })
+      ]);
+
+      if (nextOperationalStep.assignedApproverId) {
+        const nextApprover = await this.claims.getEmployee(nextOperationalStep.assignedApproverId);
+        if (nextApprover) {
+          await this.claims.enqueueNotification({
+            recipientEmployeeId: nextApprover.employeeId,
+            recipientEmail: nextApprover.email,
+            subject: `Claim ${claim.ticketId} is pending your approval`,
+            body: `Claim ${claim.ticketId} for Rs ${claim.totalAmount.toLocaleString("en-IN")} has been routed to you.`,
+            relatedClaimId: claimId
+          });
+        }
+      }
+
+      return {
+        claimId,
+        newStatus: claim.status,
+        newStatusLabel: statusLabel(claim.status),
+        nextAction: `Routed to ${nextOperationalStep.requiredApproverRole}`,
+        message: "Claim approved and routed to the next approver."
+      };
+    }
+
     const [updated] = await Promise.all([
       this.claims.submitClaim(claimId, newStatus),
       this.claims.decideApprovalStep(step.stepId, "Approved", input.remarks ?? null)
@@ -49,13 +89,27 @@ export class ApprovalService {
       this.claims.appendAuditLog({
         claimId,
         actorUserId: user.userId,
-        actionType: user.role === "MD" ? "MD_APPROVE" : "HOD_APPROVE",
+        actionType: approvalActionType(user.role),
         preActionStatus: claim.status,
         postActionStatus: updated.status,
         auditRemarks: input.remarks ?? null,
         correlationId: user.correlationId
       })
     ]);
+
+    const employees = await this.claims.listEmployees();
+    const financeRecipients = employees.filter((employee) => ["Finance", "FinanceHOD"].includes(employee.role));
+    await Promise.all(
+      financeRecipients.map((employee) =>
+        this.claims.enqueueNotification({
+          recipientEmployeeId: employee.employeeId,
+          recipientEmail: employee.email,
+          subject: `Claim ${claim.ticketId} is ready for Finance review`,
+          body: `Claim ${claim.ticketId} has completed operational approval and is ready for Finance receipt confirmation.`,
+          relatedClaimId: claimId
+        })
+      )
+    );
 
     return {
       claimId,
@@ -94,6 +148,17 @@ export class ApprovalService {
       correlationId: user.correlationId
     });
 
+    const submitter = await this.claims.getEmployee(claim.submitterEmployeeId);
+    if (submitter) {
+      await this.claims.enqueueNotification({
+        recipientEmployeeId: submitter.employeeId,
+        recipientEmail: submitter.email,
+        subject: `Claim ${claim.ticketId} was returned`,
+        body: `Claim ${claim.ticketId} was returned for correction. Reason: ${input.reason}`,
+        relatedClaimId: claimId
+      });
+    }
+
     return {
       claimId,
       newStatus: updated.status,
@@ -102,4 +167,10 @@ export class ApprovalService {
       message: "Claim returned to claimant."
     };
   }
+}
+
+function approvalActionType(role: UserContext["role"]) {
+  if (role === "MD") return "MD_APPROVE";
+  if (role === "ClusterHead") return "CLUSTER_HEAD_APPROVE";
+  return "HOD_APPROVE";
 }

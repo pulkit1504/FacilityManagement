@@ -23,6 +23,12 @@ export const testUsers = [
     email: "claimant@example.com"
   },
   {
+    userId: "emp-cluster-001",
+    role: "ClusterHead",
+    name: "Cluster Head",
+    email: "clusterhead@example.com"
+  },
+  {
     userId: "emp-hod-001",
     role: "HOD",
     name: "Operations HOD",

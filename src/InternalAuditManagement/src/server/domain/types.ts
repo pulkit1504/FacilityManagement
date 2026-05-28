@@ -28,6 +28,7 @@ export type ExpenseTag = (typeof expenseTags)[number];
 
 export const userRoles = [
   "Claimant",
+  "ClusterHead",
   "HOD",
   "MD",
   "Finance",
@@ -43,6 +44,7 @@ export const auditActionTypes = [
   "BILLING_ALERT_CREATED",
   "INVOICE_LINKED",
   "SUBMIT",
+  "CLUSTER_HEAD_APPROVE",
   "HOD_APPROVE",
   "MD_APPROVE",
   "FINANCE_CONFIRM",
@@ -94,6 +96,8 @@ export type Site = {
   contractId: string | null;
   clientName: string | null;
   contractDescription: string | null;
+  clusterHeadEmployeeId: string | null;
+  clusterHeadName: string | null;
 };
 
 export type ClientContract = {
@@ -166,7 +170,7 @@ export type ApprovalStep = {
   stepId: string;
   claimId: string;
   stepOrder: number;
-  requiredApproverRole: "HOD" | "MD" | "Finance";
+  requiredApproverRole: "ClusterHead" | "HOD" | "MD" | "Finance";
   assignedApproverId: string | null;
   decision: "Pending" | "Approved" | "Rejected";
   decisionAt: string | null;
@@ -317,6 +321,14 @@ export type BillableClaimReportRow = {
   invoiceNumber: string | null;
   recoveryStatus: "Billed" | "Pending Billing" | "Non Billable";
   transactionDate: string;
+};
+
+export type NotificationOutboxInput = {
+  recipientEmployeeId: string;
+  recipientEmail: string;
+  subject: string;
+  body: string;
+  relatedClaimId: string | null;
 };
 
 export function statusLabel(status: ClaimStatus): string {

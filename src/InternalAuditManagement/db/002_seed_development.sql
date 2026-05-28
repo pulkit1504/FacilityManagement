@@ -9,6 +9,7 @@ insert into employees (
 ) values
   ('emp-md-001', 'Managing Director', 'md@example.com', 'MD', null, false, 0),
   ('emp-admin-001', 'System Admin', 'admin@example.com', 'Admin', 'emp-md-001', false, 0),
+  ('emp-cluster-001', 'Cluster Head', 'clusterhead@example.com', 'ClusterHead', 'emp-hod-001', false, 0),
   ('emp-hod-001', 'Operations HOD', 'hod@example.com', 'HOD', 'emp-md-001', true, 5000),
   ('emp-claimant-001', 'Site Supervisor', 'claimant@example.com', 'Claimant', 'emp-hod-001', false, 0),
   ('emp-finance-hod-001', 'Finance HOD', 'finance.hod@example.com', 'FinanceHOD', 'emp-md-001', false, 0),
@@ -20,6 +21,6 @@ insert into client_contracts (contract_id, client_name, description, start_date)
 values ('ctr-ansal-001', 'Ansal Heights RWA', 'Residential society FM contract', '2026-01-01')
 on conflict (contract_id) do nothing;
 
-insert into sites (site_id, site_name, site_address, service_type, contract_id)
-values ('site-ansal-a', 'Ansal Heights Block A', 'Sector 92, Gurugram', 'Both', 'ctr-ansal-001')
+insert into sites (site_id, site_name, site_address, service_type, contract_id, cluster_head_employee_id)
+values ('site-ansal-a', 'Ansal Heights Block A', 'Sector 92, Gurugram', 'Both', 'ctr-ansal-001', 'emp-cluster-001')
 on conflict (site_id) do nothing;

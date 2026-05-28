@@ -4,13 +4,22 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
 
 type ExpenseTag = "AlreadyBilled" | "PendingBilling" | "ContractPartCost" | "BackendCTC";
+type ClaimKind = "Settlement" | "Reimbursement";
+type PaymentMode = "Cash" | "UPI";
 
 type LineItemDraft = {
+  expenseHead: string;
   description: string;
   amount: string;
   transactionDate: string;
+  paymentMode: PaymentMode;
   expenseTag: ExpenseTag;
   clientInvoiceNumber: string;
+  vendorName: string;
+  vendorInvoiceNumber: string;
+  billableAmount: string;
+  siteOrDepartment: string;
+  lineTicketId: string;
   siteId: string;
 };
 
@@ -24,11 +33,18 @@ type SiteOption = {
 
 type SavedLineItem = {
   lineItemId: string;
+  expenseHead: string | null;
   description: string;
   amount: number;
   transactionDate: string;
+  paymentMode: PaymentMode | null;
   expenseTag: ExpenseTag;
   clientInvoiceNumber: string | null;
+  vendorName: string | null;
+  vendorInvoiceNumber: string | null;
+  billableAmount: number | null;
+  siteOrDepartment: string | null;
+  lineTicketId: string | null;
   siteId: string | null;
   missingReceiptFlag: boolean;
   attachmentHash?: string;
@@ -36,6 +52,8 @@ type SavedLineItem = {
 
 type LoadedClaim = {
   claimId: string;
+  claimKind: "Advance" | "Settlement" | "Reimbursement";
+  advanceClaimId: string | null;
   submissionMode: "SingleVoucher" | "Proforma";
   proformaPeriodStart: string | null;
   proformaPeriodEnd: string | null;
@@ -44,6 +62,14 @@ type LoadedClaim = {
   siteId: string | null;
   rejectionReason: string | null;
   lineItems: Array<SavedLineItem & { attachments: Array<{ contentHash: string }> }>;
+};
+
+type PendingAdvance = {
+  claimId: string;
+  ticketId: string;
+  siteName: string | null;
+  advanceAmount: number;
+  advanceBalance: number;
 };
 
 type SubmissionResult = {
@@ -62,16 +88,30 @@ type ProblemResponse = {
 };
 
 const emptyLineItem: LineItemDraft = {
+  expenseHead: "",
   description: "",
   amount: "",
   transactionDate: new Date().toISOString().slice(0, 10),
+  paymentMode: "Cash",
   expenseTag: "PendingBilling",
   clientInvoiceNumber: "",
+  vendorName: "",
+  vendorInvoiceNumber: "",
+  billableAmount: "",
+  siteOrDepartment: "",
+  lineTicketId: "",
   siteId: ""
 };
 
-export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: string }>) {
+export function ClaimWizard({
+  initialClaimId,
+  initialClaimKind = "Reimbursement",
+  initialAdvanceClaimId
+}: Readonly<{ initialClaimId?: string; initialClaimKind?: ClaimKind; initialAdvanceClaimId?: string }>) {
   const [claimId, setClaimId] = useState<string | null>(null);
+  const [claimKind, setClaimKind] = useState<ClaimKind>(initialClaimKind);
+  const [advanceClaimId, setAdvanceClaimId] = useState(initialAdvanceClaimId ?? "");
+  const [pendingAdvances, setPendingAdvances] = useState<PendingAdvance[]>([]);
   const [claimStatus, setClaimStatus] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [submissionMode, setSubmissionMode] = useState<"SingleVoucher" | "Proforma">("SingleVoucher");
@@ -90,10 +130,12 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
 
   const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
   const requiresSite = lineItem.expenseTag === "ContractPartCost";
+  const requiresBillableAmount = lineItem.expenseTag === "PendingBilling";
+  const requiresSiteOrDepartment = lineItem.expenseTag === "ContractPartCost" || lineItem.expenseTag === "BackendCTC";
   const requiresProformaPeriod = submissionMode === "Proforma";
   const hasValidProformaPeriod =
     !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
-  const canCreateDraft = Boolean(siteId) && hasValidProformaPeriod;
+  const canCreateDraft = Boolean(siteId) && hasValidProformaPeriod && (claimKind !== "Settlement" || Boolean(advanceClaimId));
   const submitGateMessages = useMemo(() => {
     if (editingLineItemId) {
       return ["Save or cancel the line item edit before submitting the claim."];
@@ -116,9 +158,11 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
   const canAddLine = useMemo(() => {
     if (!lineItem.description || !lineItem.amount || Number(lineItem.amount) <= 0) return false;
     if (requiresInvoice && !lineItem.clientInvoiceNumber) return false;
+    if (requiresBillableAmount && (!lineItem.billableAmount || Number(lineItem.billableAmount) <= 0)) return false;
     if (requiresSite && !lineItem.siteId) return false;
+    if (requiresSiteOrDepartment && !lineItem.siteOrDepartment) return false;
     return true;
-  }, [lineItem, requiresInvoice, requiresSite]);
+  }, [lineItem, requiresBillableAmount, requiresInvoice, requiresSite, requiresSiteOrDepartment]);
 
   useEffect(() => {
     async function loadSites() {
@@ -138,6 +182,18 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
   }, []);
 
   useEffect(() => {
+    async function loadPendingAdvances() {
+      const response = await fetch("/api/v1/claims/advances", { cache: "no-store" });
+      const data = await response.json();
+      if (response.ok) {
+        setPendingAdvances(data.items ?? []);
+      }
+    }
+
+    void loadPendingAdvances();
+  }, []);
+
+  useEffect(() => {
     if (!initialClaimId) return;
 
     async function loadClaim() {
@@ -154,6 +210,8 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
 
         setClaimId(data.claimId);
         setClaimStatus(data.status);
+        setClaimKind(data.claimKind === "Settlement" ? "Settlement" : "Reimbursement");
+        setAdvanceClaimId(data.advanceClaimId ?? "");
         setRejectionReason(data.rejectionReason);
         setSubmissionMode(data.submissionMode);
         setSiteId(data.siteId ?? "");
@@ -162,11 +220,18 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
         setSavedLineItems(
           data.lineItems.map((item) => ({
             lineItemId: item.lineItemId,
+            expenseHead: item.expenseHead,
             description: item.description,
             amount: item.amount,
             transactionDate: item.transactionDate,
+            paymentMode: item.paymentMode,
             expenseTag: item.expenseTag,
             clientInvoiceNumber: item.clientInvoiceNumber,
+            vendorName: item.vendorName,
+            vendorInvoiceNumber: item.vendorInvoiceNumber,
+            billableAmount: item.billableAmount,
+            siteOrDepartment: item.siteOrDepartment,
+            lineTicketId: item.lineTicketId,
             siteId: item.siteId,
             missingReceiptFlag: item.missingReceiptFlag,
             attachmentHash: item.attachments[0]?.contentHash?.slice(0, 12)
@@ -194,7 +259,9 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           submissionMode,
+          claimKind,
           siteId,
+          advanceClaimId: claimKind === "Settlement" ? advanceClaimId : null,
           proformaPeriodStart: requiresProformaPeriod ? proformaPeriodStart : null,
           proformaPeriodEnd: requiresProformaPeriod ? proformaPeriodEnd : null
         })
@@ -245,8 +312,15 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
           description: lineItem.description,
           amount: Number(lineItem.amount),
           transactionDate: lineItem.transactionDate,
+          expenseHead: lineItem.expenseHead || null,
+          paymentMode: lineItem.paymentMode,
           expenseTag: lineItem.expenseTag,
           clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
+          vendorName: lineItem.vendorName || null,
+          vendorInvoiceNumber: lineItem.vendorInvoiceNumber || null,
+          billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
+          siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
+          lineTicketId: lineItem.lineTicketId || null,
           siteId: requiresSite ? lineItem.siteId : null,
           sortOrder: savedLineItems.length
         })
@@ -264,11 +338,18 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
             item.lineItemId === editingLineItemId
               ? {
                   ...item,
+                  expenseHead: lineItem.expenseHead || null,
                   description: lineItem.description,
                   amount: Number(lineItem.amount),
                   transactionDate: lineItem.transactionDate,
+                  paymentMode: lineItem.paymentMode,
                   expenseTag: lineItem.expenseTag,
                   clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
+                  vendorName: lineItem.vendorName || null,
+                  vendorInvoiceNumber: lineItem.vendorInvoiceNumber || null,
+                  billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
+                  siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
+                  lineTicketId: lineItem.lineTicketId || null,
                   siteId: requiresSite ? lineItem.siteId : null
                 }
               : item
@@ -279,11 +360,18 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
           ...current,
           {
             lineItemId: data.lineItemId,
+            expenseHead: lineItem.expenseHead || null,
             description: lineItem.description,
             amount: Number(lineItem.amount),
             transactionDate: lineItem.transactionDate,
+            paymentMode: lineItem.paymentMode,
             expenseTag: lineItem.expenseTag,
             clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
+            vendorName: lineItem.vendorName || null,
+            vendorInvoiceNumber: lineItem.vendorInvoiceNumber || null,
+            billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
+            siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
+            lineTicketId: lineItem.lineTicketId || null,
             siteId: requiresSite ? lineItem.siteId : null,
             missingReceiptFlag: true
           }
@@ -305,8 +393,15 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
       description: item.description,
       amount: String(item.amount),
       transactionDate: item.transactionDate,
+      expenseHead: item.expenseHead ?? "",
+      paymentMode: item.paymentMode ?? "Cash",
       expenseTag: item.expenseTag,
       clientInvoiceNumber: item.clientInvoiceNumber ?? "",
+      vendorName: item.vendorName ?? "",
+      vendorInvoiceNumber: item.vendorInvoiceNumber ?? "",
+      billableAmount: item.billableAmount ? String(item.billableAmount) : "",
+      siteOrDepartment: item.siteOrDepartment ?? "",
+      lineTicketId: item.lineTicketId ?? "",
       siteId: item.siteId ?? ""
     });
     setMessage("Editing saved line item. Save changes before submitting.");
@@ -438,6 +533,26 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
         <h2>Claim Details</h2>
         <div className="grid cols-3">
           <label>
+            <span className="muted">Claim type</span>
+            <select disabled={Boolean(claimId)} value={claimKind} onChange={(event) => setClaimKind(event.target.value as ClaimKind)}>
+              <option value="Reimbursement">Reimbursement</option>
+              <option value="Settlement">Settle advance</option>
+            </select>
+          </label>
+          {claimKind === "Settlement" ? (
+            <label>
+              <span className="muted">Advance to settle</span>
+              <select disabled={Boolean(claimId)} value={advanceClaimId} onChange={(event) => setAdvanceClaimId(event.target.value)}>
+                <option value="">Select paid advance</option>
+                {pendingAdvances.map((advance) => (
+                  <option key={advance.claimId} value={advance.claimId}>
+                    {advance.ticketId} - Rs {advance.advanceBalance.toLocaleString("en-IN")} balance
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <label>
             <span className="muted">Entry method</span>
             <select disabled={Boolean(claimId)} value={submissionMode} onChange={(event) => setSubmissionMode(event.target.value as typeof submissionMode)}>
               <option value="SingleVoucher">Single Voucher</option>
@@ -530,6 +645,10 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
             <h2>{editingLineItemId ? "Edit Line Item" : "Add Line Item"}</h2>
             <div className="grid cols-3">
               <label>
+                <span className="muted">Expense head</span>
+                <input value={lineItem.expenseHead} onChange={(event) => setLineItem({ ...lineItem, expenseHead: event.target.value })} />
+              </label>
+              <label>
                 <span className="muted">Description</span>
                 <input value={lineItem.description} onChange={(event) => setLineItem({ ...lineItem, description: event.target.value })} />
               </label>
@@ -548,6 +667,21 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
                 />
               </label>
               <label>
+                <span className="muted">Payment mode</span>
+                <select value={lineItem.paymentMode} onChange={(event) => setLineItem({ ...lineItem, paymentMode: event.target.value as PaymentMode })}>
+                  <option value="Cash">Cash</option>
+                  <option value="UPI">UPI</option>
+                </select>
+              </label>
+              <label>
+                <span className="muted">Vendor name</span>
+                <input value={lineItem.vendorName} onChange={(event) => setLineItem({ ...lineItem, vendorName: event.target.value })} />
+              </label>
+              <label>
+                <span className="muted">Vendor invoice no.</span>
+                <input value={lineItem.vendorInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, vendorInvoiceNumber: event.target.value })} />
+              </label>
+              <label>
                 <span className="muted">Expense tag</span>
                 <select
                   value={lineItem.expenseTag}
@@ -556,6 +690,8 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
                       ...lineItem,
                       expenseTag: event.target.value as ExpenseTag,
                       clientInvoiceNumber: "",
+                      billableAmount: "",
+                      siteOrDepartment: "",
                       siteId: ""
                     })
                   }
@@ -572,6 +708,22 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
                   <input value={lineItem.clientInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, clientInvoiceNumber: event.target.value })} />
                 </label>
               ) : null}
+              {requiresBillableAmount ? (
+                <label>
+                  <span className="muted">Billable amount</span>
+                  <input inputMode="decimal" value={lineItem.billableAmount} onChange={(event) => setLineItem({ ...lineItem, billableAmount: event.target.value })} />
+                </label>
+              ) : null}
+              {requiresSiteOrDepartment ? (
+                <label>
+                  <span className="muted">Site / department</span>
+                  <input value={lineItem.siteOrDepartment} onChange={(event) => setLineItem({ ...lineItem, siteOrDepartment: event.target.value })} />
+                </label>
+              ) : null}
+              <label>
+                <span className="muted">Ticket ID group</span>
+                <input value={lineItem.lineTicketId} onChange={(event) => setLineItem({ ...lineItem, lineTicketId: event.target.value })} />
+              </label>
               {requiresSite ? (
                 <label>
                   <span className="muted">Line site</span>
@@ -629,6 +781,7 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
                   <th>Description</th>
                   <th>Amount</th>
                   <th>Tag</th>
+                  <th>Payment</th>
                   <th>Receipt</th>
                   <th>Action</th>
                 </tr>
@@ -639,6 +792,7 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
                     <td>{item.description}</td>
                     <td>Rs {item.amount.toLocaleString("en-IN")}</td>
                     <td>{item.expenseTag}</td>
+                    <td>{item.paymentMode ?? "Not set"}</td>
                     <td>
                       <span className={`badge ${item.missingReceiptFlag ? "warning" : "success"}`}>
                         {item.missingReceiptFlag ? "Missing" : `Attached ${item.attachmentHash ?? ""}`}
@@ -676,7 +830,7 @@ export function ClaimWizard({ initialClaimId }: Readonly<{ initialClaimId?: stri
                 ))}
                 {savedLineItems.length === 0 ? (
                   <tr>
-                    <td colSpan={5}>No line items saved yet.</td>
+                    <td colSpan={6}>No line items saved yet.</td>
                   </tr>
                 ) : null}
               </tbody>

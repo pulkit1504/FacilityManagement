@@ -1,6 +1,12 @@
 export const submissionModes = ["SingleVoucher", "Proforma"] as const;
 export type SubmissionMode = (typeof submissionModes)[number];
 
+export const claimKinds = ["Advance", "Settlement", "Reimbursement"] as const;
+export type ClaimKind = (typeof claimKinds)[number];
+
+export const paymentModes = ["Cash", "UPI"] as const;
+export type PaymentMode = (typeof paymentModes)[number];
+
 export const claimStatuses = [
   "Draft",
   "Submitted",
@@ -66,6 +72,10 @@ export type Employee = {
   directManagerId: string | null;
   isHod: boolean;
   approvalThresholdAmount: number;
+  bankAccountHolderName: string | null;
+  bankAccountNumber: string | null;
+  bankIfsc: string | null;
+  bankName: string | null;
   isActive: boolean;
 };
 
@@ -96,10 +106,17 @@ export type ClientContract = {
 
 export type ExpenseClaim = {
   claimId: string;
+  ticketId: string;
   submitterEmployeeId: string;
+  claimKind: ClaimKind;
   submissionMode: SubmissionMode;
   proformaPeriodStart: string | null;
   proformaPeriodEnd: string | null;
+  claimPeriodMonth: string | null;
+  advanceClaimId: string | null;
+  advanceAmount: number;
+  settledAmount: number;
+  advanceBalance: number;
   status: ClaimStatus;
   totalAmount: number;
   siteId: string | null;
@@ -113,11 +130,18 @@ export type ExpenseClaim = {
 export type ExpenseLineItem = {
   lineItemId: string;
   claimId: string;
+  expenseHead: string | null;
   description: string;
   amount: number;
   transactionDate: string;
+  paymentMode: PaymentMode | null;
   expenseTag: ExpenseTag;
   clientInvoiceNumber: string | null;
+  vendorName: string | null;
+  vendorInvoiceNumber: string | null;
+  billableAmount: number | null;
+  siteOrDepartment: string | null;
+  lineTicketId: string | null;
   invoiceValidationStatus: "Valid" | "Invalid" | "NotApplicable" | "PendingErpValidation";
   billingAlertCreated: boolean;
   siteId: string | null;
@@ -167,10 +191,25 @@ export type ApprovalQueueItem = {
 };
 
 export type FinanceQueueItem = ApprovalQueueItem & {
+  ticketId: string;
+  claimKind: ClaimKind;
   physicalReceiptRequired: boolean;
   physicalReceiptConfirmed: boolean;
   hasPendingBillingItems: boolean;
   pendingBillingItemCount: number;
+};
+
+export type PendingAdvanceItem = {
+  claimId: string;
+  ticketId: string;
+  submittedBy: string;
+  siteId: string | null;
+  siteName: string | null;
+  advanceAmount: number;
+  settledAmount: number;
+  advanceBalance: number;
+  paidAt: string;
+  ageDays: number;
 };
 
 export type BillingAlert = {

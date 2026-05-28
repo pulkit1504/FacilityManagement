@@ -1,14 +1,33 @@
 import { z } from "zod";
-import { expenseTags, submissionModes, userRoles } from "../domain/types";
+import { claimKinds, expenseTags, paymentModes, submissionModes, userRoles } from "../domain/types";
 
 export const createClaimSchema = z
   .object({
     submissionMode: z.enum(submissionModes),
+    claimKind: z.enum(claimKinds).default("Reimbursement"),
     siteId: z.string().trim().min(1).nullable().optional(),
+    claimPeriodMonth: z.string().date().nullable().optional(),
+    advanceClaimId: z.string().uuid().nullable().optional(),
     proformaPeriodStart: z.string().date().nullable().optional(),
     proformaPeriodEnd: z.string().date().nullable().optional()
   })
   .superRefine((value, ctx) => {
+    if (value.claimKind === "Advance") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["claimKind"],
+        message: "Use the imprest advance request form to create advances."
+      });
+    }
+
+    if (value.claimKind === "Settlement" && !value.advanceClaimId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["advanceClaimId"],
+        message: "Settlement claims must be linked to a paid advance."
+      });
+    }
+
     if (value.submissionMode === "Proforma") {
       if (!value.proformaPeriodStart || !value.proformaPeriodEnd) {
         ctx.addIssue({
@@ -32,11 +51,18 @@ export const createClaimSchema = z
 
 export const createLineItemSchema = z
   .object({
+    expenseHead: z.string().trim().min(1).max(120).nullable().optional(),
     description: z.string().trim().min(3).max(500),
     amount: z.coerce.number().positive(),
     transactionDate: z.string().date(),
+    paymentMode: z.enum(paymentModes).nullable().optional(),
     expenseTag: z.enum(expenseTags),
     clientInvoiceNumber: z.string().trim().min(1).max(100).nullable().optional(),
+    vendorName: z.string().trim().min(1).max(200).nullable().optional(),
+    vendorInvoiceNumber: z.string().trim().min(1).max(100).nullable().optional(),
+    billableAmount: z.coerce.number().nonnegative().nullable().optional(),
+    siteOrDepartment: z.string().trim().min(1).max(200).nullable().optional(),
+    lineTicketId: z.string().trim().min(1).max(100).nullable().optional(),
     siteId: z.string().trim().min(1).nullable().optional(),
     sortOrder: z.coerce.number().int().nonnegative().default(0)
   })
@@ -57,6 +83,22 @@ export const createLineItemSchema = z
       });
     }
 
+    if (value.expenseTag === "PendingBilling" && (value.billableAmount ?? 0) <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["billableAmount"],
+        message: "Pending Billing items require the billable amount."
+      });
+    }
+
+    if (["ContractPartCost", "BackendCTC"].includes(value.expenseTag) && !value.siteOrDepartment) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["siteOrDepartment"],
+        message: "This expense tag requires a site or department reference."
+      });
+    }
+
     if (value.expenseTag === "ContractPartCost" && !value.siteId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -66,8 +108,16 @@ export const createLineItemSchema = z
     }
   });
 
+export const createAdvanceRequestSchema = z.object({
+  siteId: z.string().trim().min(1),
+  amount: z.coerce.number().positive(),
+  description: z.string().trim().min(3).max(500),
+  claimPeriodMonth: z.string().date().nullable().optional()
+});
+
 export type CreateClaimInput = z.infer<typeof createClaimSchema>;
 export type CreateLineItemInput = z.infer<typeof createLineItemSchema>;
+export type CreateAdvanceRequestInput = z.infer<typeof createAdvanceRequestSchema>;
 
 export const approveClaimSchema = z.object({
   remarks: z.string().trim().max(1000).optional()

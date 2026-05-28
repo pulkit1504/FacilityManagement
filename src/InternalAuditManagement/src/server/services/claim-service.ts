@@ -127,7 +127,7 @@ export class ClaimService {
       vendorInvoiceNumber: null,
       billableAmount: null,
       siteOrDepartment: input.siteId,
-      lineTicketId: claim.ticketId,
+      lineTicketId: null,
       siteId: null,
       sortOrder: 0
     });

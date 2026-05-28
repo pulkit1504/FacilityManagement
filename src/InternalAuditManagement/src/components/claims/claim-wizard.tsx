@@ -16,10 +16,8 @@ type LineItemDraft = {
   expenseTag: ExpenseTag;
   clientInvoiceNumber: string;
   vendorName: string;
-  vendorInvoiceNumber: string;
   billableAmount: string;
   siteOrDepartment: string;
-  lineTicketId: string;
   siteId: string;
 };
 
@@ -44,7 +42,6 @@ type SavedLineItem = {
   vendorInvoiceNumber: string | null;
   billableAmount: number | null;
   siteOrDepartment: string | null;
-  lineTicketId: string | null;
   siteId: string | null;
   missingReceiptFlag: boolean;
   attachmentHash?: string;
@@ -96,12 +93,29 @@ const emptyLineItem: LineItemDraft = {
   expenseTag: "PendingBilling",
   clientInvoiceNumber: "",
   vendorName: "",
-  vendorInvoiceNumber: "",
   billableAmount: "",
   siteOrDepartment: "",
-  lineTicketId: "",
   siteId: ""
 };
+
+const expenseHeadOptions = [
+  "Housekeeping Consumables",
+  "Cleaning Chemicals",
+  "Pantry and Refreshments",
+  "Repairs and Maintenance",
+  "Electrical and Plumbing",
+  "Security Operations",
+  "Printing and Stationery",
+  "Courier and Postage",
+  "Travel and Conveyance",
+  "Fuel and Parking",
+  "Staff Welfare",
+  "Uniform and PPE",
+  "Waste Management",
+  "Pest Control",
+  "Client Rechargeable",
+  "Other"
+];
 
 export function ClaimWizard({
   initialClaimId,
@@ -156,6 +170,7 @@ export function ClaimWizard({
   const isDraft = !claimStatus || claimStatus === "Draft";
 
   const canAddLine = useMemo(() => {
+    if (!lineItem.expenseHead) return false;
     if (!lineItem.description || !lineItem.amount || Number(lineItem.amount) <= 0) return false;
     if (requiresInvoice && !lineItem.clientInvoiceNumber) return false;
     if (requiresBillableAmount && (!lineItem.billableAmount || Number(lineItem.billableAmount) <= 0)) return false;
@@ -231,7 +246,6 @@ export function ClaimWizard({
             vendorInvoiceNumber: item.vendorInvoiceNumber,
             billableAmount: item.billableAmount,
             siteOrDepartment: item.siteOrDepartment,
-            lineTicketId: item.lineTicketId,
             siteId: item.siteId,
             missingReceiptFlag: item.missingReceiptFlag,
             attachmentHash: item.attachments[0]?.contentHash?.slice(0, 12)
@@ -317,10 +331,10 @@ export function ClaimWizard({
           expenseTag: lineItem.expenseTag,
           clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
           vendorName: lineItem.vendorName || null,
-          vendorInvoiceNumber: lineItem.vendorInvoiceNumber || null,
+          vendorInvoiceNumber: lineItem.clientInvoiceNumber || null,
           billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
           siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
-          lineTicketId: lineItem.lineTicketId || null,
+          lineTicketId: null,
           siteId: requiresSite ? lineItem.siteId : null,
           sortOrder: savedLineItems.length
         })
@@ -346,10 +360,9 @@ export function ClaimWizard({
                   expenseTag: lineItem.expenseTag,
                   clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
                   vendorName: lineItem.vendorName || null,
-                  vendorInvoiceNumber: lineItem.vendorInvoiceNumber || null,
+                  vendorInvoiceNumber: lineItem.clientInvoiceNumber || null,
                   billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
                   siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
-                  lineTicketId: lineItem.lineTicketId || null,
                   siteId: requiresSite ? lineItem.siteId : null
                 }
               : item
@@ -368,10 +381,9 @@ export function ClaimWizard({
             expenseTag: lineItem.expenseTag,
             clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
             vendorName: lineItem.vendorName || null,
-            vendorInvoiceNumber: lineItem.vendorInvoiceNumber || null,
+            vendorInvoiceNumber: lineItem.clientInvoiceNumber || null,
             billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
             siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
-            lineTicketId: lineItem.lineTicketId || null,
             siteId: requiresSite ? lineItem.siteId : null,
             missingReceiptFlag: true
           }
@@ -396,12 +408,10 @@ export function ClaimWizard({
       expenseHead: item.expenseHead ?? "",
       paymentMode: item.paymentMode ?? "Cash",
       expenseTag: item.expenseTag,
-      clientInvoiceNumber: item.clientInvoiceNumber ?? "",
+      clientInvoiceNumber: item.clientInvoiceNumber ?? item.vendorInvoiceNumber ?? "",
       vendorName: item.vendorName ?? "",
-      vendorInvoiceNumber: item.vendorInvoiceNumber ?? "",
       billableAmount: item.billableAmount ? String(item.billableAmount) : "",
       siteOrDepartment: item.siteOrDepartment ?? "",
-      lineTicketId: item.lineTicketId ?? "",
       siteId: item.siteId ?? ""
     });
     setMessage("Editing saved line item. Save changes before submitting.");
@@ -646,7 +656,14 @@ export function ClaimWizard({
             <div className="grid cols-3">
               <label>
                 <span className="muted">Expense head</span>
-                <input value={lineItem.expenseHead} onChange={(event) => setLineItem({ ...lineItem, expenseHead: event.target.value })} />
+                <select value={lineItem.expenseHead} onChange={(event) => setLineItem({ ...lineItem, expenseHead: event.target.value })}>
+                  <option value="">Select expense head</option>
+                  {expenseHeadOptions.map((head) => (
+                    <option key={head} value={head}>
+                      {head}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 <span className="muted">Description</span>
@@ -678,8 +695,8 @@ export function ClaimWizard({
                 <input value={lineItem.vendorName} onChange={(event) => setLineItem({ ...lineItem, vendorName: event.target.value })} />
               </label>
               <label>
-                <span className="muted">Vendor invoice no.</span>
-                <input value={lineItem.vendorInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, vendorInvoiceNumber: event.target.value })} />
+                <span className="muted">Invoice number</span>
+                <input value={lineItem.clientInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, clientInvoiceNumber: event.target.value })} />
               </label>
               <label>
                 <span className="muted">Expense tag</span>
@@ -689,7 +706,7 @@ export function ClaimWizard({
                     setLineItem({
                       ...lineItem,
                       expenseTag: event.target.value as ExpenseTag,
-                      clientInvoiceNumber: "",
+                      clientInvoiceNumber: lineItem.clientInvoiceNumber,
                       billableAmount: "",
                       siteOrDepartment: "",
                       siteId: ""
@@ -702,12 +719,6 @@ export function ClaimWizard({
                   <option value="BackendCTC">Backend CTC</option>
                 </select>
               </label>
-              {requiresInvoice ? (
-                <label>
-                  <span className="muted">Invoice number</span>
-                  <input value={lineItem.clientInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, clientInvoiceNumber: event.target.value })} />
-                </label>
-              ) : null}
               {requiresBillableAmount ? (
                 <label>
                   <span className="muted">Billable amount</span>
@@ -720,10 +731,6 @@ export function ClaimWizard({
                   <input value={lineItem.siteOrDepartment} onChange={(event) => setLineItem({ ...lineItem, siteOrDepartment: event.target.value })} />
                 </label>
               ) : null}
-              <label>
-                <span className="muted">Ticket ID group</span>
-                <input value={lineItem.lineTicketId} onChange={(event) => setLineItem({ ...lineItem, lineTicketId: event.target.value })} />
-              </label>
               {requiresSite ? (
                 <label>
                   <span className="muted">Line site</span>

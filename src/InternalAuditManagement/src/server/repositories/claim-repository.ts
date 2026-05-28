@@ -130,14 +130,16 @@ export function defaultClaimRecord(
   claimId: string,
   now: string
 ): ExpenseClaim {
+  const ticketDate = new Date(now)
+    .toISOString()
+    .slice(2, 10)
+    .replaceAll("-", "");
+  const ticketSuffix = claimId.slice(0, 4).toUpperCase();
+  const ticketPrefix = input.claimKind === "Advance" ? "ADV" : input.claimKind === "Settlement" ? "SET" : "EXP";
+
   return {
     claimId,
-    ticketId:
-      input.claimKind === "Advance"
-        ? `ADV-${claimId.slice(0, 8).toUpperCase()}`
-        : input.claimKind === "Settlement"
-          ? `SET-${claimId.slice(0, 8).toUpperCase()}`
-          : `EXP-${claimId.slice(0, 8).toUpperCase()}`,
+    ticketId: `${ticketPrefix}-${ticketDate}-${ticketSuffix}`,
     submitterEmployeeId: input.submitterEmployeeId,
     claimKind: input.claimKind ?? "Reimbursement",
     submissionMode: input.submissionMode as SubmissionMode,

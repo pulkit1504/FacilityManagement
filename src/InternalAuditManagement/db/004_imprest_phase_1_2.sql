@@ -8,7 +8,14 @@ alter table expense_claims
   add column if not exists advance_balance numeric(18,2) not null default 0;
 
 update expense_claims
-set ticket_id = coalesce(ticket_id, 'EXP-' || upper(left(claim_id::text, 8)))
+set ticket_id = coalesce(
+  ticket_id,
+  case claim_kind
+    when 'Advance' then 'ADV'
+    when 'Settlement' then 'SET'
+    else 'EXP'
+  end || '-' || to_char(created_at, 'YYMMDD') || '-' || upper(left(claim_id::text, 4))
+)
 where ticket_id is null;
 
 alter table expense_claims

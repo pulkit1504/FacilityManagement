@@ -8,6 +8,9 @@ type ApprovalItem = {
   submittedBy: string;
   siteName: string | null;
   totalAmount: number;
+  advanceAdjustmentAmount: number;
+  finalPayableAmount: number;
+  netAdvanceLeftAmount: number;
   lineItemCount: number;
   missingReceiptCount: number;
   daysPending: number;
@@ -139,7 +142,7 @@ export function ApprovalQueue() {
           <tr>
             <th>Claim</th>
             <th>Site</th>
-            <th>Amount</th>
+            <th>Settlement</th>
             <th>Receipts</th>
             <th>Age</th>
             <th>Actions</th>
@@ -166,9 +169,14 @@ export function ApprovalQueue() {
                 </td>
                 <td>{item.siteName ?? "Not linked"}</td>
                 <td>
-                  Rs {item.totalAmount.toLocaleString("en-IN")}
+                  <strong>
+                    Rs {(item.netAdvanceLeftAmount > 0 ? item.netAdvanceLeftAmount : item.finalPayableAmount).toLocaleString("en-IN")}
+                  </strong>
                   <br />
-                  <span className="muted">{item.lineItemCount} line items</span>
+                  <span className="muted">
+                    {item.netAdvanceLeftAmount > 0 ? "advance left" : "payable"} from Rs {item.totalAmount.toLocaleString("en-IN")}
+                    {item.advanceAdjustmentAmount > 0 ? ` less Rs ${item.advanceAdjustmentAmount.toLocaleString("en-IN")} advance` : ""}
+                  </span>
                 </td>
                 <td>
                   <span className={`badge ${item.missingReceiptCount > 0 ? "warning" : "success"}`}>

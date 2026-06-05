@@ -86,6 +86,9 @@ create table if not exists expense_claims (
     status in ('Draft', 'Submitted', 'HodApproved', 'MdApproved', 'FinanceConfirmed', 'PaymentReleased', 'Rejected')
   ),
   total_amount numeric(18,2) not null default 0,
+  advance_adjustment_amount numeric(18,2) not null default 0 check (advance_adjustment_amount >= 0),
+  final_payable_amount numeric(18,2) not null default 0 check (final_payable_amount >= 0),
+  net_advance_left_amount numeric(18,2) not null default 0 check (net_advance_left_amount >= 0),
   site_id text references sites(site_id),
   rejection_reason text,
   physical_receipt_confirmed_at timestamptz,

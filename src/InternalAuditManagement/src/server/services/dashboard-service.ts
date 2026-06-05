@@ -1,6 +1,8 @@
 import { forbidden } from "../errors/application-error";
-import type { UserContext } from "../domain/types";
+import type { UserContext, UserRole } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
+
+const misDashboardRoles: readonly UserRole[] = ["ClusterHead", "HOD", "MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"];
 
 export class DashboardService {
   constructor(private readonly claims: ClaimRepository) {}
@@ -15,11 +17,11 @@ export class DashboardService {
   }
 
   async getMisDashboard(user: UserContext) {
-    if (user.role === "Claimant") {
-      throw forbidden("Claimant users cannot access the MIS dashboard.");
+    if (!misDashboardRoles.includes(user.role)) {
+      throw forbidden("Your role cannot access the MIS dashboard.");
     }
 
-    const metrics = await this.claims.getMisDashboardMetrics();
+    const metrics = await this.claims.getMisDashboardMetrics(user.userId, user.role);
 
     return {
       generatedAt: new Date().toISOString(),

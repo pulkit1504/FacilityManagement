@@ -1531,29 +1531,40 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
   async getOverviewMetrics(userId: string, role: string): Promise<OverviewMetrics> {
     const db = await getSupabaseAdminClient();
-    const approvalQueue = await this.listApprovalQueue(userId, role);
+    const approvalQueue = ["ClusterHead", "HOD", "MD"].includes(role) ? await this.listApprovalQueue(userId, role) : [];
     const financeQueue = ["Finance", "FinanceHOD"].includes(role) ? await this.listFinanceQueue() : [];
+    const shouldShowBilling = ["ClusterHead", "HOD", "MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"].includes(role);
+    const shouldShowFraud = ["MD", "Finance", "FinanceHOD", "Admin"].includes(role);
 
-    const [
-      { count: activeBillingAlerts, error: billingAlertError },
-      { count: openFraudFlags, error: fraudFlagError },
-      { data: approvedClaims, error: approvedClaimsError }
-    ] = await Promise.all([
-      db.from("billing_alerts").select("alert_id", { count: "exact", head: true }).eq("is_resolved", false),
-      db.from("fraud_flags").select("flag_id", { count: "exact", head: true }).eq("status", "Open"),
+    const [{ count: openFraudFlags, error: fraudFlagError }, { data: approvedClaims, error: approvedClaimsError }] = await Promise.all([
+      shouldShowFraud
+        ? db.from("fraud_flags").select("flag_id", { count: "exact", head: true }).eq("status", "Open")
+        : Promise.resolve({ count: 0, error: null }),
       db
         .from("expense_claims")
-        .select("claim_id")
+        .select("claim_id,site_id,submitter_employee_id")
         .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed", "PaymentReleased"])
         .eq("is_deleted", false)
         .limit(500)
     ]);
 
-    if (billingAlertError) throw billingAlertError;
     if (fraudFlagError) throw fraudFlagError;
     if (approvedClaimsError) throw approvedClaimsError;
 
-    const approvedClaimIds = (approvedClaims ?? []).map((claim) => String(claim.claim_id));
+    const scopedApprovedClaims = shouldShowBilling
+      ? await this.filterDashboardClaimsForRole(approvedClaims ?? [], userId, role)
+      : [];
+    const approvedClaimIds = scopedApprovedClaims.map((claim) => String(claim.claim_id));
+    const { count: activeBillingAlerts, error: billingAlertError } = approvedClaimIds.length
+      ? await db
+          .from("billing_alerts")
+          .select("alert_id", { count: "exact", head: true })
+          .eq("is_resolved", false)
+          .in("claim_id", approvedClaimIds)
+      : { count: 0, error: null };
+
+    if (billingAlertError) throw billingAlertError;
+
     const { data: billingLines, error: billingLinesError } = approvedClaimIds.length
       ? await db
           .from("expense_line_items")
@@ -1585,30 +1596,24 @@ export class SupabaseClaimRepository implements ClaimRepository {
     };
   }
 
-  async getMisDashboardMetrics(): Promise<MisDashboardMetrics> {
+  async getMisDashboardMetrics(userId: string, role: string): Promise<MisDashboardMetrics> {
     const db = await getSupabaseAdminClient();
-    const [{ data: approvedClaims, error: approvedClaimsError }, { data: billingAlerts, error: billingAlertsError }, siteNames] =
+    const [{ data: approvedClaims, error: approvedClaimsError }, siteNames] =
       await Promise.all([
         db
           .from("expense_claims")
-          .select("claim_id,site_id")
+          .select("claim_id,site_id,submitter_employee_id")
           .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed", "PaymentReleased"])
           .eq("is_deleted", false)
           .limit(500),
-        db
-          .from("billing_alerts")
-          .select("created_at")
-          .eq("is_resolved", false)
-          .order("created_at", { ascending: true })
-          .limit(1),
         this.getSiteNameMap()
       ]);
 
     if (approvedClaimsError) throw approvedClaimsError;
-    if (billingAlertsError) throw billingAlertsError;
+    const scopedClaims = await this.filterDashboardClaimsForRole(approvedClaims ?? [], userId, role);
 
     const claimSiteById = new Map(
-      (approvedClaims ?? []).map((claim) => [
+      scopedClaims.map((claim) => [
         String(claim.claim_id),
         claim.site_id ? siteNames.get(String(claim.site_id)) ?? String(claim.site_id) : "Not linked"
       ])
@@ -1625,6 +1630,18 @@ export class SupabaseClaimRepository implements ClaimRepository {
       : { data: [], error: null };
 
     if (lineItemsError) throw lineItemsError;
+
+    const { data: billingAlerts, error: billingAlertsError } = approvedClaimIds.length
+      ? await db
+          .from("billing_alerts")
+          .select("created_at")
+          .eq("is_resolved", false)
+          .in("claim_id", approvedClaimIds)
+          .order("created_at", { ascending: true })
+          .limit(1)
+      : { data: [], error: null };
+
+    if (billingAlertsError) throw billingAlertsError;
 
     let totalBillableApproved = 0;
     let totalBilled = 0;
@@ -1666,6 +1683,50 @@ export class SupabaseClaimRepository implements ClaimRepository {
         }))
         .sort((a, b) => b.totalBillable - a.totalBillable)
     };
+  }
+
+  private async filterDashboardClaimsForRole<T extends { site_id: unknown; submitter_employee_id: unknown }>(
+    claims: T[],
+    userId: string,
+    role: string
+  ): Promise<T[]> {
+    if (["MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"].includes(role)) {
+      return claims;
+    }
+
+    if (role === "Claimant") {
+      return claims.filter((claim) => String(claim.submitter_employee_id) === userId);
+    }
+
+    if (role === "ClusterHead") {
+      const sites = await this.listActiveSites();
+      const assignedSiteIds = new Set(
+        sites
+          .filter((site) => site.clusterHeadEmployeeId === userId)
+          .map((site) => site.siteId)
+      );
+
+      return claims.filter((claim) => {
+        const siteId = claim.site_id ? String(claim.site_id) : null;
+        return String(claim.submitter_employee_id) === userId || Boolean(siteId && assignedSiteIds.has(siteId));
+      });
+    }
+
+    if (role === "HOD") {
+      const employees = await this.listEmployees();
+      const directReportIds = new Set(
+        employees
+          .filter((employee) => employee.directManagerId === userId)
+          .map((employee) => employee.employeeId)
+      );
+
+      return claims.filter((claim) => {
+        const submitterId = String(claim.submitter_employee_id);
+        return submitterId === userId || directReportIds.has(submitterId);
+      });
+    }
+
+    return [];
   }
 
   async listImprestLedgerReport(): Promise<ImprestLedgerReportRow[]> {

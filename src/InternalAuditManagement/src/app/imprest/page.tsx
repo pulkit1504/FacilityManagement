@@ -1,9 +1,20 @@
 import { ImprestWorkspace } from "@/components/imprest/imprest-workspace";
 import { AppShell } from "@/components/layout/app-shell";
+import { AccessDeniedPanel } from "@/components/auth/access-denied-panel";
+import { canAccessPage, requirePageAccess } from "@/server/auth/page-access";
+import type { UserRole } from "@/server/domain/types";
 
-export default function ImprestPage() {
+const allowedRoles = ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[];
+
+export default async function ImprestPage() {
+  const user = await requirePageAccess(allowedRoles);
+
   return (
     <AppShell>
+      {!canAccessPage(user, allowedRoles) ? (
+        <AccessDeniedPanel role={user.role} />
+      ) : (
+        <>
       <div className="topbar">
         <div>
           <div className="eyebrow">Imprest Workflow</div>
@@ -12,6 +23,8 @@ export default function ImprestPage() {
         </div>
       </div>
       <ImprestWorkspace />
+        </>
+      )}
     </AppShell>
   );
 }

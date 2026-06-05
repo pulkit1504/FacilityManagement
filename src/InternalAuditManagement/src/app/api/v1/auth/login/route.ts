@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { authSessionCookieName, createSessionCookieValue } from "@/server/auth/session";
+import { authSessionCookieName, assertSessionSecretConfigured, createSessionCookieValue } from "@/server/auth/session";
+import { serverConfigurationError } from "@/server/errors/application-error";
 import { toProblemResponse } from "@/server/errors/problem-response";
 import { getRepository } from "@/server/services/service-factory";
 
@@ -13,6 +14,12 @@ const sessionMaxAgeSeconds = 60 * 60 * 8;
 export async function POST(request: Request) {
   const traceId = crypto.randomUUID();
   try {
+    try {
+      assertSessionSecretConfigured();
+    } catch {
+      throw serverConfigurationError("Authentication is not configured. Set AUTH_SESSION_SECRET to at least 32 characters and redeploy.");
+    }
+
     const body = loginSchema.parse(await request.json());
     const employee = await getRepository().authenticateEmployee(body.email, body.password);
 

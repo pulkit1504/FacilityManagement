@@ -45,20 +45,7 @@ async function resolveUserContext(): Promise<UserContext> {
     };
   }
 
-  const userId = headerStore.get("x-user-id");
-  const role = headerStore.get("x-user-role");
-
-  if (!userId || !role || !userRoles.includes(role as UserRole)) {
-    throw forbidden("A valid authenticated user context is required.");
-  }
-
-  return {
-    userId,
-    role: role as UserRole,
-    email: headerStore.get("x-user-email") ?? undefined,
-    name: headerStore.get("x-user-name") ?? undefined,
-    correlationId
-  };
+  throw forbidden("Please sign in to continue.");
 }
 
 export function requireRole(user: UserContext, allowedRoles: UserRole[]) {

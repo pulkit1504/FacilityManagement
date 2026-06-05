@@ -62,6 +62,10 @@ export function sessionToUserContext(session: AuthSession, correlationId: string
   };
 }
 
+export function assertSessionSecretConfigured() {
+  getSessionSecret();
+}
+
 function sign(payload: string) {
   return createHmac("sha256", getSessionSecret()).update(payload).digest("base64url");
 }

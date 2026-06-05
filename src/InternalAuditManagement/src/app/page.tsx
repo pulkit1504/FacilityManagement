@@ -1,8 +1,14 @@
 import { FilePlus2 } from "lucide-react";
 import { OverviewMetrics } from "@/components/dashboard/overview-metrics";
 import { AppShell } from "@/components/layout/app-shell";
+import { requirePageAccess } from "@/server/auth/page-access";
+import type { UserRole } from "@/server/domain/types";
 
-export default function Home() {
+const claimCreatorRoles: readonly UserRole[] = ["Claimant", "ClusterHead", "HOD"];
+
+export default async function Home() {
+  const user = await requirePageAccess();
+
   return (
     <AppShell>
       <div className="topbar">
@@ -14,12 +20,14 @@ export default function Home() {
             an immutable audit trail.
           </p>
         </div>
-        <div className="actions">
-          <a className="button" href="/claims/new">
-            <FilePlus2 size={18} />
-            New claim
-          </a>
-        </div>
+        {claimCreatorRoles.includes(user.role) ? (
+          <div className="actions">
+            <a className="button" href="/claims/new">
+              <FilePlus2 size={18} />
+              New claim
+            </a>
+          </div>
+        ) : null}
       </div>
 
       <OverviewMetrics />

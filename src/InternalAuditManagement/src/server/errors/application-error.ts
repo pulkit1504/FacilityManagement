@@ -22,3 +22,7 @@ export function notFound(message = "The requested resource was not found") {
 export function conflict(message: string, details?: Record<string, unknown>) {
   return new ApplicationError(409, "Conflict", message, details);
 }
+
+export function serverConfigurationError(message: string) {
+  return new ApplicationError(500, "Server configuration error", message);
+}

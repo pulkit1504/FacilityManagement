@@ -1,9 +1,20 @@
 import { SiteContractAdmin } from "@/components/admin/site-contract-admin";
 import { AppShell } from "@/components/layout/app-shell";
+import { AccessDeniedPanel } from "@/components/auth/access-denied-panel";
+import { canAccessPage, requirePageAccess } from "@/server/auth/page-access";
+import type { UserRole } from "@/server/domain/types";
 
-export default function AdminPage() {
+const allowedRoles = ["Admin"] satisfies UserRole[];
+
+export default async function AdminPage() {
+  const user = await requirePageAccess(allowedRoles);
+
   return (
     <AppShell>
+      {!canAccessPage(user, allowedRoles) ? (
+        <AccessDeniedPanel role={user.role} />
+      ) : (
+        <>
       <div className="topbar">
         <div>
           <div className="eyebrow">Administration</div>
@@ -13,6 +24,8 @@ export default function AdminPage() {
       </div>
 
       <SiteContractAdmin />
+        </>
+      )}
     </AppShell>
   );
 }

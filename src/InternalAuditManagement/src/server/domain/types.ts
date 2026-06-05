@@ -126,6 +126,9 @@ export type ExpenseClaim = {
   advanceBalance: number;
   status: ClaimStatus;
   totalAmount: number;
+  advanceAdjustmentAmount: number;
+  finalPayableAmount: number;
+  netAdvanceLeftAmount: number;
   siteId: string | null;
   rejectionReason: string | null;
   physicalReceiptConfirmedAt: string | null;
@@ -192,6 +195,9 @@ export type ApprovalQueueItem = {
   submittedByRole: UserRole;
   siteName: string | null;
   totalAmount: number;
+  advanceAdjustmentAmount: number;
+  finalPayableAmount: number;
+  netAdvanceLeftAmount: number;
   lineItemCount: number;
   missingReceiptCount: number;
   submittedAt: string;

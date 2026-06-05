@@ -170,8 +170,13 @@ export function ClaimWizard({
   const settlementBalanceAfterLine = selectedAdvance
     ? selectedAdvance.advanceBalance - settlementDraftTotalAfterLine
     : null;
-  const exceedsAdvanceBalance =
-    claimKind === "Settlement" && Boolean(selectedAdvance) && settlementDraftTotalAfterLine > selectedAdvance!.advanceBalance;
+  const settlementPreview = selectedAdvance
+    ? {
+        advanceAdjusted: Math.min(settlementDraftTotalAfterLine, selectedAdvance.advanceBalance),
+        finalPayable: Math.max(settlementDraftTotalAfterLine - selectedAdvance.advanceBalance, 0),
+        netAdvanceLeft: Math.max(selectedAdvance.advanceBalance - settlementDraftTotalAfterLine, 0)
+      }
+    : null;
   const hasValidProformaPeriod =
     !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
   const canCreateDraft = Boolean(siteId && claimPeriodMonth) && hasValidProformaPeriod && (claimKind !== "Settlement" || Boolean(advanceClaimId));
@@ -201,9 +206,8 @@ export function ClaimWizard({
     if (requiresBillableAmount && (!lineItem.billableAmount || Number(lineItem.billableAmount) <= 0)) return false;
     if (requiresSite && !lineItem.siteId) return false;
     if (requiresSiteOrDepartment && !lineItem.siteOrDepartment) return false;
-    if (exceedsAdvanceBalance) return false;
     return true;
-  }, [exceedsAdvanceBalance, lineItem, requiresBillableAmount, requiresInvoice, requiresSite, requiresSiteOrDepartment]);
+  }, [lineItem, requiresBillableAmount, requiresInvoice, requiresSite, requiresSiteOrDepartment]);
 
   useEffect(() => {
     async function loadSites() {
@@ -674,6 +678,20 @@ export function ClaimWizard({
               <strong>Rs {selectedAdvance.advanceBalance.toLocaleString("en-IN")}</strong>
             </div>
             <div>
+              <span className="muted">Expenses entered</span>
+              <strong>Rs {savedLineTotal.toLocaleString("en-IN")}</strong>
+            </div>
+            <div>
+              <span className="muted">Advance adjusted</span>
+              <strong>Rs {Math.min(savedLineTotal, selectedAdvance.advanceBalance).toLocaleString("en-IN")}</strong>
+            </div>
+            <div>
+              <span className="muted">{savedLineTotal > selectedAdvance.advanceBalance ? "Final payable" : "Net advance left"}</span>
+              <strong>
+                Rs {Math.max(savedLineTotal - selectedAdvance.advanceBalance, selectedAdvance.advanceBalance - savedLineTotal, 0).toLocaleString("en-IN")}
+              </strong>
+            </div>
+            <div>
               <span className="muted">Age</span>
               <span className={`badge ${selectedAdvance.settlementStatus === "Overdue" ? "danger" : selectedAdvance.settlementStatus === "Aging" ? "warning" : "success"}`}>
                 {selectedAdvance.ageDays} days · {selectedAdvance.settlementStatusLabel}
@@ -818,8 +836,8 @@ export function ClaimWizard({
             {claimKind === "Settlement" && selectedAdvance ? (
               <p className="muted" style={{ marginTop: 10 }}>
                 Settlement draft total after this line: Rs {settlementDraftTotalAfterLine.toLocaleString("en-IN")}.
-                {" "}Remaining advance balance: Rs {Math.max(0, settlementBalanceAfterLine ?? selectedAdvance.advanceBalance).toLocaleString("en-IN")}.
-                {exceedsAdvanceBalance ? " This line exceeds the open advance balance." : ""}
+                {" "}Advance adjusted: Rs {(settlementPreview?.advanceAdjusted ?? 0).toLocaleString("en-IN")}.
+                {" "}{(settlementPreview?.finalPayable ?? 0) > 0 ? "Final payable" : "Remaining advance balance"}: Rs {Math.max(settlementPreview?.finalPayable ?? 0, settlementBalanceAfterLine ?? selectedAdvance.advanceBalance, 0).toLocaleString("en-IN")}.
               </p>
             ) : null}
           </section>

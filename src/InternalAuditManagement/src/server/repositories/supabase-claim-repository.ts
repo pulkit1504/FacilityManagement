@@ -54,6 +54,9 @@ type ClaimRow = {
   advance_amount: number | null;
   settled_amount: number | null;
   advance_balance: number | null;
+  advance_adjustment_amount: number | null;
+  final_payable_amount: number | null;
+  net_advance_left_amount: number | null;
   status: string;
   total_amount: number;
   site_id: string | null;
@@ -80,6 +83,9 @@ function mapClaim(row: ClaimRow): ExpenseClaim {
     advanceBalance: Number(row.advance_balance ?? 0),
     status: row.status as ClaimStatus,
     totalAmount: Number(row.total_amount),
+    advanceAdjustmentAmount: Number(row.advance_adjustment_amount ?? 0),
+    finalPayableAmount: Number(row.final_payable_amount ?? 0),
+    netAdvanceLeftAmount: Number(row.net_advance_left_amount ?? 0),
     siteId: row.site_id,
     rejectionReason: row.rejection_reason,
     physicalReceiptConfirmedAt: row.physical_receipt_confirmed_at,
@@ -590,6 +596,9 @@ export class SupabaseClaimRepository implements ClaimRepository {
         advance_balance: claim.advanceBalance,
         status: claim.status,
         total_amount: claim.totalAmount,
+        advance_adjustment_amount: claim.advanceAdjustmentAmount,
+        final_payable_amount: claim.finalPayableAmount,
+        net_advance_left_amount: claim.netAdvanceLeftAmount,
         site_id: claim.siteId,
         created_at: claim.createdAt,
         updated_at: claim.updatedAt
@@ -745,18 +754,40 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const total = (data ?? []).reduce((sum, row) => sum + Number(row.amount), 0);
     const { data: claim, error: claimError } = await db
       .from("expense_claims")
-      .select("claim_kind,settled_amount")
+      .select("claim_kind,settled_amount,advance_claim_id")
       .eq("claim_id", claimId)
       .single();
 
     if (claimError) throw claimError;
 
     const isAdvance = claim?.claim_kind === "Advance";
+    const isSettlement = claim?.claim_kind === "Settlement";
     const settledAmount = Number(claim?.settled_amount ?? 0);
+    let advanceAdjustmentAmount = 0;
+    let openAdvanceBalance = 0;
+
+    if (isSettlement && claim.advance_claim_id) {
+      const { data: advance, error: advanceError } = await db
+        .from("expense_claims")
+        .select("advance_balance")
+        .eq("claim_id", claim.advance_claim_id)
+        .eq("claim_kind", "Advance")
+        .single();
+
+      if (advanceError) throw advanceError;
+      openAdvanceBalance = Number(advance.advance_balance ?? 0);
+      advanceAdjustmentAmount = Math.min(total, openAdvanceBalance);
+    }
+
+    const finalPayableAmount = Math.max(total - advanceAdjustmentAmount, 0);
+    const netAdvanceLeftAmount = Math.max(openAdvanceBalance - total, 0);
     const { error: updateError } = await db
       .from("expense_claims")
       .update({
         total_amount: total,
+        advance_adjustment_amount: advanceAdjustmentAmount,
+        final_payable_amount: finalPayableAmount,
+        net_advance_left_amount: netAdvanceLeftAmount,
         ...(isAdvance
           ? {
               advance_amount: total,
@@ -997,7 +1028,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const [{ data, error }, siteNames, employees] = await Promise.all([
       db
         .from("expense_claims")
-        .select("claim_id,ticket_id,claim_kind,submitter_employee_id,total_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
+        .select("claim_id,ticket_id,claim_kind,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
         .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed"])
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
@@ -1030,6 +1061,9 @@ export class SupabaseClaimRepository implements ClaimRepository {
         submittedByRole: "Claimant" as const,
         siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
         totalAmount: Number(claim.total_amount),
+        advanceAdjustmentAmount: Number(claim.advance_adjustment_amount ?? 0),
+        finalPayableAmount: Number(claim.final_payable_amount ?? claim.total_amount),
+        netAdvanceLeftAmount: Number(claim.net_advance_left_amount ?? 0),
         lineItemCount: stats.lineItemCount,
         missingReceiptCount: stats.missingReceiptCount,
         submittedAt,
@@ -1883,6 +1917,9 @@ export class SupabaseClaimRepository implements ClaimRepository {
       submittedByRole: "Claimant",
       siteName: claim.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,
       totalAmount: claim.totalAmount,
+      advanceAdjustmentAmount: claim.advanceAdjustmentAmount,
+      finalPayableAmount: claim.finalPayableAmount,
+      netAdvanceLeftAmount: claim.netAdvanceLeftAmount,
       lineItemCount: claim.lineItems.length,
       missingReceiptCount: claim.lineItems.filter((item) => item.missingReceiptFlag).length,
       submittedAt,

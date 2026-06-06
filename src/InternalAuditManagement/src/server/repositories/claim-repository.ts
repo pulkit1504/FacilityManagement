@@ -113,7 +113,7 @@ export interface ClaimRepository {
   listFinanceQueue(): Promise<FinanceQueueItem[]>;
   listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]>;
   activeSettlementExists(advanceClaimId: string, excludingClaimId: string): Promise<boolean>;
-  applySettlementToAdvance(settlementClaimId: string): Promise<void>;
+  releasePaymentAtomically(claimId: string, actorUserId: string, correlationId: string): Promise<ExpenseClaim>;
   getPendingApprovalStep(claimId: string): Promise<ApprovalStep | null>;
   decideApprovalStep(stepId: string, decision: "Approved" | "Rejected", remarks?: string | null): Promise<void>;
   rejectClaim(claimId: string, reason: string): Promise<ExpenseClaim>;

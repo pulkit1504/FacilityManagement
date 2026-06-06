@@ -19,6 +19,20 @@ npm run dev
 
 Apply the SQL in `db/001_initial_schema.sql` to Supabase before testing real persistence.
 Apply later files in numeric order, for example `db/003_add_admin_role.sql`, when upgrading an existing database.
+`db/011_atomic_payment_release.sql` is required before deploying the matching application version because payment release calls its transactional database function.
+
+## Verification
+
+```powershell
+npm test
+npm run typecheck
+npm run lint
+npm run build
+npm run test:e2e:install
+npm run test:e2e
+```
+
+The Playwright suite runs Claimant, Approver, Finance, and Admin journeys on desktop and mobile Chromium, including Axe accessibility checks and Finance modal keyboard behavior.
 
 ## Secrets
 

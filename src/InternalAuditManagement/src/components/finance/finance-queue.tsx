@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Banknote, ClipboardCheck, Download, Eye, Loader2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
@@ -71,6 +71,8 @@ export function FinanceQueue() {
   const [decision, setDecision] = useState<FinanceDecision | null>(null);
   const [decisionRemarks, setDecisionRemarks] = useState("");
   const [decisionError, setDecisionError] = useState("");
+  const decisionDialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   async function load() {
     try {
@@ -96,6 +98,40 @@ export function FinanceQueue() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!decision) return;
+
+    function handleDialogKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDecision();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = decisionDialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleDialogKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleDialogKeyDown);
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [decision]);
 
   async function toggleReceipts(claimId: string) {
     if (expandedClaimId === claimId) {
@@ -240,6 +276,7 @@ export function FinanceQueue() {
   }
 
   function openDecision(nextDecision: FinanceDecision) {
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setDecision(nextDecision);
     setDecisionRemarks("");
     setDecisionError("");
@@ -307,7 +344,7 @@ export function FinanceQueue() {
 
   return (
     <div className="grid" style={{ gap: 16 }}>
-      <section className="panel">
+      <section aria-label="Finance queue table" className="panel" tabIndex={0}>
         <div className="topbar" style={{ marginBottom: 12 }}>
           <h2>Finance Queue</h2>
           <div className="actions">
@@ -478,7 +515,7 @@ export function FinanceQueue() {
         </table>
       </section>
 
-      <section className="panel">
+      <section aria-label="Advances pending settlement table" className="panel" tabIndex={0}>
         <h2>Advances Pending Settlement</h2>
         <table className="table">
           <thead>
@@ -535,11 +572,18 @@ export function FinanceQueue() {
 
       {decision ? (
         <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDecision()}>
-          <div aria-labelledby="finance-decision-title" aria-modal="true" className="modal" role="dialog">
+          <div
+            aria-describedby="finance-decision-description"
+            aria-labelledby="finance-decision-title"
+            aria-modal="true"
+            className="modal"
+            ref={decisionDialogRef}
+            role="dialog"
+          >
             <div className="section-heading">
               <div>
                 <h2 id="finance-decision-title">{decision.kind === "reject-line" ? "Reject line item" : "Return claim"}</h2>
-                <p className="muted">
+                <p className="muted" id="finance-decision-description">
                   {decision.kind === "reject-line"
                     ? `Explain what Finance needs corrected for ${decision.title}.`
                     : `Explain what the claimant needs to correct in ${decision.title}.`}

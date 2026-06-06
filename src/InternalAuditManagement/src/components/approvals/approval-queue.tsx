@@ -136,7 +136,7 @@ export function ApprovalQueue() {
   }
 
   return (
-    <section className="panel">
+    <section aria-label="Pending approval queue table" className="panel" tabIndex={0}>
       <h2>Pending Approval Queue</h2>
       <ActionFeedback message={message} onDismiss={() => setMessage("")} />
       <table className="table">

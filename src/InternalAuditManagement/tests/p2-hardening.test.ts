@@ -1,0 +1,80 @@
+import { describe, expect, it, vi } from "vitest";
+import type { NotificationOutboxItem, UserContext } from "../src/server/domain/types";
+import type { ClaimRepository } from "../src/server/repositories/claim-repository";
+import { AdminService } from "../src/server/services/admin-service";
+import { NotificationService } from "../src/server/services/notification-service";
+import { cleanupStaleRecordsSchema } from "../src/server/validation/claim.schemas";
+
+vi.mock("../src/server/config/secrets", () => ({
+  getOptionalSecret: vi.fn(async (name: string) => name === "RESEND_API_KEY" ? "test-key" : "finance@example.com")
+}));
+
+const adminUser: UserContext = {
+  userId: "admin-1",
+  role: "Admin",
+  correlationId: "test-correlation"
+};
+
+function notification(index: number): NotificationOutboxItem {
+  return {
+    notificationId: `notification-${index}`,
+    recipientEmployeeId: "claimant-1",
+    recipientEmail: "claimant@example.com",
+    subject: `Notification ${index}`,
+    body: "Test body",
+    relatedClaimId: null,
+    status: "Queued",
+    deliveryAttempts: 0,
+    lastAttemptAt: null,
+    lastError: null,
+    providerMessageId: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    sentAt: null
+  };
+}
+
+describe("P2 retention cleanup", () => {
+  it("rejects unsafe cleanup windows", () => {
+    expect(() => cleanupStaleRecordsSchema.parse({ olderThanDays: 7 })).toThrow();
+    expect(cleanupStaleRecordsSchema.parse({ olderThanDays: 90 })).toEqual({ olderThanDays: 90 });
+  });
+
+  it("reports exactly what the repository removed", async () => {
+    const claims = {
+      cleanupStaleRecords: vi.fn().mockResolvedValue({
+        staleDraftsRemoved: 2,
+        exhaustedNotificationsRemoved: 3
+      })
+    } as unknown as ClaimRepository;
+    const service = new AdminService(claims, {} as NotificationService);
+
+    const result = await service.cleanupStaleRecords({ olderThanDays: 90 }, adminUser);
+
+    expect(result.message).toContain("Removed 2 stale draft(s) and 3 exhausted failed notification(s)");
+    expect(claims.cleanupStaleRecords).toHaveBeenCalledOnce();
+  });
+});
+
+describe("P2 notification delivery", () => {
+  it("delivers retry candidates in bounded concurrent batches", async () => {
+    const items = Array.from({ length: 7 }, (_, index) => notification(index));
+    const claims = {
+      listNotifications: vi.fn().mockImplementation(async (status: string) => status === "Queued" ? items : []),
+      markNotificationSent: vi.fn().mockResolvedValue(undefined),
+      markNotificationFailed: vi.fn().mockResolvedValue(undefined)
+    } as unknown as ClaimRepository;
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "provider-id" })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new NotificationService(claims);
+
+    const result = await service.deliverQueued(adminUser);
+
+    expect(result).toEqual({ attempted: 7, sent: 7, failed: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(claims.markNotificationSent).toHaveBeenCalledTimes(7);
+    vi.unstubAllGlobals();
+  });
+});

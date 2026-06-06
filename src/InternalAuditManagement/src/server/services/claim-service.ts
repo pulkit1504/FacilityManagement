@@ -508,7 +508,12 @@ export class ClaimService {
       });
     }
 
-    const updated = await this.claims.updateSettlementAdjustment(claimId, input.advanceAdjustmentAmount);
+    const updated = await this.claims.updateSettlementAdjustment(
+      claimId,
+      claim.totalAmount,
+      advance.advanceBalance,
+      input.advanceAdjustmentAmount
+    );
     await this.claims.appendAuditLog({
       claimId,
       actorUserId: user.userId,

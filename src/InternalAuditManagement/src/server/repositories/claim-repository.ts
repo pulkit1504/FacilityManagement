@@ -68,6 +68,11 @@ export type CreateFraudFlagRecord = {
   sweepDate: string;
 };
 
+export type CleanupResult = {
+  staleDraftsRemoved: number;
+  exhaustedNotificationsRemoved: number;
+};
+
 export interface ClaimRepository {
   listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]>;
   listActiveSites(): Promise<Site[]>;
@@ -91,7 +96,7 @@ export interface ClaimRepository {
   invoiceReferenceExists(invoiceNumber: string, excludingLineItemId?: string): Promise<boolean>;
   submitClaim(claimId: string, nextStatus: ClaimStatus): Promise<ExpenseClaim>;
   updateClaimTotal(claimId: string): Promise<void>;
-  updateSettlementAdjustment(claimId: string, adjustmentAmount: number): Promise<ExpenseClaim>;
+  updateSettlementAdjustment(claimId: string, totalAmount: number, openAdvanceBalance: number, adjustmentAmount: number): Promise<ExpenseClaim>;
   createApprovalSteps(steps: Omit<ApprovalStep, "stepId" | "decision" | "decisionAt" | "remarks">[]): Promise<void>;
   appendAuditLog(input: AuditLogInput): Promise<void>;
   listAuditLogForClaim(claimId: string): Promise<AuditLogEntry[]>;
@@ -103,6 +108,7 @@ export interface ClaimRepository {
   listNotifications(status?: "Queued" | "Sent" | "Failed" | "All"): Promise<NotificationOutboxItem[]>;
   markNotificationSent(notificationId: string, providerMessageId: string | null): Promise<void>;
   markNotificationFailed(notificationId: string, errorMessage: string): Promise<void>;
+  cleanupStaleRecords(cutoffIso: string): Promise<CleanupResult>;
   listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
   listFinanceQueue(): Promise<FinanceQueueItem[]>;
   listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]>;

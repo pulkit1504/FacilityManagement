@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, CalendarPlus, Loader2, MailCheck, Pencil, Plus, PowerOff, Save, UserPlus, X } from "lucide-react";
+import { Building2, CalendarPlus, Loader2, MailCheck, Pencil, Plus, PowerOff, Save, Trash2, UserPlus, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
@@ -75,6 +75,8 @@ export function SiteContractAdmin() {
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+  const [cleanupDays, setCleanupDays] = useState(90);
+  const [cleanupConfirmed, setCleanupConfirmed] = useState(false);
   const [contractDraft, setContractDraft] = useState({
     clientName: "",
     description: "",
@@ -278,6 +280,28 @@ export function SiteContractAdmin() {
       }
     } catch {
       setMessage("Could not deliver notifications. Check your connection and try again.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function cleanupStaleRecords() {
+    setBusyAction("cleanup:stale");
+    setMessage("Removing stale drafts and exhausted failed notifications...");
+    try {
+      const response = await fetch("/api/v1/admin/cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ olderThanDays: cleanupDays })
+      });
+      const data = await response.json();
+      setMessage(data.message ?? getProblemMessage(data, "Cleanup could not be completed."));
+      if (response.ok) {
+        setCleanupConfirmed(false);
+        await load();
+      }
+    } catch {
+      setMessage("Could not complete cleanup. Check your connection and try again.");
     } finally {
       setBusyAction(null);
     }
@@ -723,6 +747,38 @@ export function SiteContractAdmin() {
             ) : null}
           </tbody>
         </table>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <h2>Data Retention Cleanup</h2>
+            <p className="muted">Removes unsubmitted drafts and failed notifications that exhausted all three delivery attempts. Paid claims and audit history are never removed.</p>
+          </div>
+          <div className="actions">
+            <label>
+              <span className="muted">Older than</span>
+              <select disabled={Boolean(busyAction)} onChange={(event) => {
+                setCleanupDays(Number(event.target.value));
+                setCleanupConfirmed(false);
+              }} value={cleanupDays}>
+                <option value={30}>30 days</option>
+                <option value={60}>60 days</option>
+                <option value={90}>90 days</option>
+                <option value={180}>180 days</option>
+                <option value={365}>365 days</option>
+              </select>
+            </label>
+            <label className="checkbox-row">
+              <input checked={cleanupConfirmed} disabled={Boolean(busyAction)} onChange={(event) => setCleanupConfirmed(event.target.checked)} type="checkbox" />
+              I understand these stale records will be removed
+            </label>
+            <button className="button danger" disabled={Boolean(busyAction) || !cleanupConfirmed} onClick={() => void cleanupStaleRecords()} type="button">
+              {busyAction === "cleanup:stale" ? <Loader2 size={18} /> : <Trash2 size={18} />}
+              Remove stale records
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className="panel">

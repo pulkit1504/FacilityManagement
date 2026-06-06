@@ -219,6 +219,10 @@ export const createHolidaySchema = z.object({
   isNational: z.boolean().default(true)
 });
 
+export const cleanupStaleRecordsSchema = z.object({
+  olderThanDays: z.coerce.number().int().min(30).max(365).default(90)
+});
+
 export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
 export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
 export type FinanceLineReviewInput = z.infer<typeof financeLineReviewSchema>;
@@ -230,3 +234,4 @@ export type CreateSiteInput = z.infer<typeof createSiteSchema>;
 export type AssignSiteClusterHeadInput = z.infer<typeof assignSiteClusterHeadSchema>;
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
+export type CleanupStaleRecordsInput = z.infer<typeof cleanupStaleRecordsSchema>;

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
+import { calculateSettlementAmounts } from "@/shared/settlement";
 
 type ExpenseTag = "AlreadyBilled" | "PendingBilling" | "ContractPartCost" | "BackendCTC";
 type ClaimKind = "Settlement" | "Reimbursement";
@@ -171,11 +172,10 @@ export function ClaimWizard({
     ? selectedAdvance.advanceBalance - settlementDraftTotalAfterLine
     : null;
   const settlementPreview = selectedAdvance
-    ? {
-        advanceAdjusted: Math.min(settlementDraftTotalAfterLine, selectedAdvance.advanceBalance),
-        finalPayable: Math.max(settlementDraftTotalAfterLine - selectedAdvance.advanceBalance, 0),
-        netAdvanceLeft: Math.max(selectedAdvance.advanceBalance - settlementDraftTotalAfterLine, 0)
-      }
+    ? calculateSettlementAmounts(settlementDraftTotalAfterLine, selectedAdvance.advanceBalance)
+    : null;
+  const savedSettlement = selectedAdvance
+    ? calculateSettlementAmounts(savedLineTotal, selectedAdvance.advanceBalance)
     : null;
   const hasValidProformaPeriod =
     !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
@@ -683,12 +683,12 @@ export function ClaimWizard({
             </div>
             <div>
               <span className="muted">Advance adjusted</span>
-              <strong>Rs {Math.min(savedLineTotal, selectedAdvance.advanceBalance).toLocaleString("en-IN")}</strong>
+              <strong>Rs {(savedSettlement?.advanceAdjusted ?? 0).toLocaleString("en-IN")}</strong>
             </div>
             <div>
-              <span className="muted">{savedLineTotal > selectedAdvance.advanceBalance ? "Final payable" : "Net advance left"}</span>
+              <span className="muted">{(savedSettlement?.finalPayable ?? 0) > 0 ? "Final payable" : "Net advance left"}</span>
               <strong>
-                Rs {Math.max(savedLineTotal - selectedAdvance.advanceBalance, selectedAdvance.advanceBalance - savedLineTotal, 0).toLocaleString("en-IN")}
+                Rs {Math.max(savedSettlement?.finalPayable ?? 0, savedSettlement?.netAdvanceLeft ?? 0).toLocaleString("en-IN")}
               </strong>
             </div>
             <div>

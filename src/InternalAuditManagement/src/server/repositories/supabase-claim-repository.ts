@@ -40,6 +40,7 @@ import type { CreateLineItemInput } from "../validation/claim.schemas";
 import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
 import { getSupabaseAdminClient } from "./supabase-client";
 import { hashPassword, verifyPassword } from "../auth/password";
+import { calculateAdvanceLedgerAmounts, calculateSettlementAmounts } from "@/shared/settlement";
 
 type ClaimRow = {
   claim_id: string;
@@ -763,7 +764,6 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const isAdvance = claim?.claim_kind === "Advance";
     const isSettlement = claim?.claim_kind === "Settlement";
     const settledAmount = Number(claim?.settled_amount ?? 0);
-    let advanceAdjustmentAmount = 0;
     let openAdvanceBalance = 0;
 
     if (isSettlement && claim.advance_claim_id) {
@@ -776,18 +776,16 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
       if (advanceError) throw advanceError;
       openAdvanceBalance = Number(advance.advance_balance ?? 0);
-      advanceAdjustmentAmount = Math.min(total, openAdvanceBalance);
     }
 
-    const finalPayableAmount = Math.max(total - advanceAdjustmentAmount, 0);
-    const netAdvanceLeftAmount = Math.max(openAdvanceBalance - total, 0);
+    const settlementAmounts = calculateSettlementAmounts(total, openAdvanceBalance);
     const { error: updateError } = await db
       .from("expense_claims")
       .update({
         total_amount: total,
-        advance_adjustment_amount: advanceAdjustmentAmount,
-        final_payable_amount: finalPayableAmount,
-        net_advance_left_amount: netAdvanceLeftAmount,
+        advance_adjustment_amount: settlementAmounts.advanceAdjusted,
+        final_payable_amount: settlementAmounts.finalPayable,
+        net_advance_left_amount: settlementAmounts.netAdvanceLeft,
         ...(isAdvance
           ? {
               advance_amount: total,
@@ -1028,7 +1026,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const [{ data, error }, siteNames, employees] = await Promise.all([
       db
         .from("expense_claims")
-        .select("claim_id,ticket_id,claim_kind,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
+        .select("claim_id,ticket_id,claim_kind,advance_claim_id,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
         .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed"])
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
@@ -1041,6 +1039,17 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const claims = data ?? [];
     const lineStats = await this.getQueueLineStats(claims.map((row) => String(row.claim_id)));
     const employeesById = new Map(employees.map((employee) => [employee.employeeId, employee]));
+    const advanceClaimIds = claims
+      .filter((claim) => claim.claim_kind === "Settlement" && claim.advance_claim_id)
+      .map((claim) => String(claim.advance_claim_id));
+    const { data: advances, error: advancesError } = advanceClaimIds.length
+      ? await db.from("expense_claims").select("claim_id,advance_balance").in("claim_id", advanceClaimIds)
+      : { data: [], error: null };
+
+    if (advancesError) throw advancesError;
+    const advanceBalances = new Map(
+      (advances ?? []).map((advance) => [String(advance.claim_id), Number(advance.advance_balance ?? 0)])
+    );
 
     const items: FinanceQueueItem[] = claims.map((claim) => {
       const claimId = String(claim.claim_id);
@@ -1053,6 +1062,13 @@ export class SupabaseClaimRepository implements ClaimRepository {
       const submittedAt = String(claim.updated_at ?? claim.created_at);
       const daysPending = Math.max(0, Math.floor((Date.now() - new Date(submittedAt).getTime()) / 86_400_000));
       const siteId = claim.site_id ? String(claim.site_id) : null;
+      const currentSettlementAmounts =
+        claim.claim_kind === "Settlement" && claim.advance_claim_id
+          ? calculateSettlementAmounts(
+              Number(claim.total_amount),
+              advanceBalances.get(String(claim.advance_claim_id)) ?? 0
+            )
+          : null;
       return {
         claimId,
         ticketId: claim.ticket_id ? String(claim.ticket_id) : `EXP-${claimId.slice(0, 8).toUpperCase()}`,
@@ -1061,9 +1077,9 @@ export class SupabaseClaimRepository implements ClaimRepository {
         submittedByRole: "Claimant" as const,
         siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
         totalAmount: Number(claim.total_amount),
-        advanceAdjustmentAmount: Number(claim.advance_adjustment_amount ?? 0),
-        finalPayableAmount: Number(claim.final_payable_amount ?? claim.total_amount),
-        netAdvanceLeftAmount: Number(claim.net_advance_left_amount ?? 0),
+        advanceAdjustmentAmount: currentSettlementAmounts?.advanceAdjusted ?? Number(claim.advance_adjustment_amount ?? 0),
+        finalPayableAmount: currentSettlementAmounts?.finalPayable ?? Number(claim.final_payable_amount ?? claim.total_amount),
+        netAdvanceLeftAmount: currentSettlementAmounts?.netAdvanceLeft ?? Number(claim.net_advance_left_amount ?? 0),
         lineItemCount: stats.lineItemCount,
         missingReceiptCount: stats.missingReceiptCount,
         submittedAt,
@@ -1141,13 +1157,16 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     if (advanceError) throw advanceError;
 
-    const nextSettledAmount = Number(advance.settled_amount ?? 0) + settlement.totalAmount;
-    const nextBalance = Math.max(0, Number(advance.advance_amount ?? 0) - nextSettledAmount);
+    const ledgerAmounts = calculateAdvanceLedgerAmounts(
+      Number(advance.advance_amount ?? 0),
+      Number(advance.settled_amount ?? 0),
+      settlement.totalAmount
+    );
     const { error } = await db
       .from("expense_claims")
       .update({
-        settled_amount: nextSettledAmount,
-        advance_balance: nextBalance,
+        settled_amount: ledgerAmounts.nextSettledAmount,
+        advance_balance: ledgerAmounts.nextAdvanceBalance,
         updated_at: new Date().toISOString()
       })
       .eq("claim_id", settlement.advanceClaimId);

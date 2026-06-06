@@ -158,7 +158,7 @@ export class FinanceService {
   async releasePayment(claimId: string, user: UserContext) {
     this.assertFinance(user);
 
-    const claim = await this.claims.getClaimDetail(claimId);
+    let claim = await this.claims.getClaimDetail(claimId);
     if (!claim) throw notFound("Claim was not found.");
 
     if (claim.claimKind === "Advance" && ["HodApproved", "MdApproved"].includes(claim.status)) {
@@ -184,15 +184,13 @@ export class FinanceService {
     }
 
     if (claim.claimKind === "Settlement") {
+      await this.claims.updateClaimTotal(claimId);
+      claim = await this.claims.getClaimDetail(claimId);
+      if (!claim) throw notFound("Claim was not found.");
+
       const advance = claim.advanceClaimId ? await this.claims.getClaimDetail(claim.advanceClaimId) : null;
       if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
         throw conflict("Settlement claims must be linked to a paid advance.");
-      }
-
-      if (claim.totalAmount > advance.advanceBalance) {
-        throw conflict("Settlement amount cannot be greater than the current open advance balance.", {
-          errors: [`Current open advance balance is Rs ${advance.advanceBalance.toLocaleString("en-IN")}.`]
-        });
       }
     }
 

@@ -472,6 +472,54 @@ h1 {
   margin: 0;
 }
 
+.modal-backdrop {
+  align-items: center;
+  background: rgb(15 23 42 / 48%);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 50;
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgb(15 23 42 / 24%);
+  display: grid;
+  gap: 18px;
+  max-height: calc(100vh - 40px);
+  max-width: 560px;
+  overflow: auto;
+  padding: 22px;
+  width: 100%;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.field-error {
+  align-items: flex-start;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: var(--danger);
+  display: flex;
+  font-size: 13px;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+}
+
+.field-error svg {
+  flex: 0 0 auto;
+}
+
 .success-icon {
   align-items: center;
   background: #dcfce7;

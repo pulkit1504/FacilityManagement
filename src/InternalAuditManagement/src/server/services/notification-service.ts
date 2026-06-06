@@ -37,13 +37,11 @@ export class NotificationService {
     const candidates = [...queued, ...failed].filter((item) => item.deliveryAttempts < 3);
 
     const result: DeliveryResult = { attempted: candidates.length, sent: 0, failed: 0 };
-    for (const notification of candidates) {
-      const delivered = await this.deliverOne(notification);
-      if (delivered) {
-        result.sent += 1;
-      } else {
-        result.failed += 1;
-      }
+    for (let index = 0; index < candidates.length; index += 5) {
+      const batch = candidates.slice(index, index + 5);
+      const outcomes = await Promise.all(batch.map((notification) => this.deliverOne(notification)));
+      result.sent += outcomes.filter(Boolean).length;
+      result.failed += outcomes.filter((delivered) => !delivered).length;
     }
 
     return result;

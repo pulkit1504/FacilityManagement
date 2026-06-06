@@ -30,6 +30,7 @@ import type {
 import type {
   AuditLogInput,
   ClaimRepository,
+  CleanupResult,
   CreateAttachmentRecord,
   CreateBillingAlertRecord,
   CreateFraudFlagRecord,
@@ -814,15 +815,13 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return site;
   }
 
-  async updateSettlementAdjustment(claimId: string, adjustmentAmount: number): Promise<ExpenseClaim> {
-    const claim = await this.getClaimDetail(claimId);
-    if (!claim) {
-      throw new Error("Claim was not found.");
-    }
-
-    const advance = claim.advanceClaimId ? await this.getClaimDetail(claim.advanceClaimId) : null;
-    const openAdvanceBalance = advance?.advanceBalance ?? 0;
-    const amounts = calculateSelectedSettlementAmounts(claim.totalAmount, openAdvanceBalance, adjustmentAmount);
+  async updateSettlementAdjustment(
+    claimId: string,
+    totalAmount: number,
+    openAdvanceBalance: number,
+    adjustmentAmount: number
+  ): Promise<ExpenseClaim> {
+    const amounts = calculateSelectedSettlementAmounts(totalAmount, openAdvanceBalance, adjustmentAmount);
     const db = await getSupabaseAdminClient();
     const { data, error } = await db
       .from("expense_claims")
@@ -1029,6 +1028,33 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .eq("notification_id", notificationId);
 
     if (error) throw error;
+  }
+
+  async cleanupStaleRecords(cutoffIso: string): Promise<CleanupResult> {
+    const db = await getSupabaseAdminClient();
+    const [{ data: drafts, error: draftError }, { data: notifications, error: notificationError }] = await Promise.all([
+      db
+        .from("expense_claims")
+        .update({ is_deleted: true, updated_at: new Date().toISOString() })
+        .eq("status", "Draft")
+        .eq("is_deleted", false)
+        .lt("updated_at", cutoffIso)
+        .select("claim_id"),
+      db
+        .from("notification_outbox")
+        .delete()
+        .eq("status", "Failed")
+        .gte("delivery_attempts", 3)
+        .lt("created_at", cutoffIso)
+        .select("notification_id")
+    ]);
+
+    if (draftError) throw draftError;
+    if (notificationError) throw notificationError;
+    return {
+      staleDraftsRemoved: drafts?.length ?? 0,
+      exhaustedNotificationsRemoved: notifications?.length ?? 0
+    };
   }
 
   async listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]> {

@@ -2,7 +2,7 @@ import { forbidden } from "../errors/application-error";
 import type { UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { NotificationService } from "./notification-service";
-import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
+import type { CleanupStaleRecordsInput, CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
 
 export class AdminService {
   constructor(
@@ -111,6 +111,17 @@ export class AdminService {
     return {
       ...result,
       message: `Notification delivery attempted for ${result.attempted} item(s). Sent ${result.sent}, failed ${result.failed}.`
+    };
+  }
+
+  async cleanupStaleRecords(input: CleanupStaleRecordsInput, user: UserContext) {
+    this.assertAdmin(user);
+    const cutoff = new Date(Date.now() - input.olderThanDays * 24 * 60 * 60 * 1000).toISOString();
+    const result = await this.claims.cleanupStaleRecords(cutoff);
+    return {
+      ...result,
+      cutoff,
+      message: `Cleanup complete. Removed ${result.staleDraftsRemoved} stale draft(s) and ${result.exhaustedNotificationsRemoved} exhausted failed notification(s).`
     };
   }
 

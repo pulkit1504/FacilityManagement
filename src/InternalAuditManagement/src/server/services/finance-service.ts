@@ -91,24 +91,28 @@ export class FinanceService {
     }
 
     const confirmedAt = new Date(`${input.physicalReceiptDate}T${input.physicalReceiptTime}:00+05:30`).toISOString();
-    const updated = await this.claims.confirmPhysicalReceipt(claimId, confirmedAt, user.userId);
+    const [updated, pendingStep] = await Promise.all([
+      this.claims.confirmPhysicalReceipt(claimId, confirmedAt, user.userId),
+      claim.status === "FinanceConfirmed" ? Promise.resolve(null) : this.claims.getPendingApprovalStep(claimId)
+    ]);
 
     if (claim.status !== "FinanceConfirmed") {
-      const step = await this.claims.getPendingApprovalStep(claimId);
-      if (step?.requiredApproverRole === "Finance") {
-        await this.claims.decideApprovalStep(step.stepId, "Approved", `Physical voucher received by ${input.receivedByName}`);
+      if (pendingStep?.requiredApproverRole === "Finance") {
+        await this.claims.decideApprovalStep(pendingStep.stepId, "Approved", `Physical voucher received by ${input.receivedByName}`);
       }
       const financeConfirmed = await this.claims.submitClaim(claimId, "FinanceConfirmed");
-      await this.createBillingAlertsForClaim(claimId, user);
-      await this.claims.appendAuditLog({
-        claimId,
-        actorUserId: user.userId,
-        actionType: "FINANCE_CONFIRM",
-        preActionStatus: claim.status,
-        postActionStatus: financeConfirmed.status,
-        auditRemarks: `Physical voucher received by ${input.receivedByName}`,
-        correlationId: user.correlationId
-      });
+      await Promise.all([
+        this.createBillingAlertsForClaim(claimId, user, claim),
+        this.claims.appendAuditLog({
+          claimId,
+          actorUserId: user.userId,
+          actionType: "FINANCE_CONFIRM",
+          preActionStatus: claim.status,
+          postActionStatus: financeConfirmed.status,
+          auditRemarks: `Physical voucher received by ${input.receivedByName}`,
+          correlationId: user.correlationId
+        })
+      ]);
     }
 
     await this.claims.appendAuditLog({
@@ -218,23 +222,25 @@ export class FinanceService {
     }
 
     const updated = await this.claims.submitClaim(claimId, "PaymentReleased");
-    await this.claims.applySettlementToAdvance(claimId);
-    await this.createBillingAlertsForClaim(claimId, user);
-    await this.claims.appendAuditLog({
-      claimId,
-      actorUserId: user.userId,
-      actionType: "PAYMENT_RELEASE",
-      preActionStatus: claim.status,
-      postActionStatus: updated.status,
-      correlationId: user.correlationId
-    });
-    const notification = await this.notifications.enqueueAndSend({
-      recipientEmployeeId: submitter.employeeId,
-      recipientEmail: submitter.email,
-      subject: `Payment released for ${claim.ticketId}`,
-      body: `Payment processing is complete for ${claim.ticketId}. Final payable amount: Rs ${claim.finalPayableAmount.toLocaleString("en-IN")}.`,
-      relatedClaimId: claimId
-    });
+    const [, , , notification] = await Promise.all([
+      this.claims.applySettlementToAdvance(claimId),
+      this.createBillingAlertsForClaim(claimId, user, claim),
+      this.claims.appendAuditLog({
+        claimId,
+        actorUserId: user.userId,
+        actionType: "PAYMENT_RELEASE",
+        preActionStatus: claim.status,
+        postActionStatus: updated.status,
+        correlationId: user.correlationId
+      }),
+      this.notifications.enqueueAndSend({
+        recipientEmployeeId: submitter.employeeId,
+        recipientEmail: submitter.email,
+        subject: `Payment released for ${claim.ticketId}`,
+        body: `Payment processing is complete for ${claim.ticketId}. Final payable amount: Rs ${claim.finalPayableAmount.toLocaleString("en-IN")}.`,
+        relatedClaimId: claimId
+      })
+    ]);
 
     return {
       claimId,
@@ -252,8 +258,8 @@ export class FinanceService {
     }
   }
 
-  private async createBillingAlertsForClaim(claimId: string, user: UserContext) {
-    const claim = await this.claims.getClaimDetail(claimId);
+  private async createBillingAlertsForClaim(claimId: string, user: UserContext, existingClaim?: Awaited<ReturnType<ClaimRepository["getClaimDetail"]>>) {
+    const claim = existingClaim ?? await this.claims.getClaimDetail(claimId);
     if (!claim) throw notFound("Claim was not found.");
 
     const pendingBillingItems = claim.lineItems.filter((item) => item.expenseTag === "PendingBilling");

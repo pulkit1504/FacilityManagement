@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Banknote, ClipboardCheck, Download, Eye, Loader2 } from "lucide-react";
+import { AlertTriangle, Banknote, ClipboardCheck, Download, Eye, Loader2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
+import { getProblemMessage } from "@/components/ui/problem-message";
 
 type FinanceItem = {
   claimId: string;
@@ -54,6 +55,10 @@ type ClaimReceiptDetail = {
   }>;
 };
 
+type FinanceDecision =
+  | { kind: "reject-line"; claimId: string; lineItemId: string; title: string }
+  | { kind: "return-claim"; claimId: string; title: string };
+
 export function FinanceQueue() {
   const [items, setItems] = useState<FinanceItem[]>([]);
   const [advances, setAdvances] = useState<PendingAdvance[]>([]);
@@ -63,6 +68,9 @@ export function FinanceQueue() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [reportMonth, setReportMonth] = useState("");
+  const [decision, setDecision] = useState<FinanceDecision | null>(null);
+  const [decisionRemarks, setDecisionRemarks] = useState("");
+  const [decisionError, setDecisionError] = useState("");
 
   async function load() {
     try {
@@ -173,20 +181,17 @@ export function FinanceQueue() {
     }
   }
 
-  async function reviewLine(claimId: string, lineItemId: string, decision: "Accepted" | "Rejected") {
-    const remarks = decision === "Rejected" ? window.prompt("Reason for rejecting this line item") : "";
-    if (decision === "Rejected" && !remarks) return;
-
+  async function reviewLine(claimId: string, lineItemId: string, lineDecision: "Accepted" | "Rejected", remarks = "") {
     setBusyAction(`review:${lineItemId}`);
-    setMessage(decision === "Accepted" ? "Accepting line item..." : "Rejecting line item...");
+    setMessage(lineDecision === "Accepted" ? "Accepting line item..." : "Rejecting line item...");
     try {
       const response = await fetch(`/api/v1/finance/${claimId}/line-items/${lineItemId}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, remarks: remarks || null })
+        body: JSON.stringify({ decision: lineDecision, remarks: remarks || null })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail ?? "Line review failed.");
+      if (!response.ok) throw new Error(getProblemMessage(data, "Line review failed."));
       setMessage(data.message ?? "Line item reviewed.");
       setClaimDetails((current) => ({
         ...current,
@@ -203,17 +208,17 @@ export function FinanceQueue() {
           )
         }
       }));
+      closeDecision();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Line review failed.");
+      const errorMessage = error instanceof Error ? error.message : "Line review failed.";
+      if (lineDecision === "Rejected") setDecisionError(errorMessage);
+      else setMessage(errorMessage);
     } finally {
       setBusyAction(null);
     }
   }
 
-  async function returnClaim(claimId: string) {
-    const reason = window.prompt("Reason for returning this claim to claimant");
-    if (!reason) return;
-
+  async function returnClaim(claimId: string, reason: string) {
     setBusyAction(`return:${claimId}`);
     setMessage("Returning claim...");
     try {
@@ -223,13 +228,40 @@ export function FinanceQueue() {
         body: JSON.stringify({ reason })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail ?? "Could not return claim.");
+      if (!response.ok) throw new Error(getProblemMessage(data, "Could not return claim."));
       setMessage(data.message ?? "Claim returned.");
+      closeDecision();
       await load();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not return claim.");
+      setDecisionError(error instanceof Error ? error.message : "Could not return claim.");
     } finally {
       setBusyAction(null);
+    }
+  }
+
+  function openDecision(nextDecision: FinanceDecision) {
+    setDecision(nextDecision);
+    setDecisionRemarks("");
+    setDecisionError("");
+  }
+
+  function closeDecision() {
+    setDecision(null);
+    setDecisionRemarks("");
+    setDecisionError("");
+  }
+
+  async function submitDecision() {
+    const remarks = decisionRemarks.trim();
+    if (remarks.length < 5) {
+      setDecisionError("Enter a clear reason of at least 5 characters so the claimant knows what to correct.");
+      return;
+    }
+    if (!decision) return;
+    if (decision.kind === "reject-line") {
+      await reviewLine(decision.claimId, decision.lineItemId, "Rejected", remarks);
+    } else {
+      await returnClaim(decision.claimId, remarks);
     }
   }
 
@@ -381,7 +413,7 @@ export function FinanceQueue() {
                       {busyAction === `release:${item.claimId}` ? <Loader2 size={16} /> : <Banknote size={16} />}
                       {!beneficiaryReady(item) ? "Bank details required" : !allLinesAccepted(item) ? "Review lines" : !item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release" : "Receipt pending"}
                     </button>
-                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void returnClaim(item.claimId)} type="button">
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => openDecision({ kind: "return-claim", claimId: item.claimId, title: item.ticketId })} type="button">
                       {busyAction === `return:${item.claimId}` ? <Loader2 size={16} /> : null}
                       Return
                     </button>
@@ -413,7 +445,7 @@ export function FinanceQueue() {
                             <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void reviewLine(item.claimId, line.lineItemId, "Accepted")} type="button">
                               Accept
                             </button>
-                            <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void reviewLine(item.claimId, line.lineItemId, "Rejected")} type="button">
+                            <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => openDecision({ kind: "reject-line", claimId: item.claimId, lineItemId: line.lineItemId, title: line.description })} type="button">
                               Reject
                             </button>
                             {line.attachments.map((attachment) => (
@@ -500,6 +532,53 @@ export function FinanceQueue() {
           </tbody>
         </table>
       </section>
+
+      {decision ? (
+        <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDecision()}>
+          <div aria-labelledby="finance-decision-title" aria-modal="true" className="modal" role="dialog">
+            <div className="section-heading">
+              <div>
+                <h2 id="finance-decision-title">{decision.kind === "reject-line" ? "Reject line item" : "Return claim"}</h2>
+                <p className="muted">
+                  {decision.kind === "reject-line"
+                    ? `Explain what Finance needs corrected for ${decision.title}.`
+                    : `Explain what the claimant needs to correct in ${decision.title}.`}
+                </p>
+              </div>
+              <button aria-label="Close decision dialog" className="icon-button" disabled={Boolean(busyAction)} onClick={closeDecision} type="button">
+                <X size={18} />
+              </button>
+            </div>
+            <label>
+              <span className="muted">Reason for correction</span>
+              <textarea
+                autoFocus
+                maxLength={1000}
+                onChange={(event) => {
+                  setDecisionRemarks(event.target.value);
+                  setDecisionError("");
+                }}
+                placeholder="Describe the issue and the expected correction"
+                rows={5}
+                value={decisionRemarks}
+              />
+            </label>
+            {decisionError ? (
+              <p className="field-error" role="alert">
+                <AlertTriangle size={16} />
+                {decisionError}
+              </p>
+            ) : null}
+            <div className="modal-actions">
+              <button className="button secondary" disabled={Boolean(busyAction)} onClick={closeDecision} type="button">Cancel</button>
+              <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void submitDecision()} type="button">
+                {busyAction ? <Loader2 size={16} /> : null}
+                {decision.kind === "reject-line" ? "Reject line" : "Return to claimant"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

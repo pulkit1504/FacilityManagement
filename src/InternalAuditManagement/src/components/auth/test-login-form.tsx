@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { LogIn } from "lucide-react";
 import type { TestUser } from "@/server/auth/test-users";
+import { ActionFeedback } from "@/components/ui/action-feedback";
+import { getProblemMessage } from "@/components/ui/problem-message";
 
 export function TestLoginForm({ users }: Readonly<{ users: TestUser[] }>) {
   const [selected, setSelected] = useState(`${users[0]?.userId}:${users[0]?.role}`);
@@ -22,11 +24,13 @@ export function TestLoginForm({ users }: Readonly<{ users: TestUser[] }>) {
       });
       const data = await response.json();
       if (!response.ok) {
-        setMessage(data.detail ?? "Could not sign in.");
+        setMessage(getProblemMessage(data, "Could not sign in."));
         return;
       }
 
       window.location.href = "/";
+    } catch {
+      setMessage("Could not sign in. Check your connection and try again.");
     } finally {
       setIsBusy(false);
     }
@@ -50,7 +54,7 @@ export function TestLoginForm({ users }: Readonly<{ users: TestUser[] }>) {
         <LogIn size={18} />
         {isBusy ? "Signing in..." : "Continue"}
       </button>
-      {message ? <p className="muted">{message}</p> : null}
+      <ActionFeedback message={message} />
     </section>
   );
 }

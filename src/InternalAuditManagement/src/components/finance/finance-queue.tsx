@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Banknote, ClipboardCheck, Download, Eye, Loader2 } from "lucide-react";
+import { ActionFeedback } from "@/components/ui/action-feedback";
 
 type FinanceItem = {
   claimId: string;
@@ -283,7 +284,7 @@ export function FinanceQueue() {
             </a>
           </div>
         </div>
-        {message ? <p className="muted">{message}</p> : null}
+        <ActionFeedback message={message} onDismiss={() => setMessage("")} />
         <table className="table">
         <thead>
           <tr>

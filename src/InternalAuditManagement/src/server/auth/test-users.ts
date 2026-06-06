@@ -47,7 +47,7 @@ export const testUsers = [
     email: "finance@example.com"
   },
   {
-    userId: "emp-finance-001",
+    userId: "emp-finance-hod-001",
     role: "FinanceHOD",
     name: "Finance HOD",
     email: "financehod@example.com"

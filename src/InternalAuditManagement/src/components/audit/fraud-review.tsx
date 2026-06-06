@@ -1,7 +1,9 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Eye, Play, ShieldAlert } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Eye, Loader2, Play, ShieldAlert } from "lucide-react";
+import { ActionFeedback } from "@/components/ui/action-feedback";
+import { getProblemMessage } from "@/components/ui/problem-message";
 
 type FraudFlagItem = {
   flagId: string;
@@ -28,15 +30,24 @@ export function FraudReview() {
   const [flags, setFlags] = useState<FraudFlagItem[]>([]);
   const [expandedFlagId, setExpandedFlagId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
 
   async function load() {
-    const response = await fetch("/api/v1/fraud/flags?status=Open");
-    const data = await response.json();
-    if (!response.ok) {
-      setMessage(data.detail ?? "Could not load fraud flags.");
-      return;
+    try {
+      setIsLoading(true);
+      const response = await fetch("/api/v1/fraud/flags?status=Open");
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(getProblemMessage(data, "Could not load fraud flags."));
+        return;
+      }
+      setFlags(data.flags ?? []);
+    } catch {
+      setMessage("Could not load fraud flags. Check your connection and try again.");
+    } finally {
+      setIsLoading(false);
     }
-    setFlags(data.flags ?? []);
   }
 
   useEffect(() => {
@@ -44,28 +55,44 @@ export function FraudReview() {
   }, []);
 
   async function runSweep() {
-    const response = await fetch("/api/v1/fraud/sweep", { method: "POST" });
-    const data = await response.json();
-    setMessage(
-      response.ok
-        ? `Sweep complete. ${data.createdFlagsCount} new flags from ${data.evaluatedClaims} claims.`
-        : data.detail ?? "Sweep failed."
-    );
-    await load();
+    setBusyAction("sweep");
+    setMessage("Running fraud sweep...");
+    try {
+      const response = await fetch("/api/v1/fraud/sweep", { method: "POST" });
+      const data = await response.json();
+      setMessage(
+        response.ok
+          ? `Sweep complete. ${data.createdFlagsCount} new flags from ${data.evaluatedClaims} claims.`
+          : getProblemMessage(data, "Sweep failed.")
+      );
+      if (response.ok) await load();
+    } catch {
+      setMessage("Fraud sweep failed. Check your connection and try again.");
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function review(flagId: string, decision: "Cleared" | "Escalated") {
-    const response = await fetch(`/api/v1/fraud/flags/${flagId}/review`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        decision,
-        remarks: decision === "Cleared" ? "Reviewed and found legitimate." : "Escalated for management review."
-      })
-    });
-    const data = await response.json();
-    setMessage(data.message ?? data.detail ?? "Flag updated.");
-    await load();
+    setBusyAction(`${decision}:${flagId}`);
+    setMessage(decision === "Cleared" ? "Clearing fraud flag..." : "Escalating fraud flag...");
+    try {
+      const response = await fetch(`/api/v1/fraud/flags/${flagId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision,
+          remarks: decision === "Cleared" ? "Reviewed and found legitimate." : "Escalated for management review."
+        })
+      });
+      const data = await response.json();
+      setMessage(data.message ?? getProblemMessage(data, "Flag updated."));
+      if (response.ok) await load();
+    } catch {
+      setMessage("Could not update the fraud flag. Check your connection and try again.");
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   return (
@@ -77,12 +104,12 @@ export function FraudReview() {
             Run sweeps, review evidence lines, then clear or mark flags escalated in the audit trail.
           </p>
         </div>
-        <button className="button secondary" onClick={() => void runSweep()} type="button">
-          <Play size={16} />
-          Run sweep
+        <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void runSweep()} type="button">
+          {busyAction === "sweep" ? <Loader2 size={16} /> : <Play size={16} />}
+          {busyAction === "sweep" ? "Running..." : "Run sweep"}
         </button>
       </div>
-      {message ? <p className="muted">{message}</p> : null}
+      <ActionFeedback message={message} onDismiss={() => setMessage("")} />
       <table className="table">
         <thead>
           <tr>
@@ -120,13 +147,13 @@ export function FraudReview() {
                       <Eye size={16} />
                       {expandedFlagId === flag.flagId ? "Hide evidence" : "View evidence"}
                     </button>
-                    <button className="button secondary" onClick={() => void review(flag.flagId, "Cleared")} type="button">
-                      <CheckCircle2 size={16} />
-                      Clear
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void review(flag.flagId, "Cleared")} type="button">
+                      {busyAction === `Cleared:${flag.flagId}` ? <Loader2 size={16} /> : <CheckCircle2 size={16} />}
+                      {busyAction === `Cleared:${flag.flagId}` ? "Clearing..." : "Clear"}
                     </button>
-                    <button className="button" onClick={() => void review(flag.flagId, "Escalated")} type="button">
-                      <ShieldAlert size={16} />
-                      Escalate
+                    <button className="button" disabled={Boolean(busyAction)} onClick={() => void review(flag.flagId, "Escalated")} type="button">
+                      {busyAction === `Escalated:${flag.flagId}` ? <Loader2 size={16} /> : <ShieldAlert size={16} />}
+                      {busyAction === `Escalated:${flag.flagId}` ? "Escalating..." : "Escalate"}
                     </button>
                     <span className="muted">Marks for management review</span>
                   </div>
@@ -165,7 +192,10 @@ export function FraudReview() {
               ) : null}
             </Fragment>
           ))}
-          {flags.length === 0 ? (
+          {isLoading ? (
+            <tr><td colSpan={6}><span className="loading-inline"><Loader2 size={16} />Loading fraud flags...</span></td></tr>
+          ) : null}
+          {!isLoading && flags.length === 0 ? (
             <tr>
               <td colSpan={6}>No open fraud flags.</td>
             </tr>

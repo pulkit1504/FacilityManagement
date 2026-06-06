@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, CalendarPlus, Loader2, MailCheck, Plus, PowerOff, UserPlus, X } from "lucide-react";
+import { Building2, CalendarPlus, Loader2, MailCheck, Pencil, Plus, PowerOff, Save, UserPlus, X } from "lucide-react";
+import { ActionFeedback } from "@/components/ui/action-feedback";
+import { getProblemMessage } from "@/components/ui/problem-message";
 
 type Contract = {
   contractId: string;
@@ -72,6 +74,7 @@ export function SiteContractAdmin() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [contractDraft, setContractDraft] = useState({
     clientName: "",
     description: "",
@@ -128,7 +131,7 @@ export function SiteContractAdmin() {
       const data = await response.json();
       const notificationData = await notificationsResponse.json();
       if (!response.ok) {
-        setMessage(data.detail ?? "Could not load master data.");
+        setMessage(getProblemMessage(data, "Could not load master data."));
         return;
       }
       setContracts(data.contracts ?? []);
@@ -137,8 +140,12 @@ export function SiteContractAdmin() {
       setHolidays(data.holidays ?? []);
       if (notificationsResponse.ok) {
         setNotifications(notificationData.items ?? []);
+      } else {
+        setMessage(getProblemMessage(notificationData, "Master data loaded, but notification history could not be loaded."));
       }
       setSiteDraft((current) => ({ ...current, contractId: current.contractId || data.contracts?.[0]?.contractId || "" }));
+    } catch {
+      setMessage("Could not load Admin data. Check your connection and access, then try again.");
     } finally {
       setIsLoading(false);
     }
@@ -158,11 +165,14 @@ export function SiteContractAdmin() {
         body: JSON.stringify(payload)
       });
       const data = await response.json();
-      setMessage(data.message ?? data.detail ?? fallback);
+      setMessage(data.message ?? getProblemMessage(data, fallback));
       if (response.ok) {
         await load();
       }
       return response.ok;
+    } catch {
+      setMessage("Could not complete the update. Check your connection and try again.");
+      return false;
     } finally {
       setBusyAction(null);
     }
@@ -217,21 +227,7 @@ export function SiteContractAdmin() {
       "Employee saved."
     );
     if (saved) {
-      setEmployeeDraft({
-        employeeId: "",
-        fullName: "",
-        email: "",
-        role: "Claimant",
-        directManagerId: "",
-        isHod: false,
-        approvalThresholdAmount: 0,
-        imprestAdvanceLimit: 0,
-        bankAccountHolderName: "",
-        bankAccountNumber: "",
-        bankIfsc: "",
-        bankName: "",
-        temporaryPassword: ""
-      });
+      resetEmployeeDraft();
     }
   }
 
@@ -242,16 +238,19 @@ export function SiteContractAdmin() {
     }
   }
 
-  async function mutate(path: string, method: "POST" | "DELETE", action: string, fallback: string) {
+  async function mutate(path: string, method: "POST" | "DELETE", action: string, fallback: string, confirmation?: string) {
+    if (confirmation && !window.confirm(confirmation)) return;
     setBusyAction(action);
     setMessage("");
     try {
       const response = await fetch(path, { method });
       const data = await response.json();
-      setMessage(data.message ?? data.detail ?? fallback);
+      setMessage(data.message ?? getProblemMessage(data, fallback));
       if (response.ok) {
         await load();
       }
+    } catch {
+      setMessage("Could not complete the update. Check your connection and try again.");
     } finally {
       setBusyAction(null);
     }
@@ -263,11 +262,55 @@ export function SiteContractAdmin() {
     try {
       const response = await fetch("/api/v1/admin/notifications", { method: "POST" });
       const data = await response.json();
-      setMessage(data.message ?? data.detail ?? "Notification delivery attempted.");
-      await load();
+      setMessage(data.message ?? getProblemMessage(data, "Notification delivery attempted."));
+      if (response.ok) {
+        await load();
+      }
+    } catch {
+      setMessage("Could not deliver notifications. Check your connection and try again.");
     } finally {
       setBusyAction(null);
     }
+  }
+
+  function editEmployee(employee: Employee) {
+    setEditingEmployeeId(employee.employeeId);
+    setEmployeeDraft({
+      employeeId: employee.employeeId,
+      fullName: employee.fullName,
+      email: employee.email,
+      role: employee.role,
+      directManagerId: employee.directManagerId ?? "",
+      isHod: employee.isHod,
+      approvalThresholdAmount: employee.approvalThresholdAmount,
+      imprestAdvanceLimit: employee.imprestAdvanceLimit,
+      bankAccountHolderName: employee.bankAccountHolderName ?? "",
+      bankAccountNumber: employee.bankAccountNumber ?? "",
+      bankIfsc: employee.bankIfsc ?? "",
+      bankName: employee.bankName ?? "",
+      temporaryPassword: ""
+    });
+    setMessage(`Editing ${employee.fullName}. Update the fields and select Save changes.`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function resetEmployeeDraft() {
+    setEditingEmployeeId(null);
+    setEmployeeDraft({
+      employeeId: "",
+      fullName: "",
+      email: "",
+      role: "Claimant",
+      directManagerId: "",
+      isHod: false,
+      approvalThresholdAmount: 0,
+      imprestAdvanceLimit: 0,
+      bankAccountHolderName: "",
+      bankAccountNumber: "",
+      bankIfsc: "",
+      bankName: "",
+      temporaryPassword: ""
+    });
   }
 
   if (isLoading) {
@@ -283,7 +326,14 @@ export function SiteContractAdmin() {
 
   return (
     <div className="grid" style={{ gap: 16 }}>
-      {message ? <p className="muted">{message}</p> : null}
+      <ActionFeedback message={message} onDismiss={() => setMessage("")} />
+
+      <section className="panel admin-summary" aria-label="Admin setup summary">
+        <div><strong>{employees.length}</strong><span>Active people</span></div>
+        <div><strong>{sites.length}</strong><span>Active sites</span></div>
+        <div><strong>{contracts.length}</strong><span>Contracts</span></div>
+        <div><strong>{notifications.filter((item) => item.status === "Queued").length}</strong><span>Queued notifications</span></div>
+      </section>
 
       <div className="grid cols-2">
         <section className="panel">
@@ -367,12 +417,23 @@ export function SiteContractAdmin() {
 
       <div className="grid cols-2">
         <section className="panel">
-          <h2>Add Employee</h2>
+          <div className="section-heading">
+            <div>
+              <h2>{editingEmployeeId ? "Edit Employee" : "Add Employee"}</h2>
+              <p className="muted">{editingEmployeeId ? `Updating ${employeeDraft.fullName}` : "Create a user and assign workflow access."}</p>
+            </div>
+            {editingEmployeeId ? (
+              <button className="button secondary" disabled={busyAction !== null} onClick={resetEmployeeDraft} type="button">
+                <X size={16} />
+                Cancel edit
+              </button>
+            ) : null}
+          </div>
           <div className="grid">
             <div className="grid cols-2">
               <label>
                 <span className="muted">Employee ID</span>
-                <input value={employeeDraft.employeeId} onChange={(event) => setEmployeeDraft({ ...employeeDraft, employeeId: event.target.value })} />
+                <input disabled={Boolean(editingEmployeeId)} value={employeeDraft.employeeId} onChange={(event) => setEmployeeDraft({ ...employeeDraft, employeeId: event.target.value })} />
               </label>
               <label>
                 <span className="muted">Role</span>
@@ -441,8 +502,8 @@ export function SiteContractAdmin() {
               HOD approver
             </label>
             <button className="button" disabled={busyAction !== null || !employeeDraft.employeeId || !employeeDraft.fullName || !employeeDraft.email} onClick={() => void createEmployee()} type="button">
-              {busyAction === "employee:create" ? <Loader2 size={18} /> : <UserPlus size={18} />}
-              Save employee
+              {busyAction === "employee:create" ? <Loader2 size={18} /> : editingEmployeeId ? <Save size={18} /> : <UserPlus size={18} />}
+              {editingEmployeeId ? "Save changes" : "Create employee"}
             </button>
           </div>
         </section>
@@ -486,7 +547,7 @@ export function SiteContractAdmin() {
           </thead>
           <tbody>
             {employees.map((employee) => (
-              <tr key={employee.employeeId}>
+              <tr className={editingEmployeeId === employee.employeeId ? "editing-row" : undefined} key={employee.employeeId}>
                 <td>
                   <strong>{employee.fullName}</strong>
                   <br />
@@ -502,10 +563,16 @@ export function SiteContractAdmin() {
                   <span className="muted">{employee.bankAccountNumber ? `Account ${maskAccount(employee.bankAccountNumber)}` : "No account"}</span>
                 </td>
                 <td>
-                  <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/employees/${employee.employeeId}/deactivate`, "POST", `employee:${employee.employeeId}`, "Employee updated.")} type="button">
-                    {busyAction === `employee:${employee.employeeId}` ? <Loader2 size={18} /> : <PowerOff size={18} />}
-                    Mark inactive
-                  </button>
+                  <div className="actions">
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => editEmployee(employee)} type="button">
+                      <Pencil size={18} />
+                      Edit
+                    </button>
+                    <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/employees/${employee.employeeId}/deactivate`, "POST", `employee:${employee.employeeId}`, "Employee updated.", `Mark ${employee.fullName} inactive? They will lose application access.`)} type="button">
+                      {busyAction === `employee:${employee.employeeId}` ? <Loader2 size={18} /> : <PowerOff size={18} />}
+                      Mark inactive
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -536,7 +603,7 @@ export function SiteContractAdmin() {
                 <td>{holiday.holidayName}</td>
                 <td>{holiday.isNational ? "National" : "Local"}</td>
                 <td>
-                  <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/holidays/${holiday.holidayDate}`, "DELETE", `holiday:${holiday.holidayDate}`, "Holiday removed.")} type="button">
+                  <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/holidays/${holiday.holidayDate}`, "DELETE", `holiday:${holiday.holidayDate}`, "Holiday removed.", `Remove ${holiday.holidayName} from the holiday calendar?`)} type="button">
                     {busyAction === `holiday:${holiday.holidayDate}` ? <Loader2 size={18} /> : <X size={18} />}
                     Remove
                   </button>
@@ -633,7 +700,7 @@ export function SiteContractAdmin() {
                 <td>{site.clusterHeadName ?? "Not mapped"}</td>
                 <td><span className="badge success">Active</span></td>
                 <td>
-                  <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/sites/${site.siteId}/deactivate`, "POST", `site:${site.siteId}`, "Site updated.")} type="button">
+                  <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/sites/${site.siteId}/deactivate`, "POST", `site:${site.siteId}`, "Site updated.", `Mark ${site.siteName} inactive? It will no longer be available for new claims.`)} type="button">
                     {busyAction === `site:${site.siteId}` ? <Loader2 size={18} /> : <PowerOff size={18} />}
                     Mark inactive
                   </button>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2, Plus, WalletCards } from "lucide-react";
+import { ActionFeedback } from "@/components/ui/action-feedback";
 
 type SiteOption = {
   siteId: string;
@@ -131,7 +132,7 @@ export function ImprestWorkspace() {
             Submit advance
           </button>
         </div>
-        {message ? <p className="muted">{message}</p> : null}
+        <ActionFeedback message={message} onDismiss={() => setMessage("")} />
       </section>
 
       <section className="panel">

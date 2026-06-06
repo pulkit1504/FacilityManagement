@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Download, Eye, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { ActionFeedback } from "@/components/ui/action-feedback";
 
 type ClaimSummary = {
   claimId: string;
@@ -165,7 +166,7 @@ export function MyClaims() {
             <p className="muted">Track drafts, approvals, finance checks, returns, and payments.</p>
           </div>
         </div>
-        {message ? <p className="muted">{message}</p> : null}
+        <ActionFeedback message={message} onDismiss={() => setMessage("")} />
         <table className="table">
           <thead>
             <tr>

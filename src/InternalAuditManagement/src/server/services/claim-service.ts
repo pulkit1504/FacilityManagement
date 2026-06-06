@@ -90,7 +90,7 @@ export class ClaimService {
 
     this.assertOwnDraftClaim(claim, user);
     this.assertLineItemDateIsValidForClaim(claim, input);
-    await this.assertSettlementAmountWithinAdvance(claim, input.amount);
+    await this.assertSettlementIsLinkedToPaidAdvance(claim);
     await this.assertInvoiceReferenceIsUnique(input);
 
     return this.claims.addLineItem(claimId, input);
@@ -179,9 +179,7 @@ export class ClaimService {
     this.assertOwnDraftClaim(claim, user);
     this.assertLineItemBelongsToClaim(claim, lineItemId);
     this.assertLineItemDateIsValidForClaim(claim, input);
-    const existingLine = claim.lineItems.find((item) => item.lineItemId === lineItemId);
-    const currentAmount = existingLine?.amount ?? 0;
-    await this.assertSettlementAmountWithinAdvance(claim, input.amount, currentAmount);
+    await this.assertSettlementIsLinkedToPaidAdvance(claim);
     await this.assertInvoiceReferenceIsUnique(input, lineItemId);
 
     const updatedLine = await this.claims.updateLineItem(claimId, lineItemId, input);
@@ -247,12 +245,6 @@ export class ClaimService {
       const advance = claim.advanceClaimId ? await this.claims.getClaimDetail(claim.advanceClaimId) : null;
       if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
         throw conflict("Settlement claims must be linked to a paid advance.");
-      }
-
-      if (claim.totalAmount > advance.advanceBalance) {
-        throw conflict("Settlement amount cannot be greater than the open advance balance.", {
-          errors: [`Open advance balance is Rs ${advance.advanceBalance.toLocaleString("en-IN")}.`]
-        });
       }
     }
 
@@ -479,7 +471,7 @@ export class ClaimService {
     }
   }
 
-  private async assertSettlementAmountWithinAdvance(claim: ClaimDetail, nextLineAmount: number, replacedLineAmount = 0) {
+  private async assertSettlementIsLinkedToPaidAdvance(claim: ClaimDetail) {
     if (claim.claimKind !== "Settlement") {
       return;
     }
@@ -487,17 +479,6 @@ export class ClaimService {
     const advance = claim.advanceClaimId ? await this.claims.getClaimDetail(claim.advanceClaimId) : null;
     if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
       throw conflict("Settlement claims must be linked to a paid advance.");
-    }
-
-    const existingDraftTotal = claim.lineItems.reduce((sum, item) => sum + item.amount, 0);
-    const proposedTotal = existingDraftTotal - replacedLineAmount + nextLineAmount;
-    if (proposedTotal > advance.advanceBalance) {
-      throw conflict("Settlement amount cannot be greater than the open advance balance.", {
-        errors: [
-          `Open advance balance is Rs ${advance.advanceBalance.toLocaleString("en-IN")}.`,
-          `Current draft total after this line would be Rs ${proposedTotal.toLocaleString("en-IN")}.`
-        ]
-      });
     }
   }
 

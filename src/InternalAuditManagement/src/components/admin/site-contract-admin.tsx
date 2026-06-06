@@ -121,6 +121,16 @@ export function SiteContractAdmin() {
     () => new Map(employees.map((employee) => [employee.employeeId, employee.fullName])),
     [employees]
   );
+  const sitesWithoutClusterHead = sites.filter((site) => !site.clusterHeadEmployeeId);
+  const payableEmployeesWithoutBank = employees.filter(
+    (employee) =>
+      ["Claimant", "ClusterHead", "HOD"].includes(employee.role) &&
+      !(employee.bankAccountHolderName && employee.bankAccountNumber && employee.bankIfsc && employee.bankName)
+  );
+  const failedNotifications = notifications.filter((item) => item.status === "Failed");
+  const employeeBankReady =
+    !["Claimant", "ClusterHead", "HOD"].includes(employeeDraft.role) ||
+    Boolean(employeeDraft.bankAccountHolderName && employeeDraft.bankAccountNumber && employeeDraft.bankIfsc && employeeDraft.bankName);
 
   async function load() {
     try {
@@ -273,6 +283,25 @@ export function SiteContractAdmin() {
     }
   }
 
+  async function assignClusterHead(siteId: string, clusterHeadEmployeeId: string) {
+    setBusyAction(`site-assign:${siteId}`);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/v1/admin/sites/${siteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clusterHeadEmployeeId })
+      });
+      const data = await response.json();
+      setMessage(data.message ?? getProblemMessage(data, "Could not update the site Cluster Head."));
+      if (response.ok) await load();
+    } catch {
+      setMessage("Could not update the site Cluster Head. Check your connection and try again.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   function editEmployee(employee: Employee) {
     setEditingEmployeeId(employee.employeeId);
     setEmployeeDraft({
@@ -334,6 +363,32 @@ export function SiteContractAdmin() {
         <div><strong>{contracts.length}</strong><span>Contracts</span></div>
         <div><strong>{notifications.filter((item) => item.status === "Queued").length}</strong><span>Queued notifications</span></div>
       </section>
+
+      {(sitesWithoutClusterHead.length > 0 || payableEmployeesWithoutBank.length > 0 || failedNotifications.length > 0) ? (
+        <section className="panel">
+          <h2>Setup actions required</h2>
+          <div className="grid cols-3">
+            <div>
+              <span className={`badge ${sitesWithoutClusterHead.length > 0 ? "danger" : "success"}`}>
+                {sitesWithoutClusterHead.length} sites missing Cluster Head
+              </span>
+              <p className="muted">Claims may skip site-level routing until these sites are updated.</p>
+            </div>
+            <div>
+              <span className={`badge ${payableEmployeesWithoutBank.length > 0 ? "danger" : "success"}`}>
+                {payableEmployeesWithoutBank.length} payable employees missing bank details
+              </span>
+              <p className="muted">Finance payment release is blocked until beneficiary details are complete.</p>
+            </div>
+            <div>
+              <span className={`badge ${failedNotifications.length > 0 ? "danger" : "success"}`}>
+                {failedNotifications.length} failed notifications
+              </span>
+              <p className="muted">Verify the email sending domain and retry failed notifications.</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid cols-2">
         <section className="panel">
@@ -407,7 +462,7 @@ export function SiteContractAdmin() {
                 </select>
               </label>
             </div>
-            <button className="button" disabled={busyAction !== null || !siteDraft.siteName || !siteDraft.contractId} onClick={() => void createSite()} type="button">
+            <button className="button" disabled={busyAction !== null || !siteDraft.siteName || !siteDraft.contractId || !siteDraft.clusterHeadEmployeeId} onClick={() => void createSite()} type="button">
               {busyAction === "site:create" ? <Loader2 size={18} /> : <Building2 size={18} />}
               Add site
             </button>
@@ -501,7 +556,7 @@ export function SiteContractAdmin() {
               <input type="checkbox" checked={employeeDraft.isHod || employeeDraft.role === "HOD"} onChange={(event) => setEmployeeDraft({ ...employeeDraft, isHod: event.target.checked })} />
               HOD approver
             </label>
-            <button className="button" disabled={busyAction !== null || !employeeDraft.employeeId || !employeeDraft.fullName || !employeeDraft.email} onClick={() => void createEmployee()} type="button">
+            <button className="button" disabled={busyAction !== null || !employeeDraft.employeeId || !employeeDraft.fullName || !employeeDraft.email || !employeeBankReady} onClick={() => void createEmployee()} type="button">
               {busyAction === "employee:create" ? <Loader2 size={18} /> : editingEmployeeId ? <Save size={18} /> : <UserPlus size={18} />}
               {editingEmployeeId ? "Save changes" : "Create employee"}
             </button>
@@ -697,7 +752,19 @@ export function SiteContractAdmin() {
                   <span className="muted">{site.contractDescription ?? site.contractId ?? "No contract description"}</span>
                 </td>
                 <td>{site.serviceType}</td>
-                <td>{site.clusterHeadName ?? "Not mapped"}</td>
+                <td>
+                  <select
+                    aria-label={`Cluster Head for ${site.siteName}`}
+                    disabled={Boolean(busyAction)}
+                    onChange={(event) => void assignClusterHead(site.siteId, event.target.value)}
+                    value={site.clusterHeadEmployeeId ?? ""}
+                  >
+                    <option value="">Not mapped</option>
+                    {clusterHeadOptions.map((employee) => (
+                      <option key={employee.employeeId} value={employee.employeeId}>{employee.fullName}</option>
+                    ))}
+                  </select>
+                </td>
                 <td><span className="badge success">Active</span></td>
                 <td>
                   <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/sites/${site.siteId}/deactivate`, "POST", `site:${site.siteId}`, "Site updated.", `Mark ${site.siteName} inactive? It will no longer be available for new claims.`)} type="button">

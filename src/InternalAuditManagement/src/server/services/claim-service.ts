@@ -3,7 +3,7 @@ import type { ClaimDetail, ExpenseClaim, UserContext } from "../domain/types";
 import { statusLabel } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { NotificationService } from "./notification-service";
-import type { CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
+import type { CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput, UpdateSettlementAdjustmentInput } from "../validation/claim.schemas";
 
 export class ClaimService {
   constructor(
@@ -246,6 +246,9 @@ export class ClaimService {
       if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
         throw conflict("Settlement claims must be linked to a paid advance.");
       }
+      if (await this.claims.activeSettlementExists(advance.claimId, claim.claimId)) {
+        throw conflict("Another settlement for this advance is already being processed.");
+      }
     }
 
     const submitter = await this.claims.getEmployee(claim.submitterEmployeeId);
@@ -480,6 +483,48 @@ export class ClaimService {
     if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
       throw conflict("Settlement claims must be linked to a paid advance.");
     }
+  }
+
+  async updateSettlementAdjustment(claimId: string, input: UpdateSettlementAdjustmentInput, user: UserContext) {
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) {
+      throw notFound("Claim was not found.");
+    }
+
+    this.assertOwnDraftClaim(claim, user);
+    if (claim.claimKind !== "Settlement" || !claim.advanceClaimId) {
+      throw conflict("Advance adjustment is only available on settlement claims.");
+    }
+
+    const advance = await this.claims.getClaimDetail(claim.advanceClaimId);
+    if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
+      throw conflict("Settlement claims must be linked to a paid advance.");
+    }
+
+    const maximumAdjustment = Math.min(claim.totalAmount, advance.advanceBalance);
+    if (input.advanceAdjustmentAmount > maximumAdjustment) {
+      throw conflict("Advance adjustment exceeds the available amount.", {
+        errors: [`Enter an amount between Rs 0 and Rs ${maximumAdjustment.toLocaleString("en-IN")}.`]
+      });
+    }
+
+    const updated = await this.claims.updateSettlementAdjustment(claimId, input.advanceAdjustmentAmount);
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: "DRAFT_SAVED",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks: `Advance adjustment set to Rs ${updated.advanceAdjustmentAmount.toLocaleString("en-IN")}.`,
+      correlationId: user.correlationId
+    });
+
+    return {
+      advanceAdjustmentAmount: updated.advanceAdjustmentAmount,
+      finalPayableAmount: updated.finalPayableAmount,
+      netAdvanceLeftAmount: updated.netAdvanceLeftAmount,
+      message: "Advance adjustment saved."
+    };
   }
 
   private async assertInvoiceReferenceIsUnique(input: CreateLineItemInput, excludingLineItemId?: string) {

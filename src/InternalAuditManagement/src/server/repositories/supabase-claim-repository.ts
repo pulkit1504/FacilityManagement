@@ -40,7 +40,7 @@ import type { CreateLineItemInput } from "../validation/claim.schemas";
 import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
 import { getSupabaseAdminClient } from "./supabase-client";
 import { hashPassword, verifyPassword } from "../auth/password";
-import { calculateAdvanceLedgerAmounts, calculateSettlementAmounts } from "@/shared/settlement";
+import { calculateAdvanceLedgerAmounts, calculateSelectedSettlementAmounts } from "@/shared/settlement";
 
 type ClaimRow = {
   claim_id: string;
@@ -755,7 +755,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const total = (data ?? []).reduce((sum, row) => sum + Number(row.amount), 0);
     const { data: claim, error: claimError } = await db
       .from("expense_claims")
-      .select("claim_kind,settled_amount,advance_claim_id")
+      .select("claim_kind,settled_amount,advance_claim_id,advance_adjustment_amount")
       .eq("claim_id", claimId)
       .single();
 
@@ -778,7 +778,8 @@ export class SupabaseClaimRepository implements ClaimRepository {
       openAdvanceBalance = Number(advance.advance_balance ?? 0);
     }
 
-    const settlementAmounts = calculateSettlementAmounts(total, openAdvanceBalance);
+    const requestedAdjustment = isSettlement ? Number(claim?.advance_adjustment_amount ?? 0) : 0;
+    const settlementAmounts = calculateSelectedSettlementAmounts(total, openAdvanceBalance, requestedAdjustment);
     const { error: updateError } = await db
       .from("expense_claims")
       .update({
@@ -797,6 +798,46 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .eq("claim_id", claimId);
 
     if (updateError) throw updateError;
+  }
+
+  async assignSiteClusterHead(siteId: string, clusterHeadEmployeeId: string): Promise<Site> {
+    const db = await getSupabaseAdminClient();
+    const { error } = await db
+      .from("sites")
+      .update({ cluster_head_employee_id: clusterHeadEmployeeId })
+      .eq("site_id", siteId)
+      .eq("is_active", true);
+    if (error) throw error;
+    this.activeSitesPromise = null;
+    const site = (await this.listActiveSites()).find((item) => item.siteId === siteId);
+    if (!site) throw new Error("Site was not found.");
+    return site;
+  }
+
+  async updateSettlementAdjustment(claimId: string, adjustmentAmount: number): Promise<ExpenseClaim> {
+    const claim = await this.getClaimDetail(claimId);
+    if (!claim) {
+      throw new Error("Claim was not found.");
+    }
+
+    const advance = claim.advanceClaimId ? await this.getClaimDetail(claim.advanceClaimId) : null;
+    const openAdvanceBalance = advance?.advanceBalance ?? 0;
+    const amounts = calculateSelectedSettlementAmounts(claim.totalAmount, openAdvanceBalance, adjustmentAmount);
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_claims")
+      .update({
+        advance_adjustment_amount: amounts.advanceAdjusted,
+        final_payable_amount: amounts.finalPayable,
+        net_advance_left_amount: amounts.netAdvanceLeft,
+        updated_at: new Date().toISOString()
+      })
+      .eq("claim_id", claimId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapClaim(data as ClaimRow);
   }
 
   async createApprovalSteps(
@@ -1064,9 +1105,10 @@ export class SupabaseClaimRepository implements ClaimRepository {
       const siteId = claim.site_id ? String(claim.site_id) : null;
       const currentSettlementAmounts =
         claim.claim_kind === "Settlement" && claim.advance_claim_id
-          ? calculateSettlementAmounts(
+          ? calculateSelectedSettlementAmounts(
               Number(claim.total_amount),
-              advanceBalances.get(String(claim.advance_claim_id)) ?? 0
+              advanceBalances.get(String(claim.advance_claim_id)) ?? 0,
+              Number(claim.advance_adjustment_amount ?? 0)
             )
           : null;
       return {
@@ -1141,6 +1183,21 @@ export class SupabaseClaimRepository implements ClaimRepository {
     });
   }
 
+  async activeSettlementExists(advanceClaimId: string, excludingClaimId: string): Promise<boolean> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_claims")
+      .select("claim_id")
+      .eq("claim_kind", "Settlement")
+      .eq("advance_claim_id", advanceClaimId)
+      .in("status", ["Submitted", "HodApproved", "MdApproved", "FinanceConfirmed"])
+      .neq("claim_id", excludingClaimId)
+      .eq("is_deleted", false)
+      .limit(1);
+    if (error) throw error;
+    return (data ?? []).length > 0;
+  }
+
   async applySettlementToAdvance(settlementClaimId: string): Promise<void> {
     const settlement = await this.getClaimDetail(settlementClaimId);
     if (!settlement?.advanceClaimId || settlement.claimKind !== "Settlement") {
@@ -1160,7 +1217,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const ledgerAmounts = calculateAdvanceLedgerAmounts(
       Number(advance.advance_amount ?? 0),
       Number(advance.settled_amount ?? 0),
-      settlement.totalAmount
+      settlement.advanceAdjustmentAmount
     );
     const { error } = await db
       .from("expense_claims")

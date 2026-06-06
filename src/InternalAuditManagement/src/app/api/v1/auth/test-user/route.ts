@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   response.cookies.set(testUserCookieName, serializeTestUserCookie(selectedUser), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" && process.env.APP_AUTH_MODE !== "test",
     path: "/",
     maxAge: 60 * 60 * 8
   });
@@ -57,7 +57,7 @@ export async function DELETE() {
   response.cookies.set(testUserCookieName, "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" && process.env.APP_AUTH_MODE !== "test",
     path: "/",
     maxAge: 0
   });

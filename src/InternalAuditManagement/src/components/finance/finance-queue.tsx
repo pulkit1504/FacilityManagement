@@ -265,6 +265,12 @@ export function FinanceQueue() {
     return details.lineItems.length > 0 && details.lineItems.every((line) => line.financeReviewStatus === "Accepted");
   }
 
+  function beneficiaryReady(item: FinanceItem) {
+    return item.finalPayableAmount <= 0 || Boolean(
+      item.bankAccountHolderName && item.bankAccountNumber && item.bankIfsc && item.bankName
+    );
+  }
+
   const reportQuery = reportMonth ? `?month=${encodeURIComponent(reportMonth)}` : "";
 
   return (
@@ -331,6 +337,7 @@ export function FinanceQueue() {
                   <span className="muted">
                     {item.bankAccountNumber ? `${item.bankAccountHolderName ?? "Account"} ${maskAccount(item.bankAccountNumber)} ${item.bankIfsc ?? ""}` : "No beneficiary details"}
                   </span>
+                  {!beneficiaryReady(item) ? <span className="badge danger">Payment blocked</span> : null}
                 </td>
                 <td>
                   <span className={`badge ${item.physicalReceiptConfirmed ? "success" : "warning"}`}>
@@ -358,14 +365,21 @@ export function FinanceQueue() {
                       disabled={
                         (item.physicalReceiptRequired && !item.physicalReceiptConfirmed) ||
                         !allLinesAccepted(item) ||
+                        !beneficiaryReady(item) ||
                         busyAction === `release:${item.claimId}`
                       }
                       onClick={() => void releasePayment(item.claimId)}
                       type="button"
-                      title={!item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release payment" : "Confirm receipt before releasing payment"}
+                      title={
+                        !beneficiaryReady(item)
+                          ? "Complete beneficiary bank details before releasing payment"
+                          : !item.physicalReceiptRequired || item.physicalReceiptConfirmed
+                            ? "Release payment"
+                            : "Confirm receipt before releasing payment"
+                      }
                     >
                       {busyAction === `release:${item.claimId}` ? <Loader2 size={16} /> : <Banknote size={16} />}
-                      {!allLinesAccepted(item) ? "Review lines" : !item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release" : "Receipt pending"}
+                      {!beneficiaryReady(item) ? "Bank details required" : !allLinesAccepted(item) ? "Review lines" : !item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release" : "Receipt pending"}
                     </button>
                     <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void returnClaim(item.claimId)} type="button">
                       {busyAction === `return:${item.claimId}` ? <Loader2 size={16} /> : null}

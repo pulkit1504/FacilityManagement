@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
+import { ActionFeedback } from "@/components/ui/action-feedback";
 import { calculateSettlementAmounts } from "@/shared/settlement";
 
 type ExpenseTag = "AlreadyBilled" | "PendingBilling" | "ContractPartCost" | "BackendCTC";
@@ -944,7 +945,7 @@ export function ClaimWizard({
           </ul>
         </section>
       ) : null}
-      {message ? <p className="muted">{message}</p> : null}
+      <ActionFeedback message={message} onDismiss={() => setMessage("")} />
     </div>
   );
 }

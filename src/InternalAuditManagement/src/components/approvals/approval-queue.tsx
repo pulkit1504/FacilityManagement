@@ -2,6 +2,8 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { Check, Eye, Loader2, RotateCcw } from "lucide-react";
+import { ActionFeedback } from "@/components/ui/action-feedback";
+import { getProblemMessage } from "@/components/ui/problem-message";
 
 type ApprovalItem = {
   claimId: string;
@@ -57,7 +59,7 @@ export function ApprovalQueue() {
       const data = await queueResponse.json();
       const sitesData = await sitesResponse.json();
       if (!queueResponse.ok) {
-        setMessage(data.detail ?? "Could not load approval queue.");
+        setMessage(getProblemMessage(data, "Could not load approval queue."));
         return;
       }
       if (sitesResponse.ok) {
@@ -121,7 +123,7 @@ export function ApprovalQueue() {
         body: action === "approve" ? JSON.stringify({ remarks: "" }) : JSON.stringify({ reason: "Returned for correction." })
       });
       const data = await response.json();
-      setMessage(data.message ?? data.detail ?? "Action completed.");
+      setMessage(data.message ?? getProblemMessage(data, "Action completed."));
       await load();
     } finally {
       setBusyAction(null);
@@ -136,7 +138,7 @@ export function ApprovalQueue() {
   return (
     <section className="panel">
       <h2>Pending Approval Queue</h2>
-      {message ? <p className="muted">{message}</p> : null}
+      <ActionFeedback message={message} onDismiss={() => setMessage("")} />
       <table className="table">
         <thead>
           <tr>

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Link2, Loader2, RefreshCw } from "lucide-react";
+import { ActionFeedback } from "@/components/ui/action-feedback";
+import { getProblemMessage } from "@/components/ui/problem-message";
 
 type BillingAlertItem = {
   alertId: string;
@@ -29,10 +31,12 @@ export function BillingAlerts() {
       const response = await fetch("/api/v1/billing/alerts?isResolved=false");
       const data = await response.json();
       if (!response.ok) {
-        setMessage(data.detail ?? "Could not load billing alerts.");
+        setMessage(getProblemMessage(data, "Could not load billing alerts."));
         return;
       }
       setItems(data.items ?? []);
+    } catch {
+      setMessage("Could not load billing alerts. Check your connection and try again.");
     } finally {
       setIsLoading(false);
     }
@@ -58,8 +62,13 @@ export function BillingAlerts() {
         body: JSON.stringify({ clientInvoiceNumber })
       });
       const data = await response.json();
-      setMessage(data.message ?? data.detail ?? "Billing alert updated.");
-      await load();
+      setMessage(data.message ?? getProblemMessage(data, "Billing alert updated."));
+      if (response.ok) {
+        setInvoiceNumbers((current) => ({ ...current, [alertId]: "" }));
+        await load();
+      }
+    } catch {
+      setMessage("Could not link the invoice. Check your connection and try again.");
     } finally {
       setBusyAction(null);
     }
@@ -77,7 +86,7 @@ export function BillingAlerts() {
           {isLoading ? "Loading..." : "Refresh"}
         </button>
       </div>
-      {message ? <p className="muted">{message}</p> : null}
+      <ActionFeedback message={message} onDismiss={() => setMessage("")} />
       <table className="table">
         <thead>
           <tr>

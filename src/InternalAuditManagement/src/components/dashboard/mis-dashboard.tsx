@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { MetricCard } from "@/components/ui/metric-card";
+import { ActionFeedback } from "@/components/ui/action-feedback";
+import { getProblemMessage } from "@/components/ui/problem-message";
 
 type RecoveryMatrixRow = {
   siteName: string;
@@ -26,21 +28,25 @@ export function MisDashboard() {
 
   useEffect(() => {
     async function load() {
-      const response = await fetch("/api/v1/dashboard/mis", { cache: "no-store" });
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.detail ?? "Could not load MIS dashboard.");
-        return;
-      }
+      try {
+        const response = await fetch("/api/v1/dashboard/mis", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) {
+          setError(getProblemMessage(data, "Could not load MIS dashboard."));
+          return;
+        }
 
-      setMetrics(data.metrics);
+        setMetrics(data.metrics);
+      } catch {
+        setError("Could not load MIS dashboard. Check your connection and try again.");
+      }
     }
 
     void load();
   }, []);
 
   if (error) {
-    return <p className="muted">{error}</p>;
+    return <ActionFeedback message={error} tone="error" />;
   }
 
   if (!metrics) {

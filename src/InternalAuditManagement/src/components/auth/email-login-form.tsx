@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { LogIn } from "lucide-react";
+import { ActionFeedback } from "@/components/ui/action-feedback";
+import { getProblemMessage } from "@/components/ui/problem-message";
 
 export function EmailLoginForm({ error }: Readonly<{ error?: string }>) {
   const [email, setEmail] = useState("");
@@ -21,11 +23,13 @@ export function EmailLoginForm({ error }: Readonly<{ error?: string }>) {
       });
       const data = await response.json();
       if (!response.ok) {
-        setMessage(data.detail ?? "Could not sign in.");
+        setMessage(getProblemMessage(data, "Could not sign in."));
         return;
       }
 
       window.location.href = "/";
+    } catch {
+      setMessage("Could not sign in. Check your connection and try again.");
     } finally {
       setIsBusy(false);
     }
@@ -47,7 +51,7 @@ export function EmailLoginForm({ error }: Readonly<{ error?: string }>) {
         <LogIn size={18} />
         {isBusy ? "Signing in..." : "Continue"}
       </button>
-      {message ? <p className="muted">{message}</p> : null}
+      <ActionFeedback message={message} />
     </section>
   );
 }

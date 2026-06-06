@@ -14,8 +14,11 @@ export class NotificationService {
 
   async enqueueAndSend(input: NotificationOutboxInput) {
     const notification = await this.claims.enqueueNotification(input);
-    await this.deliverOne(notification);
-    return notification;
+    const delivered = await this.deliverOne(notification);
+    return {
+      ...notification,
+      status: delivered ? "Sent" as const : "Failed" as const
+    };
   }
 
   async listNotifications(user: UserContext) {
@@ -85,6 +88,11 @@ async function sendEmail(input: { to: string; subject: string; text: string }) {
     throw new Error("Email delivery is not configured. Add Resend-ApiKey and Notification-FromEmail secrets.");
   }
 
+  const testRecipient = process.env.APP_AUTH_MODE === "test" ? process.env.NOTIFICATION_TEST_RECIPIENT : undefined;
+  const recipient = testRecipient || input.to;
+  const text = testRecipient && testRecipient !== input.to
+    ? `Test delivery redirected from ${input.to}.\n\n${input.text}`
+    : input.text;
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -93,9 +101,9 @@ async function sendEmail(input: { to: string; subject: string; text: string }) {
     },
     body: JSON.stringify({
       from: fromEmail,
-      to: [input.to],
+      to: [recipient],
       subject: input.subject,
-      text: input.text
+      text
     })
   });
 

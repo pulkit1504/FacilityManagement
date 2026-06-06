@@ -115,9 +115,14 @@ export const createAdvanceRequestSchema = z.object({
   claimPeriodMonth: z.string().date().nullable().optional()
 });
 
+export const updateSettlementAdjustmentSchema = z.object({
+  advanceAdjustmentAmount: z.coerce.number().nonnegative()
+});
+
 export type CreateClaimInput = z.infer<typeof createClaimSchema>;
 export type CreateLineItemInput = z.infer<typeof createLineItemSchema>;
 export type CreateAdvanceRequestInput = z.infer<typeof createAdvanceRequestSchema>;
+export type UpdateSettlementAdjustmentInput = z.infer<typeof updateSettlementAdjustmentSchema>;
 
 export const approveClaimSchema = z.object({
   remarks: z.string().trim().max(1000).optional()
@@ -167,7 +172,11 @@ export const createSiteSchema = z.object({
   siteAddress: z.string().trim().max(500).nullable().optional(),
   serviceType: z.enum(["Housekeeping", "Security", "Both"]),
   contractId: z.string().trim().min(1),
-  clusterHeadEmployeeId: z.string().trim().min(1).nullable().optional()
+  clusterHeadEmployeeId: z.string().trim().min(1, "Select a Cluster Head.")
+});
+
+export const assignSiteClusterHeadSchema = z.object({
+  clusterHeadEmployeeId: z.string().trim().min(1, "Select a Cluster Head.")
 });
 
 export const createEmployeeSchema = z.object({
@@ -184,6 +193,24 @@ export const createEmployeeSchema = z.object({
   bankIfsc: z.string().trim().min(4).max(20).nullable().optional(),
   bankName: z.string().trim().min(2).max(120).nullable().optional(),
   temporaryPassword: z.string().min(8).max(128).nullable().optional()
+}).superRefine((value, ctx) => {
+  if (!["Claimant", "ClusterHead", "HOD"].includes(value.role)) return;
+
+  const bankFields = [
+    ["bankAccountHolderName", value.bankAccountHolderName],
+    ["bankAccountNumber", value.bankAccountNumber],
+    ["bankIfsc", value.bankIfsc],
+    ["bankName", value.bankName]
+  ] as const;
+  for (const [field, fieldValue] of bankFields) {
+    if (!fieldValue) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [field],
+        message: "Required for employees who can submit payable claims."
+      });
+    }
+  }
 });
 
 export const createHolidaySchema = z.object({
@@ -200,5 +227,6 @@ export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;
 export type ReviewFraudFlagInput = z.infer<typeof reviewFraudFlagSchema>;
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 export type CreateSiteInput = z.infer<typeof createSiteSchema>;
+export type AssignSiteClusterHeadInput = z.infer<typeof assignSiteClusterHeadSchema>;
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;

@@ -56,6 +56,18 @@ export class AdminService {
     };
   }
 
+  async assignSiteClusterHead(siteId: string, clusterHeadEmployeeId: string, user: UserContext) {
+    this.assertAdmin(user);
+    const employee = await this.claims.getEmployee(clusterHeadEmployeeId);
+    if (!employee || employee.role !== "ClusterHead") {
+      throw forbidden("Select an active employee with the Cluster Head role.");
+    }
+    return {
+      site: await this.claims.assignSiteClusterHead(siteId, clusterHeadEmployeeId),
+      message: "Site Cluster Head updated."
+    };
+  }
+
   async createEmployee(input: CreateEmployeeInput, user: UserContext) {
     this.assertAdmin(user);
     return {

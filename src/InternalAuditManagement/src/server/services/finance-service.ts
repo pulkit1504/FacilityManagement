@@ -2,9 +2,13 @@ import { conflict, forbidden, notFound } from "../errors/application-error";
 import { statusLabel, type UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { ConfirmPhysicalReceiptInput, FinanceLineReviewInput } from "../validation/claim.schemas";
+import type { NotificationService } from "./notification-service";
 
 export class FinanceService {
-  constructor(private readonly claims: ClaimRepository) {}
+  constructor(
+    private readonly claims: ClaimRepository,
+    private readonly notifications: NotificationService
+  ) {}
 
   async listQueue(user: UserContext) {
     this.assertFinance(user);
@@ -194,6 +198,25 @@ export class FinanceService {
       }
     }
 
+    const submitter = await this.claims.getEmployee(claim.submitterEmployeeId);
+    if (!submitter) {
+      throw conflict("Submitter employee record is missing or inactive.");
+    }
+
+    if (claim.finalPayableAmount > 0) {
+      const missingBankFields = [
+        !submitter.bankAccountHolderName ? "account holder" : null,
+        !submitter.bankAccountNumber ? "account number" : null,
+        !submitter.bankIfsc ? "IFSC" : null,
+        !submitter.bankName ? "bank name" : null
+      ].filter((field): field is string => Boolean(field));
+      if (missingBankFields.length > 0) {
+        throw conflict("Beneficiary bank details are required before payment release.", {
+          errors: [`Missing: ${missingBankFields.join(", ")}.`]
+        });
+      }
+    }
+
     const updated = await this.claims.submitClaim(claimId, "PaymentReleased");
     await this.claims.applySettlementToAdvance(claimId);
     await this.createBillingAlertsForClaim(claimId, user);
@@ -205,12 +228,21 @@ export class FinanceService {
       postActionStatus: updated.status,
       correlationId: user.correlationId
     });
+    const notification = await this.notifications.enqueueAndSend({
+      recipientEmployeeId: submitter.employeeId,
+      recipientEmail: submitter.email,
+      subject: `Payment released for ${claim.ticketId}`,
+      body: `Payment processing is complete for ${claim.ticketId}. Final payable amount: Rs ${claim.finalPayableAmount.toLocaleString("en-IN")}.`,
+      relatedClaimId: claimId
+    });
 
     return {
       claimId,
       newStatus: updated.status,
       newStatusLabel: statusLabel(updated.status),
-      message: "Payment released. Claimant has been notified."
+      message: notification.status === "Sent"
+        ? "Payment released. Claimant notification sent."
+        : "Payment released, but claimant notification delivery failed. Admin can retry it."
     };
   }
 

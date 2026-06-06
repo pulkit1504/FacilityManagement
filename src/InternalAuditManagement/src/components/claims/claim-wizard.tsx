@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
-import { calculateSettlementAmounts } from "@/shared/settlement";
+import { calculateSelectedSettlementAmounts } from "@/shared/settlement";
 
 type ExpenseTag = "AlreadyBilled" | "PendingBilling" | "ContractPartCost" | "BackendCTC";
 type ClaimKind = "Settlement" | "Reimbursement";
@@ -61,6 +61,7 @@ type LoadedClaim = {
   statusLabel: string;
   siteId: string | null;
   rejectionReason: string | null;
+  advanceAdjustmentAmount: number;
   lineItems: Array<SavedLineItem & { attachments: Array<{ contentHash: string }> }>;
 };
 
@@ -133,6 +134,7 @@ export function ClaimWizard({
   const [claimId, setClaimId] = useState<string | null>(null);
   const [claimKind, setClaimKind] = useState<ClaimKind>(initialClaimKind);
   const [advanceClaimId, setAdvanceClaimId] = useState(initialAdvanceClaimId ?? "");
+  const [advanceAdjustmentAmount, setAdvanceAdjustmentAmount] = useState(0);
   const [pendingAdvances, setPendingAdvances] = useState<PendingAdvance[]>([]);
   const [claimStatus, setClaimStatus] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
@@ -169,15 +171,16 @@ export function ClaimWizard({
     [editingLineItemId, savedLineItems]
   );
   const settlementDraftTotalAfterLine = savedLineTotal - editingLineAmount + (Number(lineItem.amount) || 0);
-  const settlementBalanceAfterLine = selectedAdvance
-    ? selectedAdvance.advanceBalance - settlementDraftTotalAfterLine
-    : null;
   const settlementPreview = selectedAdvance
-    ? calculateSettlementAmounts(settlementDraftTotalAfterLine, selectedAdvance.advanceBalance)
+    ? calculateSelectedSettlementAmounts(settlementDraftTotalAfterLine, selectedAdvance.advanceBalance, advanceAdjustmentAmount)
     : null;
   const savedSettlement = selectedAdvance
-    ? calculateSettlementAmounts(savedLineTotal, selectedAdvance.advanceBalance)
+    ? calculateSelectedSettlementAmounts(savedLineTotal, selectedAdvance.advanceBalance, advanceAdjustmentAmount)
     : null;
+  const maximumAdvanceAdjustment = selectedAdvance ? Math.min(savedLineTotal, selectedAdvance.advanceBalance) : 0;
+  useEffect(() => {
+    setAdvanceAdjustmentAmount((current) => Math.min(current, maximumAdvanceAdjustment));
+  }, [maximumAdvanceAdjustment]);
   const hasValidProformaPeriod =
     !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
   const canCreateDraft = Boolean(siteId && claimPeriodMonth) && hasValidProformaPeriod && (claimKind !== "Settlement" || Boolean(advanceClaimId));
@@ -258,6 +261,7 @@ export function ClaimWizard({
         setClaimStatus(data.status);
         setClaimKind(data.claimKind === "Settlement" ? "Settlement" : "Reimbursement");
         setAdvanceClaimId(data.advanceClaimId ?? "");
+        setAdvanceAdjustmentAmount(data.advanceAdjustmentAmount ?? 0);
         setRejectionReason(data.rejectionReason);
         setSubmissionMode(data.submissionMode);
         setClaimPeriodMonth(data.claimPeriodMonth?.slice(0, 7) ?? new Date().toISOString().slice(0, 7));
@@ -339,6 +343,7 @@ export function ClaimWizard({
     setLineItem(emptyLineItem);
     setEditingLineItemId(null);
     setSavedLineItems([]);
+    setAdvanceAdjustmentAmount(0);
     setSubmissionResult(null);
     setErrorMessages([]);
     setMessage("Draft cleared. Choose the entry method and create a new draft.");
@@ -486,6 +491,19 @@ export function ClaimWizard({
     setMessage("");
     setErrorMessages([]);
     try {
+      if (claimKind === "Settlement") {
+        const adjustmentResponse = await fetch(`/api/v1/claims/${claimId}/settlement-adjustment`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ advanceAdjustmentAmount })
+        });
+        const adjustmentData = await adjustmentResponse.json();
+        if (!adjustmentResponse.ok) {
+          setErrorMessages(getProblemMessages(adjustmentData, "Could not save advance adjustment."));
+          return;
+        }
+        setAdvanceAdjustmentAmount(adjustmentData.advanceAdjustmentAmount);
+      }
       const response = await fetch(`/api/v1/claims/${claimId}/submit`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) {
@@ -500,6 +518,31 @@ export function ClaimWizard({
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not submit claim.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveAdvanceAdjustment() {
+    if (!claimId || claimKind !== "Settlement" || !isDraft) return;
+    setBusy(true);
+    setMessage("");
+    setErrorMessages([]);
+    try {
+      const response = await fetch(`/api/v1/claims/${claimId}/settlement-adjustment`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ advanceAdjustmentAmount })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setErrorMessages(getProblemMessages(data, "Could not save advance adjustment."));
+        return;
+      }
+      setAdvanceAdjustmentAmount(data.advanceAdjustmentAmount);
+      setMessage(data.message ?? "Advance adjustment saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save advance adjustment.");
     } finally {
       setBusy(false);
     }
@@ -698,6 +741,29 @@ export function ClaimWizard({
                 {selectedAdvance.ageDays} days · {selectedAdvance.settlementStatusLabel}
               </span>
             </div>
+            {claimId && isDraft ? (
+              <label>
+                <span className="muted">Advance amount to adjust</span>
+                <input
+                  inputMode="decimal"
+                  max={maximumAdvanceAdjustment}
+                  min={0}
+                  onChange={(event) => setAdvanceAdjustmentAmount(Number(event.target.value) || 0)}
+                  type="number"
+                  value={advanceAdjustmentAmount}
+                />
+                <span className="muted">Maximum available: Rs {maximumAdvanceAdjustment.toLocaleString("en-IN")}</span>
+                <button
+                  className="button secondary"
+                  disabled={busy || advanceAdjustmentAmount < 0 || advanceAdjustmentAmount > maximumAdvanceAdjustment}
+                  onClick={() => void saveAdvanceAdjustment()}
+                  type="button"
+                >
+                  {busy ? <Loader2 size={16} /> : <Check size={16} />}
+                  Save adjustment
+                </button>
+              </label>
+            ) : null}
           </div>
         ) : null}
         {isReturned ? (
@@ -838,7 +904,7 @@ export function ClaimWizard({
               <p className="muted" style={{ marginTop: 10 }}>
                 Settlement draft total after this line: Rs {settlementDraftTotalAfterLine.toLocaleString("en-IN")}.
                 {" "}Advance adjusted: Rs {(settlementPreview?.advanceAdjusted ?? 0).toLocaleString("en-IN")}.
-                {" "}{(settlementPreview?.finalPayable ?? 0) > 0 ? "Final payable" : "Remaining advance balance"}: Rs {Math.max(settlementPreview?.finalPayable ?? 0, settlementBalanceAfterLine ?? selectedAdvance.advanceBalance, 0).toLocaleString("en-IN")}.
+                {" "}Final payable: Rs {(settlementPreview?.finalPayable ?? 0).toLocaleString("en-IN")}. Remaining advance balance: Rs {(settlementPreview?.netAdvanceLeft ?? 0).toLocaleString("en-IN")}.
               </p>
             ) : null}
           </section>

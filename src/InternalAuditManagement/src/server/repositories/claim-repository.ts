@@ -74,6 +74,7 @@ export interface ClaimRepository {
   listContracts(): Promise<ClientContract[]>;
   createContract(input: CreateContractInput): Promise<ClientContract>;
   createSite(input: CreateSiteInput): Promise<Site>;
+  assignSiteClusterHead(siteId: string, clusterHeadEmployeeId: string): Promise<Site>;
   deactivateSite(siteId: string): Promise<Site>;
   listEmployees(): Promise<Employee[]>;
   createEmployee(input: CreateEmployeeInput): Promise<Employee>;
@@ -90,6 +91,7 @@ export interface ClaimRepository {
   invoiceReferenceExists(invoiceNumber: string, excludingLineItemId?: string): Promise<boolean>;
   submitClaim(claimId: string, nextStatus: ClaimStatus): Promise<ExpenseClaim>;
   updateClaimTotal(claimId: string): Promise<void>;
+  updateSettlementAdjustment(claimId: string, adjustmentAmount: number): Promise<ExpenseClaim>;
   createApprovalSteps(steps: Omit<ApprovalStep, "stepId" | "decision" | "decisionAt" | "remarks">[]): Promise<void>;
   appendAuditLog(input: AuditLogInput): Promise<void>;
   listAuditLogForClaim(claimId: string): Promise<AuditLogEntry[]>;
@@ -104,6 +106,7 @@ export interface ClaimRepository {
   listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
   listFinanceQueue(): Promise<FinanceQueueItem[]>;
   listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]>;
+  activeSettlementExists(advanceClaimId: string, excludingClaimId: string): Promise<boolean>;
   applySettlementToAdvance(settlementClaimId: string): Promise<void>;
   getPendingApprovalStep(claimId: string): Promise<ApprovalStep | null>;
   decideApprovalStep(stepId: string, decision: "Approved" | "Rejected", remarks?: string | null): Promise<void>;

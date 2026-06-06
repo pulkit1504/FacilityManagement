@@ -9,7 +9,7 @@ export async function POST() {
     response.cookies.set(name, "", {
       httpOnly: true,
       sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production" && process.env.APP_AUTH_MODE !== "test",
       path: "/",
       maxAge: 0
     });

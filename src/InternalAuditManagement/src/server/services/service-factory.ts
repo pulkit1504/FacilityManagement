@@ -57,7 +57,7 @@ export function getDashboardService() {
 }
 
 export function getFinanceService() {
-  financeService ??= instrumentAsyncMethods(new FinanceService(getRepository()), "service.finance");
+  financeService ??= instrumentAsyncMethods(new FinanceService(getRepository(), getNotificationService()), "service.finance");
   return financeService;
 }
 

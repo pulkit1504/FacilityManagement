@@ -277,9 +277,12 @@ function ClaimDetailPanel({
       ) : null}
       <div className="claim-progress">
         {claim.approvalSteps.map((step) => (
-          <span className={`badge ${step.decision === "Approved" ? "success" : step.decision === "Rejected" ? "danger" : "warning"}`} key={step.requiredApproverRole}>
-            {step.requiredApproverRole}: {step.decision}
-          </span>
+          <div className="approval-history-step" key={`${step.requiredApproverRole}:${step.decisionAt ?? "pending"}`}>
+            <span className={`badge ${step.decision === "Approved" ? "success" : step.decision === "Rejected" ? "danger" : "warning"}`}>
+              {step.requiredApproverRole}: {step.decision}
+            </span>
+            {step.remarks ? <p className="muted">{step.remarks}</p> : null}
+          </div>
         ))}
         {claim.physicalReceiptConfirmedAt ? <span className="badge success">Receipt confirmed</span> : null}
         <button className="button secondary" disabled={Boolean(busyAction?.startsWith("audit:"))} onClick={onExportAudit} type="button">

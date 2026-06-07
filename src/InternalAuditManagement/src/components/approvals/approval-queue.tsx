@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
-import { Check, Eye, Loader2, RotateCcw } from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { AlertTriangle, Check, Eye, Loader2, RotateCcw, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
@@ -49,6 +49,17 @@ export function ApprovalQueue() {
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [returnClaim, setReturnClaim] = useState<ApprovalItem | null>(null);
+  const [returnRemarks, setReturnRemarks] = useState("");
+  const [returnError, setReturnError] = useState("");
+  const returnDialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+
+  const closeReturnDialog = useCallback(() => {
+    setReturnClaim(null);
+    setReturnRemarks("");
+    setReturnError("");
+  }, []);
 
   async function load() {
     try {
@@ -74,6 +85,40 @@ export function ApprovalQueue() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!returnClaim) return;
+
+    function handleDialogKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeReturnDialog();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = returnDialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleDialogKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleDialogKeyDown);
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [closeReturnDialog, returnClaim]);
 
   async function toggleDetails(claimId: string) {
     if (expandedClaimId === claimId) {
@@ -113,18 +158,55 @@ export function ApprovalQueue() {
     }
   }
 
-  async function decide(claimId: string, action: "approve" | "reject") {
-    setBusyAction(`${action}:${claimId}`);
-    setMessage(action === "approve" ? "Approving claim..." : "Returning claim...");
+  async function approve(claimId: string) {
+    setBusyAction(`approve:${claimId}`);
+    setMessage("Approving claim...");
     try {
-      const response = await fetch(`/api/v1/approvals/${claimId}/${action}`, {
+      const response = await fetch(`/api/v1/approvals/${claimId}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: action === "approve" ? JSON.stringify({ remarks: "" }) : JSON.stringify({ reason: "Returned for correction." })
+        body: JSON.stringify({ remarks: "" })
       });
       const data = await response.json();
       setMessage(data.message ?? getProblemMessage(data, "Action completed."));
       await load();
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function openReturnDialog(item: ApprovalItem) {
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setReturnClaim(item);
+    setReturnRemarks("");
+    setReturnError("");
+  }
+
+  async function submitReturn() {
+    if (!returnClaim) return;
+
+    const reason = returnRemarks.trim();
+    if (reason.length < 5) {
+      setReturnError("Enter a clear reason of at least 5 characters so the employee knows what to correct.");
+      return;
+    }
+
+    setBusyAction(`reject:${returnClaim.claimId}`);
+    try {
+      const response = await fetch(`/api/v1/approvals/${returnClaim.claimId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getProblemMessage(data, "Could not return claim."));
+      setMessage(data.message ?? "Claim returned to employee.");
+      setReturnClaim(null);
+      setReturnRemarks("");
+      setReturnError("");
+      await load();
+    } catch (error) {
+      setReturnError(error instanceof Error ? error.message : "Could not return claim.");
     } finally {
       setBusyAction(null);
     }
@@ -196,11 +278,11 @@ export function ApprovalQueue() {
                       {busyAction === `details:${item.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
                       {expandedClaimId === item.claimId ? "Hide details" : "View details"}
                     </button>
-                    <button className="button" disabled={Boolean(busyAction)} onClick={() => void decide(item.claimId, "approve")} type="button">
+                    <button className="button" disabled={Boolean(busyAction)} onClick={() => void approve(item.claimId)} type="button">
                       {busyAction === `approve:${item.claimId}` ? <Loader2 size={16} /> : <Check size={16} />}
                       {busyAction === `approve:${item.claimId}` ? "Approving..." : "Approve"}
                     </button>
-                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void decide(item.claimId, "reject")} type="button">
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => openReturnDialog(item)} type="button">
                       {busyAction === `reject:${item.claimId}` ? <Loader2 size={16} /> : <RotateCcw size={16} />}
                       {busyAction === `reject:${item.claimId}` ? "Returning..." : "Return"}
                     </button>
@@ -260,6 +342,59 @@ export function ApprovalQueue() {
           ) : null}
         </tbody>
       </table>
+
+      {returnClaim ? (
+        <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeReturnDialog()}>
+          <div
+            aria-describedby="return-claim-description"
+            aria-labelledby="return-claim-title"
+            aria-modal="true"
+            className="modal"
+            ref={returnDialogRef}
+            role="dialog"
+          >
+            <div className="section-heading">
+              <div>
+                <h2 id="return-claim-title">Return claim</h2>
+                <p className="muted" id="return-claim-description">
+                  Explain why this claim is being returned and what the employee needs to correct.
+                </p>
+              </div>
+              <button aria-label="Close return dialog" className="icon-button" disabled={Boolean(busyAction)} onClick={closeReturnDialog} type="button">
+                <X size={18} />
+              </button>
+            </div>
+            <label>
+              <span className="muted">Remarks / comments</span>
+              <textarea
+                autoFocus
+                maxLength={1000}
+                onChange={(event) => {
+                  setReturnRemarks(event.target.value);
+                  setReturnError("");
+                }}
+                placeholder="Describe the rejection reason and expected correction"
+                required
+                rows={5}
+                value={returnRemarks}
+              />
+            </label>
+            {returnError ? (
+              <p className="field-error" role="alert">
+                <AlertTriangle size={16} />
+                {returnError}
+              </p>
+            ) : null}
+            <div className="modal-actions">
+              <button className="button secondary" disabled={Boolean(busyAction)} onClick={closeReturnDialog} type="button">Cancel</button>
+              <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void submitReturn()} type="button">
+                {busyAction === `reject:${returnClaim.claimId}` ? <Loader2 size={16} /> : null}
+                Return to employee
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

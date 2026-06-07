@@ -549,6 +549,16 @@ h1 {
   gap: 8px;
 }
 
+.approval-history-step {
+  display: grid;
+  gap: 4px;
+  max-width: 320px;
+}
+
+.approval-history-step p {
+  margin: 0;
+}
+
 .settlement-summary {
   background: var(--surface-muted);
   border: 1px solid var(--line);

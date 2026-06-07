@@ -41,7 +41,7 @@ import type { CreateLineItemInput } from "../validation/claim.schemas";
 import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
 import { getSupabaseAdminClient } from "./supabase-client";
 import { hashPassword, verifyPassword } from "../auth/password";
-import { calculateAdvanceLedgerAmounts, calculateSelectedSettlementAmounts } from "@/shared/settlement";
+import { calculateSelectedSettlementAmounts } from "@/shared/settlement";
 
 type ClaimRow = {
   claim_id: string;
@@ -1224,37 +1224,16 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return (data ?? []).length > 0;
   }
 
-  async applySettlementToAdvance(settlementClaimId: string): Promise<void> {
-    const settlement = await this.getClaimDetail(settlementClaimId);
-    if (!settlement?.advanceClaimId || settlement.claimKind !== "Settlement") {
-      return;
-    }
-
+  async releasePaymentAtomically(claimId: string, actorUserId: string, correlationId: string): Promise<ExpenseClaim> {
     const db = await getSupabaseAdminClient();
-    const { data: advance, error: advanceError } = await db
-      .from("expense_claims")
-      .select("advance_amount,settled_amount")
-      .eq("claim_id", settlement.advanceClaimId)
-      .eq("claim_kind", "Advance")
-      .single();
-
-    if (advanceError) throw advanceError;
-
-    const ledgerAmounts = calculateAdvanceLedgerAmounts(
-      Number(advance.advance_amount ?? 0),
-      Number(advance.settled_amount ?? 0),
-      settlement.advanceAdjustmentAmount
-    );
-    const { error } = await db
-      .from("expense_claims")
-      .update({
-        settled_amount: ledgerAmounts.nextSettledAmount,
-        advance_balance: ledgerAmounts.nextAdvanceBalance,
-        updated_at: new Date().toISOString()
-      })
-      .eq("claim_id", settlement.advanceClaimId);
+    const { data, error } = await db.rpc("release_payment_atomically", {
+      claim_id_input: claimId,
+      actor_user_id_input: actorUserId,
+      correlation_id_input: correlationId
+    });
 
     if (error) throw error;
+    return mapClaim(data as ClaimRow);
   }
 
   async getPendingApprovalStep(claimId: string): Promise<ApprovalStep | null> {

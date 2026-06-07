@@ -610,7 +610,7 @@ export function SiteContractAdmin() {
         </section>
       </div>
 
-      <section className="panel">
+      <section aria-label="Employees and approvers table" className="panel" tabIndex={0}>
         <h2>Employees and Approvers</h2>
         <table className="table">
           <thead>
@@ -664,7 +664,7 @@ export function SiteContractAdmin() {
         </table>
       </section>
 
-      <section className="panel">
+      <section aria-label="Holidays table" className="panel" tabIndex={0}>
         <h2>Holidays</h2>
         <table className="table">
           <thead>
@@ -698,7 +698,7 @@ export function SiteContractAdmin() {
         </table>
       </section>
 
-      <section className="panel">
+      <section aria-label="Notification delivery table" className="panel" tabIndex={0}>
         <div className="topbar" style={{ marginBottom: 12 }}>
           <h2>Notification Delivery</h2>
           <button className="button secondary" disabled={busyAction !== null} onClick={() => void deliverNotifications()} type="button">
@@ -781,7 +781,7 @@ export function SiteContractAdmin() {
         </div>
       </section>
 
-      <section className="panel">
+      <section aria-label="Active sites table" className="panel" tabIndex={0}>
         <h2>Active Sites</h2>
         <table className="table">
           <thead>

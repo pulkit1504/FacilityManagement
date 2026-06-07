@@ -169,12 +169,7 @@ export class FinanceService {
     let claim = await this.claims.getClaimDetail(claimId);
     if (!claim) throw notFound("Claim was not found.");
 
-    if (claim.claimKind === "Advance" && ["HodApproved", "MdApproved"].includes(claim.status)) {
-      const step = await this.claims.getPendingApprovalStep(claimId);
-      if (step?.requiredApproverRole === "Finance") {
-        await this.claims.decideApprovalStep(step.stepId, "Approved", "Advance released without physical receipt gate.");
-      }
-    } else if (claim.status !== "FinanceConfirmed") {
+    if (claim.claimKind !== "Advance" && claim.status !== "FinanceConfirmed") {
       throw conflict("Only Finance-confirmed claims can be released for payment.");
     }
 
@@ -221,26 +216,14 @@ export class FinanceService {
       }
     }
 
-    const updated = await this.claims.submitClaim(claimId, "PaymentReleased");
-    const [, , , notification] = await Promise.all([
-      this.claims.applySettlementToAdvance(claimId),
-      this.createBillingAlertsForClaim(claimId, user, claim),
-      this.claims.appendAuditLog({
-        claimId,
-        actorUserId: user.userId,
-        actionType: "PAYMENT_RELEASE",
-        preActionStatus: claim.status,
-        postActionStatus: updated.status,
-        correlationId: user.correlationId
-      }),
-      this.notifications.enqueueAndSend({
-        recipientEmployeeId: submitter.employeeId,
-        recipientEmail: submitter.email,
-        subject: `Payment released for ${claim.ticketId}`,
-        body: `Payment processing is complete for ${claim.ticketId}. Final payable amount: Rs ${claim.finalPayableAmount.toLocaleString("en-IN")}.`,
-        relatedClaimId: claimId
-      })
-    ]);
+    const updated = await this.claims.releasePaymentAtomically(claimId, user.userId, user.correlationId);
+    const notification = await this.notifications.enqueueAndSend({
+      recipientEmployeeId: submitter.employeeId,
+      recipientEmail: submitter.email,
+      subject: `Payment released for ${claim.ticketId}`,
+      body: `Payment processing is complete for ${claim.ticketId}. Final payable amount: Rs ${claim.finalPayableAmount.toLocaleString("en-IN")}.`,
+      relatedClaimId: claimId
+    });
 
     return {
       claimId,

@@ -64,10 +64,7 @@ function repository(bankReady: boolean) {
     getClaimDetail: vi.fn().mockResolvedValue(claim),
     getPendingApprovalStep: vi.fn().mockResolvedValue(null),
     getEmployee: vi.fn().mockResolvedValue(employee(bankReady)),
-    submitClaim: vi.fn().mockResolvedValue({ ...claim, status: "PaymentReleased" }),
-    applySettlementToAdvance: vi.fn().mockResolvedValue(undefined),
-    createBillingAlert: vi.fn().mockResolvedValue(null),
-    appendAuditLog: vi.fn().mockResolvedValue(undefined)
+    releasePaymentAtomically: vi.fn().mockResolvedValue({ ...claim, status: "PaymentReleased" })
   } as unknown as ClaimRepository;
 }
 
@@ -92,5 +89,29 @@ describe("Finance payment release", () => {
 
     expect(result.message).toContain("notification delivery failed");
     expect(notification.enqueueAndSend).toHaveBeenCalledOnce();
+  });
+
+  it("uses one atomic repository operation before notifying the claimant", async () => {
+    const claims = repository(true);
+    const service = new FinanceService(claims, {
+      enqueueAndSend: vi.fn().mockResolvedValue({ status: "Sent" })
+    } as unknown as NotificationService);
+
+    await service.releasePayment("claim-1", financeUser);
+
+    expect(claims.releasePaymentAtomically).toHaveBeenCalledWith("claim-1", financeUser.userId, financeUser.correlationId);
+  });
+
+  it("does not notify the claimant when the atomic payment transaction fails", async () => {
+    const claims = repository(true);
+    claims.releasePaymentAtomically = vi.fn().mockRejectedValue(new Error("Atomic payment failed"));
+    const notification = {
+      enqueueAndSend: vi.fn()
+    } as unknown as NotificationService;
+    const service = new FinanceService(claims, notification);
+
+    await expect(service.releasePayment("claim-1", financeUser)).rejects.toThrow("Atomic payment failed");
+
+    expect(notification.enqueueAndSend).not.toHaveBeenCalled();
   });
 });

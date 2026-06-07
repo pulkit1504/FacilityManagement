@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { Download, Eye, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { ActionFeedback } from "@/components/ui/action-feedback";
+import { expenseTagLabel } from "@/shared/expense-tags";
 
 type ClaimSummary = {
   claimId: string;
@@ -201,6 +202,8 @@ export function MyClaims() {
                   <td>Rs {claim.totalAmount.toLocaleString("en-IN")}</td>
                   <td>
                     <span className={`badge ${statusTone(claim.status)}`}>{claim.statusLabel}</span>
+                    <br />
+                    <span className="muted">{claimPendingLocation(claim)}</span>
                   </td>
                   <td>{formatDate(claim.updatedAt)}</td>
                   <td>
@@ -275,6 +278,11 @@ function ClaimDetailPanel({
           <span className="badge danger">Returned</span>
         </div>
       ) : null}
+      <div className="audit-evidence-row">
+        <strong>Current status</strong>
+        <span className="muted">{claimPendingLocation(claim)}</span>
+        <span className={`badge ${statusTone(claim.status)}`}>{claim.statusLabel}</span>
+      </div>
       <div className="claim-progress">
         {claim.approvalSteps.map((step) => (
           <div className="approval-history-step" key={`${step.requiredApproverRole}:${step.decisionAt ?? "pending"}`}>
@@ -296,7 +304,7 @@ function ClaimDetailPanel({
             <strong>{line.description}</strong>
             <br />
             <span className="muted">
-              {line.transactionDate} · {line.expenseTag}
+              {line.transactionDate} · {expenseTagLabel(line.expenseTag)}
             </span>
           </div>
           <div>
@@ -332,6 +340,38 @@ function statusTone(status: string) {
   if (status === "PaymentReleased" || status === "FinanceConfirmed") return "success";
   if (status === "Rejected") return "danger";
   return "warning";
+}
+
+function claimPendingLocation(claim: Pick<ClaimDetail, "status" | "approvalSteps" | "physicalReceiptConfirmedAt"> | ClaimSummary) {
+  if (claim.status === "Draft") return "With you for drafting";
+  if (claim.status === "Rejected") return "With you for correction";
+  if (claim.status === "PaymentReleased") return "Payment released";
+
+  if ("approvalSteps" in claim) {
+    const pendingStep = claim.approvalSteps
+      .filter((step) => step.decision === "Pending")
+      .sort((a, b) => roleOrder(a.requiredApproverRole) - roleOrder(b.requiredApproverRole))[0];
+    if (pendingStep) return `Pending with ${approverRoleLabel(pendingStep.requiredApproverRole)}`;
+  }
+
+  if (claim.status === "FinanceConfirmed") return "Pending payment release by Finance";
+  if (claim.status === "HodApproved" || claim.status === "MdApproved") return "Pending with Finance";
+  if (claim.status === "Submitted") return "Pending operational approval";
+  return "Status updated";
+}
+
+function approverRoleLabel(role: string) {
+  const labels: Record<string, string> = {
+    ClusterHead: "Cluster Head",
+    HOD: "HOD",
+    MD: "Managing Director",
+    Finance: "Finance"
+  };
+  return labels[role] ?? role;
+}
+
+function roleOrder(role: string) {
+  return ["ClusterHead", "HOD", "MD", "Finance"].indexOf(role);
 }
 
 function formatDate(value: string) {

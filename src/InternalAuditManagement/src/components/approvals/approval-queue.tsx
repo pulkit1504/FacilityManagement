@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Eye, Loader2, RotateCcw, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
+import { expenseTagLabel } from "@/shared/expense-tags";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
 type ApprovalItem = {
@@ -299,7 +300,7 @@ export function ApprovalQueue() {
                             <strong>{line.description}</strong>
                             <br />
                             <span className="muted">
-                              {line.transactionDate} · {line.expenseTag}
+                              {line.transactionDate} · {expenseTagLabel(line.expenseTag)}
                             </span>
                           </div>
                           <div>

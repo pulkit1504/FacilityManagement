@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
+import { expenseTagLabel } from "@/shared/expense-tags";
 import { calculateSelectedSettlementAmounts } from "@/shared/settlement";
 
 type ExpenseTag = "AlreadyBilled" | "PendingBilling" | "ContractPartCost" | "BackendCTC";
@@ -152,11 +153,17 @@ export function ClaimWizard({
   const [busy, setBusy] = useState(false);
   const [isLoadingClaim, setIsLoadingClaim] = useState(Boolean(initialClaimId));
 
-  const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
   const requiresSite = lineItem.expenseTag === "ContractPartCost";
+  const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
   const requiresBillableAmount = lineItem.expenseTag === "PendingBilling";
   const requiresSiteOrDepartment = lineItem.expenseTag === "ContractPartCost" || lineItem.expenseTag === "BackendCTC";
   const requiresProformaPeriod = submissionMode === "Proforma";
+  const today = new Date().toISOString().slice(0, 10);
+  const claimMonthStart = `${claimPeriodMonth}-01`;
+  const claimMonthEnd = endOfMonth(claimPeriodMonth);
+  const oldestAllowedLineDate = addUtcDays(today, requiresProformaPeriod ? -50 : -20);
+  const lineDateMin = maxDate([claimMonthStart, oldestAllowedLineDate, requiresProformaPeriod ? proformaPeriodStart : null]);
+  const lineDateMax = minDate([claimMonthEnd, today, requiresProformaPeriod ? proformaPeriodEnd : null]);
   const selectedAdvance = useMemo(
     () => pendingAdvances.find((advance) => advance.claimId === advanceClaimId) ?? null,
     [advanceClaimId, pendingAdvances]
@@ -209,12 +216,13 @@ export function ClaimWizard({
   const canAddLine = useMemo(() => {
     if (!lineItem.expenseHead) return false;
     if (!lineItem.description || !lineItem.amount || Number(lineItem.amount) <= 0) return false;
-    if (requiresInvoice && !lineItem.clientInvoiceNumber) return false;
+    if (!lineItem.transactionDate || lineItem.transactionDate < lineDateMin || lineItem.transactionDate > lineDateMax) return false;
+    if (requiresInvoice && !lineItem.clientInvoiceNumber.trim()) return false;
     if (requiresBillableAmount && (!lineItem.billableAmount || Number(lineItem.billableAmount) <= 0)) return false;
     if (requiresSite && !lineItem.siteId) return false;
     if (requiresSiteOrDepartment && !lineItem.siteOrDepartment) return false;
     return true;
-  }, [lineItem, requiresBillableAmount, requiresInvoice, requiresSite, requiresSiteOrDepartment]);
+  }, [lineDateMax, lineDateMin, lineItem, requiresBillableAmount, requiresInvoice, requiresSite, requiresSiteOrDepartment]);
 
   useEffect(() => {
     async function loadSites() {
@@ -378,7 +386,7 @@ export function ClaimWizard({
           expenseTag: lineItem.expenseTag,
           clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
           vendorName: lineItem.vendorName || null,
-          vendorInvoiceNumber: lineItem.clientInvoiceNumber || null,
+          vendorInvoiceNumber: requiresInvoice ? null : lineItem.clientInvoiceNumber || null,
           billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
           siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
           lineTicketId: null,
@@ -407,7 +415,7 @@ export function ClaimWizard({
                   expenseTag: lineItem.expenseTag,
                   clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
                   vendorName: lineItem.vendorName || null,
-                  vendorInvoiceNumber: lineItem.clientInvoiceNumber || null,
+                  vendorInvoiceNumber: requiresInvoice ? null : lineItem.clientInvoiceNumber || null,
                   billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
                   siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
                   siteId: requiresSite ? lineItem.siteId : null
@@ -428,7 +436,7 @@ export function ClaimWizard({
             expenseTag: lineItem.expenseTag,
             clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
             vendorName: lineItem.vendorName || null,
-            vendorInvoiceNumber: lineItem.clientInvoiceNumber || null,
+            vendorInvoiceNumber: requiresInvoice ? null : lineItem.clientInvoiceNumber || null,
             billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
             siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
             siteId: requiresSite ? lineItem.siteId : null,
@@ -832,8 +840,8 @@ export function ClaimWizard({
               <label>
                 <span className="muted">Transaction date</span>
                 <input
-                  max={requiresProformaPeriod ? proformaPeriodEnd : undefined}
-                  min={requiresProformaPeriod ? proformaPeriodStart : undefined}
+                  max={lineDateMax}
+                  min={lineDateMin}
                   onChange={(event) => setLineItem({ ...lineItem, transactionDate: event.target.value })}
                   type="date"
                   value={lineItem.transactionDate}
@@ -851,7 +859,7 @@ export function ClaimWizard({
                 <input value={lineItem.vendorName} onChange={(event) => setLineItem({ ...lineItem, vendorName: event.target.value })} />
               </label>
               <label>
-                <span className="muted">Invoice number</span>
+                <span className="muted">{requiresInvoice ? "Invoice number" : "Vendor invoice number"}</span>
                 <input value={lineItem.clientInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, clientInvoiceNumber: event.target.value })} />
               </label>
               <label>
@@ -869,10 +877,10 @@ export function ClaimWizard({
                     })
                   }
                 >
-                  <option value="PendingBilling">Pending Billing</option>
-                  <option value="AlreadyBilled">Already Billed</option>
-                  <option value="ContractPartCost">Contract Part Cost</option>
-                  <option value="BackendCTC">Backend CTC</option>
+                  <option value="PendingBilling">{expenseTagLabel("PendingBilling")}</option>
+                  <option value="AlreadyBilled">{expenseTagLabel("AlreadyBilled")}</option>
+                  <option value="ContractPartCost">{expenseTagLabel("ContractPartCost")}</option>
+                  <option value="BackendCTC">{expenseTagLabel("BackendCTC")}</option>
                 </select>
               </label>
               {requiresBillableAmount ? (
@@ -961,7 +969,7 @@ export function ClaimWizard({
                   <tr key={item.lineItemId}>
                     <td>{item.description}</td>
                     <td>Rs {item.amount.toLocaleString("en-IN")}</td>
-                    <td>{item.expenseTag}</td>
+                    <td>{expenseTagLabel(item.expenseTag)}</td>
                     <td>{item.paymentMode ?? "Not set"}</td>
                     <td>
                       <span className={`badge ${item.missingReceiptFlag ? "warning" : "success"}`}>
@@ -1124,4 +1132,24 @@ function getProblemMessages(data: ProblemResponse, fallback: string): string[] {
   if (fieldErrorMessages.length > 0) return fieldErrorMessages;
 
   return [data.detail ?? fallback];
+}
+
+function addUtcDays(dateValue: string, days: number) {
+  const date = new Date(`${dateValue}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function endOfMonth(monthValue: string) {
+  const [year, month] = monthValue.split("-").map(Number);
+  if (!year || !month) return "";
+  return new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+}
+
+function maxDate(values: Array<string | null | undefined>) {
+  return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? "";
+}
+
+function minDate(values: Array<string | null | undefined>) {
+  return values.filter((value): value is string => Boolean(value)).sort()[0] ?? "";
 }

@@ -351,7 +351,7 @@ export type BillableClaimReportRow = {
   billableAmount: number;
   expenseTag: ExpenseTag;
   invoiceNumber: string | null;
-  recoveryStatus: "Billed" | "Pending Billing" | "Non Billable";
+  recoveryStatus: "Billed" | "B2C - Pending Billing" | "Non Billable";
   transactionDate: string;
 };
 

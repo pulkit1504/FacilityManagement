@@ -625,13 +625,13 @@ export class SupabaseClaimRepository implements ClaimRepository {
         transaction_date: input.transactionDate,
         payment_mode: input.paymentMode ?? null,
         expense_tag: input.expenseTag,
-        client_invoice_number: input.expenseTag === "AlreadyBilled" ? input.clientInvoiceNumber ?? null : null,
+        client_invoice_number: input.expenseTag === "AlreadyBilled" ? input.clientInvoiceNumber?.trim() || null : null,
         vendor_name: input.vendorName ?? null,
         vendor_invoice_number: input.vendorInvoiceNumber ?? null,
         billable_amount: input.expenseTag === "PendingBilling" ? input.billableAmount ?? input.amount : input.billableAmount ?? null,
         site_or_department: input.siteOrDepartment ?? null,
         line_ticket_id: input.lineTicketId ?? null,
-        invoice_validation_status: input.expenseTag === "AlreadyBilled" ? "PendingErpValidation" : "NotApplicable",
+        invoice_validation_status: input.expenseTag === "AlreadyBilled" && input.clientInvoiceNumber ? "PendingErpValidation" : "NotApplicable",
         site_id: input.expenseTag === "ContractPartCost" ? input.siteId ?? null : null,
         missing_receipt_flag: true,
         sort_order: input.sortOrder
@@ -655,13 +655,13 @@ export class SupabaseClaimRepository implements ClaimRepository {
         expense_head: input.expenseHead ?? null,
         payment_mode: input.paymentMode ?? null,
         expense_tag: input.expenseTag,
-        client_invoice_number: input.expenseTag === "AlreadyBilled" ? input.clientInvoiceNumber ?? null : null,
+        client_invoice_number: input.expenseTag === "AlreadyBilled" ? input.clientInvoiceNumber?.trim() || null : null,
         vendor_name: input.vendorName ?? null,
         vendor_invoice_number: input.vendorInvoiceNumber ?? null,
         billable_amount: input.expenseTag === "PendingBilling" ? input.billableAmount ?? input.amount : input.billableAmount ?? null,
         site_or_department: input.siteOrDepartment ?? null,
         line_ticket_id: input.lineTicketId ?? null,
-        invoice_validation_status: input.expenseTag === "AlreadyBilled" ? "PendingErpValidation" : "NotApplicable",
+        invoice_validation_status: input.expenseTag === "AlreadyBilled" && input.clientInvoiceNumber ? "PendingErpValidation" : "NotApplicable",
         site_id: input.expenseTag === "ContractPartCost" ? input.siteId ?? null : null,
         sort_order: input.sortOrder
       })
@@ -1959,7 +1959,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
           expenseTag === "AlreadyBilled" && invoiceNumber
             ? "Billed"
             : expenseTag === "PendingBilling"
-              ? "Pending Billing"
+              ? "B2C - Pending Billing"
               : "Non Billable",
         transactionDate: String(line.transaction_date)
       };

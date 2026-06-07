@@ -228,13 +228,20 @@ export class ClaimService {
     };
   }
 
-  async submitClaim(claimId: string, user: UserContext) {
+  async submitClaim(claimId: string, user: UserContext, outstandingAdvancesReviewed = false) {
     const claim = await this.claims.getClaimDetail(claimId);
     if (!claim) {
       throw notFound("Claim was not found.");
     }
 
     this.assertOwnDraftClaim(claim, user);
+
+    if (claim.claimKind !== "Advance") {
+      const outstandingAdvances = await this.claims.listPendingAdvances(user.userId, user.role);
+      if (outstandingAdvances.length > 0 && !outstandingAdvancesReviewed) {
+        throw conflict("Review outstanding advances before submitting this claim.");
+      }
+    }
 
     const gateErrors = this.validateSubmissionGates(claim);
     if (gateErrors.length > 0) {
@@ -492,13 +499,28 @@ export class ClaimService {
     }
 
     this.assertOwnDraftClaim(claim, user);
-    if (claim.claimKind !== "Settlement" || !claim.advanceClaimId) {
-      throw conflict("Advance adjustment is only available on settlement claims.");
+    const advanceClaimId = input.advanceClaimId ?? claim.advanceClaimId;
+    if (!advanceClaimId) {
+      throw conflict("Select an outstanding advance before applying an adjustment.");
+    }
+    if (claim.advanceClaimId && claim.advanceClaimId !== advanceClaimId) {
+      throw conflict("A settlement claim cannot be switched to a different advance.");
+    }
+    if (claim.claimKind === "Reimbursement" && input.advanceAdjustmentAmount === 0) {
+      throw conflict("Enter an advance adjustment amount greater than zero.");
     }
 
-    const advance = await this.claims.getClaimDetail(claim.advanceClaimId);
-    if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
+    const advance = await this.claims.getClaimDetail(advanceClaimId);
+    if (
+      !advance ||
+      advance.claimKind !== "Advance" ||
+      advance.status !== "PaymentReleased" ||
+      advance.submitterEmployeeId !== claim.submitterEmployeeId
+    ) {
       throw conflict("Settlement claims must be linked to a paid advance.");
+    }
+    if (await this.claims.activeSettlementExists(advance.claimId, claim.claimId)) {
+      throw conflict("Another settlement for this advance is already being processed.");
     }
 
     const maximumAdjustment = Math.min(claim.totalAmount, advance.advanceBalance);
@@ -510,6 +532,7 @@ export class ClaimService {
 
     const updated = await this.claims.updateSettlementAdjustment(
       claimId,
+      advance.claimId,
       claim.totalAmount,
       advance.advanceBalance,
       input.advanceAdjustmentAmount
@@ -525,6 +548,8 @@ export class ClaimService {
     });
 
     return {
+      claimKind: updated.claimKind,
+      advanceClaimId: updated.advanceClaimId,
       advanceAdjustmentAmount: updated.advanceAdjustmentAmount,
       finalPayableAmount: updated.finalPayableAmount,
       netAdvanceLeftAmount: updated.netAdvanceLeftAmount,

@@ -116,7 +116,12 @@ export const createAdvanceRequestSchema = z.object({
 });
 
 export const updateSettlementAdjustmentSchema = z.object({
+  advanceClaimId: z.string().uuid().optional(),
   advanceAdjustmentAmount: z.coerce.number().nonnegative()
+});
+
+export const submitClaimSchema = z.object({
+  outstandingAdvancesReviewed: z.boolean().default(false)
 });
 
 export type CreateClaimInput = z.infer<typeof createClaimSchema>;

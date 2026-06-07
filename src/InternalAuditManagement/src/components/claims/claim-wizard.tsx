@@ -136,6 +136,7 @@ export function ClaimWizard({
   const [advanceClaimId, setAdvanceClaimId] = useState(initialAdvanceClaimId ?? "");
   const [advanceAdjustmentAmount, setAdvanceAdjustmentAmount] = useState(0);
   const [pendingAdvances, setPendingAdvances] = useState<PendingAdvance[]>([]);
+  const [pendingAdvancesLoaded, setPendingAdvancesLoaded] = useState(false);
   const [claimStatus, setClaimStatus] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [submissionMode, setSubmissionMode] = useState<"SingleVoucher" | "Proforma">("SingleVoucher");
@@ -148,6 +149,7 @@ export function ClaimWizard({
   const [editingLineItemId, setEditingLineItemId] = useState<string | null>(null);
   const [savedLineItems, setSavedLineItems] = useState<SavedLineItem[]>([]);
   const [submissionResult, setSubmissionResult] = useState<SubmissionResult | null>(null);
+  const [advanceReviewOpen, setAdvanceReviewOpen] = useState(false);
   const [message, setMessage] = useState<string>("");
   const [errorMessages, setErrorMessages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -185,6 +187,10 @@ export function ClaimWizard({
     !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
   const canCreateDraft = Boolean(siteId && claimPeriodMonth) && hasValidProformaPeriod && (claimKind !== "Settlement" || Boolean(advanceClaimId));
   const submitGateMessages = useMemo(() => {
+    if (!pendingAdvancesLoaded) {
+      return ["Wait while outstanding advances are checked before submission."];
+    }
+
     if (editingLineItemId) {
       return ["Save or cancel the line item edit before submitting the claim."];
     }
@@ -198,7 +204,7 @@ export function ClaimWizard({
     }
 
     return [];
-  }, [editingLineItemId, requiresProformaPeriod, savedLineItems.length]);
+  }, [editingLineItemId, pendingAdvancesLoaded, requiresProformaPeriod, savedLineItems.length]);
   const canSubmitClaim = submitGateMessages.length === 0;
   const isReturned = claimStatus === "Rejected";
   const isDraft = !claimStatus || claimStatus === "Draft";
@@ -232,10 +238,17 @@ export function ClaimWizard({
 
   useEffect(() => {
     async function loadPendingAdvances() {
-      const response = await fetch("/api/v1/claims/advances", { cache: "no-store" });
-      const data = await response.json();
-      if (response.ok) {
+      try {
+        const response = await fetch("/api/v1/claims/advances", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) {
+          setErrorMessages(getProblemMessages(data, "Could not check outstanding advances."));
+          return;
+        }
         setPendingAdvances(data.items ?? []);
+        setPendingAdvancesLoaded(true);
+      } catch {
+        setErrorMessages(["Could not check outstanding advances."]);
       }
     }
 
@@ -485,26 +498,47 @@ export function ClaimWizard({
     }
   }
 
-  async function submitClaim() {
+  function requestSubmitClaim() {
+    if (pendingAdvances.length === 0) {
+      void submitClaim();
+      return;
+    }
+
+    if (!advanceClaimId) {
+      const firstAdvance = pendingAdvances[0];
+      setAdvanceClaimId(firstAdvance.claimId);
+      setAdvanceAdjustmentAmount(Math.min(savedLineTotal, firstAdvance.advanceBalance));
+    }
+    setAdvanceReviewOpen(true);
+  }
+
+  async function submitClaim(applyAdvance = claimKind === "Settlement") {
     if (!claimId || !isDraft) return;
     setBusy(true);
+    setAdvanceReviewOpen(false);
     setMessage("");
     setErrorMessages([]);
     try {
-      if (claimKind === "Settlement") {
+      if (applyAdvance) {
         const adjustmentResponse = await fetch(`/api/v1/claims/${claimId}/settlement-adjustment`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ advanceAdjustmentAmount })
+          body: JSON.stringify({ advanceClaimId, advanceAdjustmentAmount })
         });
         const adjustmentData = await adjustmentResponse.json();
         if (!adjustmentResponse.ok) {
           setErrorMessages(getProblemMessages(adjustmentData, "Could not save advance adjustment."));
           return;
         }
+        setClaimKind("Settlement");
+        setAdvanceClaimId(adjustmentData.advanceClaimId);
         setAdvanceAdjustmentAmount(adjustmentData.advanceAdjustmentAmount);
       }
-      const response = await fetch(`/api/v1/claims/${claimId}/submit`, { method: "POST" });
+      const response = await fetch(`/api/v1/claims/${claimId}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outstandingAdvancesReviewed: pendingAdvancesLoaded })
+      });
       const data = await response.json();
       if (!response.ok) {
         setErrorMessages(getProblemMessages(data, "Could not submit claim."));
@@ -532,7 +566,7 @@ export function ClaimWizard({
       const response = await fetch(`/api/v1/claims/${claimId}/settlement-adjustment`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ advanceAdjustmentAmount })
+        body: JSON.stringify({ advanceClaimId, advanceAdjustmentAmount })
       });
       const data = await response.json();
       if (!response.ok) {
@@ -920,7 +954,7 @@ export function ClaimWizard({
               </div>
               {!submissionResult && isDraft ? (
                 <div className="grid" style={{ gap: 8, justifyItems: "end" }}>
-                  <button className="button" disabled={busy || !canSubmitClaim} onClick={submitClaim} type="button">
+                  <button className="button" disabled={busy || !canSubmitClaim} onClick={requestSubmitClaim} type="button">
                     <Send size={18} />
                     Submit claim
                   </button>
@@ -1010,6 +1044,91 @@ export function ClaimWizard({
             ))}
           </ul>
         </section>
+      ) : null}
+      {advanceReviewOpen ? (
+        <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setAdvanceReviewOpen(false)}>
+          <div
+            aria-describedby="advance-review-description"
+            aria-labelledby="advance-review-title"
+            aria-modal="true"
+            className="modal"
+            role="dialog"
+          >
+            <div className="section-heading">
+              <div>
+                <h2 id="advance-review-title">Review outstanding advances</h2>
+                <p className="muted" id="advance-review-description">
+                  You have paid advances with open balances. Apply one against this Rs {savedLineTotal.toLocaleString("en-IN")} claim, or submit without adjustment.
+                </p>
+              </div>
+              <button aria-label="Close advance review" className="icon-button" disabled={busy} onClick={() => setAdvanceReviewOpen(false)} type="button">
+                <X size={18} />
+              </button>
+            </div>
+            <label>
+              <span className="muted">Outstanding advance</span>
+              <select
+                autoFocus
+                disabled={claimKind === "Settlement"}
+                onChange={(event) => {
+                  const nextAdvance = pendingAdvances.find((advance) => advance.claimId === event.target.value);
+                  setAdvanceClaimId(event.target.value);
+                  setAdvanceAdjustmentAmount(nextAdvance ? Math.min(savedLineTotal, nextAdvance.advanceBalance) : 0);
+                }}
+                value={advanceClaimId}
+              >
+                {pendingAdvances.map((advance) => (
+                  <option key={advance.claimId} value={advance.claimId}>
+                    {advance.ticketId} - Rs {advance.advanceBalance.toLocaleString("en-IN")} open
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="muted">Amount to adjust</span>
+              <input
+                inputMode="decimal"
+                max={maximumAdvanceAdjustment}
+                min={0}
+                onChange={(event) => setAdvanceAdjustmentAmount(Number(event.target.value) || 0)}
+                type="number"
+                value={advanceAdjustmentAmount}
+              />
+              <span className="muted">Maximum available for this claim: Rs {maximumAdvanceAdjustment.toLocaleString("en-IN")}</span>
+            </label>
+            {selectedAdvance ? (
+              <div className="settlement-summary">
+                <div>
+                  <span className="muted">Advance adjusted</span>
+                  <strong>Rs {(savedSettlement?.advanceAdjusted ?? 0).toLocaleString("en-IN")}</strong>
+                </div>
+                <div>
+                  <span className="muted">Final payable</span>
+                  <strong>Rs {(savedSettlement?.finalPayable ?? savedLineTotal).toLocaleString("en-IN")}</strong>
+                </div>
+                <div>
+                  <span className="muted">Advance left</span>
+                  <strong>Rs {(savedSettlement?.netAdvanceLeft ?? selectedAdvance.advanceBalance).toLocaleString("en-IN")}</strong>
+                </div>
+              </div>
+            ) : null}
+            <div className="modal-actions">
+              {claimKind === "Reimbursement" ? (
+                <button className="button secondary" disabled={busy} onClick={() => void submitClaim(false)} type="button">
+                  Submit without adjustment
+                </button>
+              ) : null}
+              <button
+                className="button"
+                disabled={busy || !advanceClaimId || advanceAdjustmentAmount <= 0 || advanceAdjustmentAmount > maximumAdvanceAdjustment}
+                onClick={() => void submitClaim(true)}
+                type="button"
+              >
+                Apply advance and submit
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
       <ActionFeedback message={message} onDismiss={() => setMessage("")} />
     </div>

@@ -12,6 +12,8 @@ type OverviewMetrics = {
   activeBillingAlerts: number;
   openFraudFlags: number;
   billingRecoveryPct: number | null;
+  canViewBillingMetrics: boolean;
+  canViewFraudFlags: boolean;
 };
 
 export function OverviewMetrics() {
@@ -57,13 +59,17 @@ export function OverviewMetrics() {
     <div className="grid cols-3">
       <MetricCard label="Pending approvals" value={String(metrics.pendingApprovals)} tone={metrics.pendingApprovals > 0 ? "warning" : "success"} />
       <MetricCard label="Finance queue" value={String(metrics.financeQueueCount)} tone={metrics.financeQueueCount > 0 ? "warning" : "success"} />
-      <MetricCard
-        label="Billing recovery"
-        value={metrics.billingRecoveryPct === null ? "N/A" : `${metrics.billingRecoveryPct}%`}
-        tone={metrics.billingRecoveryPct === null || metrics.billingRecoveryPct >= 100 ? "success" : metrics.billingRecoveryPct >= 80 ? "warning" : "danger"}
-      />
-      <MetricCard label="Billing alerts" value={String(metrics.activeBillingAlerts)} tone={metrics.activeBillingAlerts > 0 ? "warning" : "success"} />
-      <MetricCard label="Open fraud flags" value={String(metrics.openFraudFlags)} tone={metrics.openFraudFlags > 0 ? "danger" : "success"} />
+      {metrics.canViewBillingMetrics ? (
+        <>
+          <MetricCard
+            label="Billing recovery"
+            value={metrics.billingRecoveryPct === null ? "N/A" : `${metrics.billingRecoveryPct}%`}
+            tone={metrics.billingRecoveryPct === null || metrics.billingRecoveryPct >= 100 ? "success" : metrics.billingRecoveryPct >= 80 ? "warning" : "danger"}
+          />
+          <MetricCard label="Billing alerts" value={String(metrics.activeBillingAlerts)} tone={metrics.activeBillingAlerts > 0 ? "warning" : "success"} />
+        </>
+      ) : null}
+      {metrics.canViewFraudFlags ? <MetricCard label="Open fraud flags" value={String(metrics.openFraudFlags)} tone={metrics.openFraudFlags > 0 ? "danger" : "success"} /> : null}
     </div>
   );
 }

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { assignSiteClusterHeadSchema, createEmployeeSchema, createSiteSchema } from "../src/server/validation/claim.schemas";
+import { assignSiteClusterHeadSchema, createClaimSchema, createEmployeeSchema, createSiteSchema } from "../src/server/validation/claim.schemas";
 
 describe("GA master-data validation", () => {
+  it("only permits Reimbursement through the expense claim intake", () => {
+    expect(createClaimSchema.safeParse({ submissionMode: "SingleVoucher", claimKind: "Settlement" }).success).toBe(false);
+    expect(createClaimSchema.safeParse({ submissionMode: "SingleVoucher", claimKind: "Reimbursement" }).success).toBe(true);
+  });
+
   it("requires a Cluster Head for new sites", () => {
     const result = createSiteSchema.safeParse({
       siteName: "GA Site",

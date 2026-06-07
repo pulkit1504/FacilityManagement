@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { claimKinds, expenseTags, paymentModes, submissionModes, userRoles } from "../domain/types";
+import { expenseTags, paymentModes, submissionModes, userRoles } from "../domain/types";
 
 export const createClaimSchema = z
   .object({
     submissionMode: z.enum(submissionModes),
-    claimKind: z.enum(claimKinds).default("Reimbursement"),
+    claimKind: z.enum(["Reimbursement", "Advance"]).default("Reimbursement"),
     siteId: z.string().trim().min(1).nullable().optional(),
     claimPeriodMonth: z.string().date().nullable().optional(),
     advanceClaimId: z.string().uuid().nullable().optional(),
@@ -17,14 +17,6 @@ export const createClaimSchema = z
         code: z.ZodIssueCode.custom,
         path: ["claimKind"],
         message: "Use the imprest advance request form to create advances."
-      });
-    }
-
-    if (value.claimKind === "Settlement" && !value.advanceClaimId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["advanceClaimId"],
-        message: "Settlement claims must be linked to a paid advance."
       });
     }
 
@@ -228,6 +220,13 @@ export const cleanupStaleRecordsSchema = z.object({
   olderThanDays: z.coerce.number().int().min(30).max(365).default(90)
 });
 
+export const updateBankDetailsSchema = z.object({
+  bankAccountHolderName: z.string().trim().min(2).max(200),
+  bankAccountNumber: z.string().trim().min(4).max(40),
+  bankIfsc: z.string().trim().min(4).max(20),
+  bankName: z.string().trim().min(2).max(120)
+});
+
 export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
 export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
 export type FinanceLineReviewInput = z.infer<typeof financeLineReviewSchema>;
@@ -240,3 +239,4 @@ export type AssignSiteClusterHeadInput = z.infer<typeof assignSiteClusterHeadSch
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
 export type CleanupStaleRecordsInput = z.infer<typeof cleanupStaleRecordsSchema>;
+export type UpdateBankDetailsInput = z.infer<typeof updateBankDetailsSchema>;

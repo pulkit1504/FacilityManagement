@@ -6,7 +6,6 @@ import { ActionFeedback } from "@/components/ui/action-feedback";
 import { calculateSelectedSettlementAmounts } from "@/shared/settlement";
 
 type ExpenseTag = "AlreadyBilled" | "PendingBilling" | "ContractPartCost" | "BackendCTC";
-type ClaimKind = "Settlement" | "Reimbursement";
 type PaymentMode = "Cash" | "UPI";
 
 type LineItemDraft = {
@@ -51,7 +50,7 @@ type SavedLineItem = {
 
 type LoadedClaim = {
   claimId: string;
-  claimKind: "Advance" | "Settlement" | "Reimbursement";
+  claimKind: "Advance" | "Reimbursement";
   advanceClaimId: string | null;
   submissionMode: "SingleVoucher" | "Proforma";
   proformaPeriodStart: string | null;
@@ -128,11 +127,9 @@ const expenseHeadOptions = [
 
 export function ClaimWizard({
   initialClaimId,
-  initialClaimKind = "Reimbursement",
   initialAdvanceClaimId
-}: Readonly<{ initialClaimId?: string; initialClaimKind?: ClaimKind; initialAdvanceClaimId?: string }>) {
+}: Readonly<{ initialClaimId?: string; initialAdvanceClaimId?: string }>) {
   const [claimId, setClaimId] = useState<string | null>(null);
-  const [claimKind, setClaimKind] = useState<ClaimKind>(initialClaimKind);
   const [advanceClaimId, setAdvanceClaimId] = useState(initialAdvanceClaimId ?? "");
   const [advanceAdjustmentAmount, setAdvanceAdjustmentAmount] = useState(0);
   const [pendingAdvances, setPendingAdvances] = useState<PendingAdvance[]>([]);
@@ -185,7 +182,7 @@ export function ClaimWizard({
   }, [maximumAdvanceAdjustment]);
   const hasValidProformaPeriod =
     !requiresProformaPeriod || Boolean(proformaPeriodStart && proformaPeriodEnd && proformaPeriodEnd > proformaPeriodStart);
-  const canCreateDraft = Boolean(siteId && claimPeriodMonth) && hasValidProformaPeriod && (claimKind !== "Settlement" || Boolean(advanceClaimId));
+  const canCreateDraft = Boolean(siteId && claimPeriodMonth) && hasValidProformaPeriod;
   const submitGateMessages = useMemo(() => {
     if (!pendingAdvancesLoaded) {
       return ["Wait while outstanding advances are checked before submission."];
@@ -272,7 +269,6 @@ export function ClaimWizard({
 
         setClaimId(data.claimId);
         setClaimStatus(data.status);
-        setClaimKind(data.claimKind === "Settlement" ? "Settlement" : "Reimbursement");
         setAdvanceClaimId(data.advanceClaimId ?? "");
         setAdvanceAdjustmentAmount(data.advanceAdjustmentAmount ?? 0);
         setRejectionReason(data.rejectionReason);
@@ -322,10 +318,10 @@ export function ClaimWizard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           submissionMode,
-          claimKind,
+          claimKind: "Reimbursement",
           siteId,
           claimPeriodMonth: `${claimPeriodMonth}-01`,
-          advanceClaimId: claimKind === "Settlement" ? advanceClaimId : null,
+          advanceClaimId: null,
           proformaPeriodStart: requiresProformaPeriod ? proformaPeriodStart : null,
           proformaPeriodEnd: requiresProformaPeriod ? proformaPeriodEnd : null
         })
@@ -512,7 +508,7 @@ export function ClaimWizard({
     setAdvanceReviewOpen(true);
   }
 
-  async function submitClaim(applyAdvance = claimKind === "Settlement") {
+  async function submitClaim(applyAdvance = Boolean(advanceClaimId)) {
     if (!claimId || !isDraft) return;
     setBusy(true);
     setAdvanceReviewOpen(false);
@@ -520,7 +516,7 @@ export function ClaimWizard({
     setErrorMessages([]);
     try {
       if (applyAdvance) {
-        const adjustmentResponse = await fetch(`/api/v1/claims/${claimId}/settlement-adjustment`, {
+        const adjustmentResponse = await fetch(`/api/v1/claims/${claimId}/advance-adjustment`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ advanceClaimId, advanceAdjustmentAmount })
@@ -530,7 +526,6 @@ export function ClaimWizard({
           setErrorMessages(getProblemMessages(adjustmentData, "Could not save advance adjustment."));
           return;
         }
-        setClaimKind("Settlement");
         setAdvanceClaimId(adjustmentData.advanceClaimId);
         setAdvanceAdjustmentAmount(adjustmentData.advanceAdjustmentAmount);
       }
@@ -558,12 +553,12 @@ export function ClaimWizard({
   }
 
   async function saveAdvanceAdjustment() {
-    if (!claimId || claimKind !== "Settlement" || !isDraft) return;
+    if (!claimId || !advanceClaimId || !isDraft) return;
     setBusy(true);
     setMessage("");
     setErrorMessages([]);
     try {
-      const response = await fetch(`/api/v1/claims/${claimId}/settlement-adjustment`, {
+      const response = await fetch(`/api/v1/claims/${claimId}/advance-adjustment`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ advanceClaimId, advanceAdjustmentAmount })
@@ -652,26 +647,10 @@ export function ClaimWizard({
       <section className="panel">
         <h2>Claim Details</h2>
         <div className="grid cols-3">
-          <label>
+          <div>
             <span className="muted">Claim type</span>
-            <select disabled={Boolean(claimId)} value={claimKind} onChange={(event) => setClaimKind(event.target.value as ClaimKind)}>
-              <option value="Reimbursement">Reimbursement</option>
-              <option value="Settlement">Settle advance</option>
-            </select>
-          </label>
-          {claimKind === "Settlement" ? (
-            <label>
-              <span className="muted">Advance to settle</span>
-              <select disabled={Boolean(claimId)} value={advanceClaimId} onChange={(event) => setAdvanceClaimId(event.target.value)}>
-                <option value="">Select paid advance</option>
-                {pendingAdvances.map((advance) => (
-                  <option key={advance.claimId} value={advance.claimId}>
-                    {advance.ticketId} - Rs {advance.advanceBalance.toLocaleString("en-IN")} balance
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
+            <p><strong>Reimbursement</strong></p>
+          </div>
           <label>
             <span className="muted">Claim month</span>
             <input disabled={Boolean(claimId)} type="month" value={claimPeriodMonth} onChange={(event) => setClaimPeriodMonth(event.target.value)} />
@@ -737,7 +716,7 @@ export function ClaimWizard({
           </p>
         ) : null}
         {claimId ? <p className="muted" style={{ marginTop: 12 }}>Draft ID: {claimId}</p> : null}
-        {claimKind === "Settlement" && selectedAdvance ? (
+        {selectedAdvance ? (
           <div className="settlement-summary" style={{ marginTop: 12 }}>
             <div>
               <span className="muted">Advance</span>
@@ -934,9 +913,9 @@ export function ClaimWizard({
                 </button>
               ) : null}
             </div>
-            {claimKind === "Settlement" && selectedAdvance ? (
+            {selectedAdvance ? (
               <p className="muted" style={{ marginTop: 10 }}>
-                Settlement draft total after this line: Rs {settlementDraftTotalAfterLine.toLocaleString("en-IN")}.
+                Reimbursement total after this line: Rs {settlementDraftTotalAfterLine.toLocaleString("en-IN")}.
                 {" "}Advance adjusted: Rs {(settlementPreview?.advanceAdjusted ?? 0).toLocaleString("en-IN")}.
                 {" "}Final payable: Rs {(settlementPreview?.finalPayable ?? 0).toLocaleString("en-IN")}. Remaining advance balance: Rs {(settlementPreview?.netAdvanceLeft ?? 0).toLocaleString("en-IN")}.
               </p>
@@ -1069,7 +1048,6 @@ export function ClaimWizard({
               <span className="muted">Outstanding advance</span>
               <select
                 autoFocus
-                disabled={claimKind === "Settlement"}
                 onChange={(event) => {
                   const nextAdvance = pendingAdvances.find((advance) => advance.claimId === event.target.value);
                   setAdvanceClaimId(event.target.value);
@@ -1113,11 +1091,9 @@ export function ClaimWizard({
               </div>
             ) : null}
             <div className="modal-actions">
-              {claimKind === "Reimbursement" ? (
-                <button className="button secondary" disabled={busy} onClick={() => void submitClaim(false)} type="button">
-                  Submit without adjustment
-                </button>
-              ) : null}
+              <button className="button secondary" disabled={busy} onClick={() => void submitClaim(false)} type="button">
+                Submit without adjustment
+              </button>
               <button
                 className="button"
                 disabled={busy || !advanceClaimId || advanceAdjustmentAmount <= 0 || advanceAdjustmentAmount > maximumAdvanceAdjustment}

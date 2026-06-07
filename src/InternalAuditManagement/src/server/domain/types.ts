@@ -1,7 +1,7 @@
 export const submissionModes = ["SingleVoucher", "Proforma"] as const;
 export type SubmissionMode = (typeof submissionModes)[number];
 
-export const claimKinds = ["Advance", "Settlement", "Reimbursement"] as const;
+export const claimKinds = ["Advance", "Reimbursement"] as const;
 export type ClaimKind = (typeof claimKinds)[number];
 
 export const paymentModes = ["Cash", "UPI"] as const;
@@ -263,6 +263,7 @@ export type BillingAlert = {
 export type BillingAlertQueueItem = BillingAlert & {
   lineItemDescription: string;
   amount: number;
+  billableAmount: number;
   claimantName: string;
   siteName: string | null;
   daysOpen: number;
@@ -309,6 +310,8 @@ export type OverviewMetrics = {
   activeBillingAlerts: number;
   openFraudFlags: number;
   billingRecoveryPct: number | null;
+  canViewBillingMetrics: boolean;
+  canViewFraudFlags: boolean;
 };
 
 export type MisRecoveryMatrixRow = {

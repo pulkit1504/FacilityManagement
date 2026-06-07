@@ -29,7 +29,7 @@ import type {
   SubmissionMode
 } from "../domain/types";
 import type { CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
-import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
+import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput, UpdateBankDetailsInput } from "../validation/claim.schemas";
 
 export type CreateClaimRecord = CreateClaimInput & {
   submitterEmployeeId: string;
@@ -101,6 +101,7 @@ export interface ClaimRepository {
   appendAuditLog(input: AuditLogInput): Promise<void>;
   listAuditLogForClaim(claimId: string): Promise<AuditLogEntry[]>;
   getEmployee(employeeId: string): Promise<Employee | null>;
+  updateEmployeeBankDetails(employeeId: string, input: UpdateBankDetailsInput): Promise<Employee>;
   getEmployeeByEmail(email: string): Promise<Employee | null>;
   authenticateEmployee(email: string, password: string): Promise<Employee | null>;
   findManagingDirector(): Promise<Employee | null>;
@@ -158,7 +159,7 @@ export function defaultClaimRecord(
     .slice(2, 10)
     .replaceAll("-", "");
   const ticketSuffix = claimId.slice(0, 4).toUpperCase();
-  const ticketPrefix = input.claimKind === "Advance" ? "ADV" : input.claimKind === "Settlement" ? "SET" : "EXP";
+  const ticketPrefix = input.claimKind === "Advance" ? "ADV" : "EXP";
 
   return {
     claimId,

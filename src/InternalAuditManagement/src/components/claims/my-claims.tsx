@@ -8,7 +8,7 @@ import { ActionFeedback } from "@/components/ui/action-feedback";
 type ClaimSummary = {
   claimId: string;
   ticketId: string;
-  claimKind: "Advance" | "Settlement" | "Reimbursement";
+  claimKind: "Advance" | "Reimbursement";
   submissionMode: "SingleVoucher" | "Proforma";
   status: string;
   statusLabel: string;

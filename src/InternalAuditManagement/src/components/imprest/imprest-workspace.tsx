@@ -138,8 +138,8 @@ export function ImprestWorkspace() {
       <section className="panel">
         <div className="topbar" style={{ marginBottom: 12 }}>
           <div>
-            <h2>Pending Advance Settlement</h2>
-            <p className="muted">Paid advances stay here until settlement claims consume the full balance.</p>
+            <h2>Open advances</h2>
+            <p className="muted">Apply paid advances against a reimbursement claim until the balance is fully adjusted.</p>
           </div>
         </div>
         <table className="table">
@@ -184,16 +184,16 @@ export function ImprestWorkspace() {
                   </span>
                 </td>
                 <td>
-                  <Link className="button secondary" href={`/claims/new?kind=Settlement&advanceClaimId=${advance.claimId}`}>
+                  <Link className="button secondary" href={`/claims/new?advanceClaimId=${advance.claimId}`}>
                     <WalletCards size={16} />
-                    Settle
+                    Apply to expense
                   </Link>
                 </td>
               </tr>
             ))}
             {!isLoading && advances.length === 0 ? (
               <tr>
-                <td colSpan={7}>No paid advances pending settlement.</td>
+                <td colSpan={7}>No paid advances with an open balance.</td>
               </tr>
             ) : null}
           </tbody>

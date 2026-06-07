@@ -7,16 +7,25 @@ export class DashboardService {
 
   async getOverview(user: UserContext) {
     const metrics = await this.claims.getOverviewMetrics(user.userId, user.role);
+    const canViewBillingMetrics = ["MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"].includes(user.role);
+    const canViewFraudFlags = ["MD", "FinanceHOD"].includes(user.role);
 
     return {
       generatedAt: new Date().toISOString(),
-      metrics
+      metrics: {
+        ...metrics,
+        activeBillingAlerts: canViewBillingMetrics ? metrics.activeBillingAlerts : 0,
+        billingRecoveryPct: canViewBillingMetrics ? metrics.billingRecoveryPct : null,
+        openFraudFlags: canViewFraudFlags ? metrics.openFraudFlags : 0,
+        canViewBillingMetrics,
+        canViewFraudFlags
+      }
     };
   }
 
   async getMisDashboard(user: UserContext) {
-    if (user.role === "Claimant") {
-      throw forbidden("Claimant users cannot access the MIS dashboard.");
+    if (!["MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"].includes(user.role)) {
+      throw forbidden("You do not have access to billing recovery metrics.");
     }
 
     const metrics = await this.claims.getMisDashboardMetrics();

@@ -462,6 +462,7 @@ export function SiteContractAdmin() {
                   <option value="Housekeeping">Housekeeping</option>
                   <option value="Security">Security</option>
                 </select>
+                <span className="muted">Approval follows the manager chain. Assign a Cluster Head to another Cluster Head to add a specific intermediate level.</span>
               </label>
               <label>
                 <span className="muted">Contract</span>

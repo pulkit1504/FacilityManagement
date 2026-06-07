@@ -1,8 +1,11 @@
 import { FilePlus2 } from "lucide-react";
 import { OverviewMetrics } from "@/components/dashboard/overview-metrics";
 import { AppShell } from "@/components/layout/app-shell";
+import { getUserContext } from "@/server/auth/user-context";
 
-export default function Home() {
+export default async function Home() {
+  const user = await getUserContext();
+  const canCreateClaim = ["Claimant", "ClusterHead", "HOD"].includes(user.role);
   return (
     <AppShell>
       <div className="topbar">
@@ -14,12 +17,12 @@ export default function Home() {
             an immutable audit trail.
           </p>
         </div>
-        <div className="actions">
+        {canCreateClaim ? <div className="actions">
           <a className="button" href="/claims/new">
             <FilePlus2 size={18} />
             New claim
           </a>
-        </div>
+        </div> : null}
       </div>
 
       <OverviewMetrics />

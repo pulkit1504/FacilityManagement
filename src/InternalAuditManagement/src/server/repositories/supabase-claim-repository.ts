@@ -38,7 +38,7 @@ import type {
 } from "./claim-repository";
 import { defaultClaimRecord } from "./claim-repository";
 import type { CreateLineItemInput } from "../validation/claim.schemas";
-import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
+import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput, UpdateBankDetailsInput } from "../validation/claim.schemas";
 import { getSupabaseAdminClient } from "./supabase-client";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { calculateSelectedSettlementAmounts } from "@/shared/settlement";
@@ -763,11 +763,11 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (claimError) throw claimError;
 
     const isAdvance = claim?.claim_kind === "Advance";
-    const isSettlement = claim?.claim_kind === "Settlement";
+    const hasAdvanceAdjustment = Boolean(claim?.advance_claim_id);
     const settledAmount = Number(claim?.settled_amount ?? 0);
     let openAdvanceBalance = 0;
 
-    if (isSettlement && claim.advance_claim_id) {
+    if (hasAdvanceAdjustment && claim.advance_claim_id) {
       const { data: advance, error: advanceError } = await db
         .from("expense_claims")
         .select("advance_balance")
@@ -779,7 +779,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       openAdvanceBalance = Number(advance.advance_balance ?? 0);
     }
 
-    const requestedAdjustment = isSettlement ? Number(claim?.advance_adjustment_amount ?? 0) : 0;
+    const requestedAdjustment = hasAdvanceAdjustment ? Number(claim?.advance_adjustment_amount ?? 0) : 0;
     const settlementAmounts = calculateSelectedSettlementAmounts(total, openAdvanceBalance, requestedAdjustment);
     const { error: updateError } = await db
       .from("expense_claims")
@@ -827,7 +827,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const { data, error } = await db
       .from("expense_claims")
       .update({
-        claim_kind: "Settlement",
+        claim_kind: "Reimbursement",
         advance_claim_id: advanceClaimId,
         advance_adjustment_amount: amounts.advanceAdjusted,
         final_payable_amount: amounts.finalPayable,
@@ -881,6 +881,25 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (error && error.code !== "PGRST116") throw error;
     if (!data) return null;
 
+    return mapEmployee(data);
+  }
+
+  async updateEmployeeBankDetails(employeeId: string, input: UpdateBankDetailsInput): Promise<Employee> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("employees")
+      .update({
+        bank_account_holder_name: input.bankAccountHolderName,
+        bank_account_number: input.bankAccountNumber,
+        bank_ifsc: input.bankIfsc.toUpperCase(),
+        bank_name: input.bankName
+      })
+      .eq("employee_id", employeeId)
+      .eq("is_active", true)
+      .select("*")
+      .single();
+
+    if (error) throw error;
     return mapEmployee(data);
   }
 
@@ -1110,7 +1129,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const lineStats = await this.getQueueLineStats(claims.map((row) => String(row.claim_id)));
     const employeesById = new Map(employees.map((employee) => [employee.employeeId, employee]));
     const advanceClaimIds = claims
-      .filter((claim) => claim.claim_kind === "Settlement" && claim.advance_claim_id)
+      .filter((claim) => claim.advance_claim_id)
       .map((claim) => String(claim.advance_claim_id));
     const { data: advances, error: advancesError } = advanceClaimIds.length
       ? await db.from("expense_claims").select("claim_id,advance_balance").in("claim_id", advanceClaimIds)
@@ -1133,7 +1152,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       const daysPending = Math.max(0, Math.floor((Date.now() - new Date(submittedAt).getTime()) / 86_400_000));
       const siteId = claim.site_id ? String(claim.site_id) : null;
       const currentSettlementAmounts =
-        claim.claim_kind === "Settlement" && claim.advance_claim_id
+        claim.advance_claim_id
           ? calculateSelectedSettlementAmounts(
               Number(claim.total_amount),
               advanceBalances.get(String(claim.advance_claim_id)) ?? 0,
@@ -1217,9 +1236,8 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const { data, error } = await db
       .from("expense_claims")
       .select("claim_id")
-      .eq("claim_kind", "Settlement")
       .eq("advance_claim_id", advanceClaimId)
-      .in("status", ["Submitted", "HodApproved", "MdApproved", "FinanceConfirmed"])
+      .in("status", ["Draft", "Submitted", "HodApproved", "MdApproved", "FinanceConfirmed"])
       .neq("claim_id", excludingClaimId)
       .eq("is_deleted", false)
       .limit(1);
@@ -1476,7 +1494,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       lineItemIds.length
         ? db
             .from("expense_line_items")
-            .select("line_item_id,description,amount")
+            .select("line_item_id,description,amount,billable_amount")
             .in("line_item_id", lineItemIds)
             .eq("is_deleted", false)
         : { data: [], error: null },
@@ -1497,7 +1515,8 @@ export class SupabaseClaimRepository implements ClaimRepository {
         String(item.line_item_id),
         {
           description: String(item.description),
-          amount: Number(item.amount)
+          amount: Number(item.amount),
+          billableAmount: Number(item.billable_amount ?? item.amount)
         }
       ])
     );
@@ -1520,6 +1539,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         ...alert,
         lineItemDescription: lineItem?.description ?? "Line item unavailable",
         amount: lineItem?.amount ?? 0,
+        billableAmount: lineItem?.billableAmount ?? 0,
         claimantName: claim?.submitterEmployeeId ?? "Unknown",
         siteName: claim?.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,
         daysOpen,
@@ -1758,7 +1778,9 @@ export class SupabaseClaimRepository implements ClaimRepository {
       financeQueueCount: financeQueue.length,
       activeBillingAlerts: activeBillingAlerts ?? 0,
       openFraudFlags: openFraudFlags ?? 0,
-      billingRecoveryPct: totalBillable > 0 ? Math.round((totalBilled / totalBillable) * 100) : null
+      billingRecoveryPct: totalBillable > 0 ? Math.round((totalBilled / totalBillable) * 100) : null,
+      canViewBillingMetrics: false,
+      canViewFraudFlags: false
     };
   }
 

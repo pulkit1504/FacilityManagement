@@ -66,7 +66,7 @@ describe("new claim advance review", () => {
       advanceBalance: 5_000
     });
     const updated = claim({
-      claimKind: "Settlement",
+      claimKind: "Reimbursement",
       advanceClaimId: advance.claimId,
       advanceAdjustmentAmount: 2_000,
       finalPayableAmount: 5_000,
@@ -88,7 +88,7 @@ describe("new claim advance review", () => {
 
     expect(claims.updateSettlementAdjustment).toHaveBeenCalledWith(draft.claimId, advance.claimId, 7_000, 5_000, 2_000);
     expect(result).toMatchObject({
-      claimKind: "Settlement",
+      claimKind: "Reimbursement",
       advanceClaimId: advance.claimId,
       advanceAdjustmentAmount: 2_000,
       finalPayableAmount: 5_000
@@ -115,7 +115,7 @@ describe("new claim advance review", () => {
         { advanceClaimId: otherEmployeeAdvance.claimId, advanceAdjustmentAmount: 2_000 },
         user
       )
-    ).rejects.toMatchObject({ message: "Settlement claims must be linked to a paid advance." });
+    ).rejects.toMatchObject({ message: "Advance adjustments must be linked to a paid advance." });
   });
 
   it("does not convert a reimbursement draft when no adjustment is applied", async () => {

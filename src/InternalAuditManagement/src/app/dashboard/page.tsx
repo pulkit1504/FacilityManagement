@@ -1,7 +1,9 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { MisDashboard } from "@/components/dashboard/mis-dashboard";
+import { getUserContext, requireRole } from "@/server/auth/user-context";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  requireRole(await getUserContext(), ["MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"]);
   return (
     <AppShell>
       <div className="topbar">

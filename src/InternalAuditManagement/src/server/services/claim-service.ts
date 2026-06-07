@@ -3,7 +3,7 @@ import type { ClaimDetail, ExpenseClaim, UserContext } from "../domain/types";
 import { statusLabel } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { NotificationService } from "./notification-service";
-import type { CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput, UpdateSettlementAdjustmentInput } from "../validation/claim.schemas";
+import type { CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput, UpdateBankDetailsInput, UpdateSettlementAdjustmentInput } from "../validation/claim.schemas";
 
 export class ClaimService {
   constructor(
@@ -90,7 +90,7 @@ export class ClaimService {
 
     this.assertOwnDraftClaim(claim, user);
     this.assertLineItemDateIsValidForClaim(claim, input);
-    await this.assertSettlementIsLinkedToPaidAdvance(claim);
+    await this.assertAdvanceAdjustmentIsLinkedToPaidAdvance(claim);
     await this.assertInvoiceReferenceIsUnique(input);
 
     return this.claims.addLineItem(claimId, input);
@@ -179,7 +179,7 @@ export class ClaimService {
     this.assertOwnDraftClaim(claim, user);
     this.assertLineItemBelongsToClaim(claim, lineItemId);
     this.assertLineItemDateIsValidForClaim(claim, input);
-    await this.assertSettlementIsLinkedToPaidAdvance(claim);
+    await this.assertAdvanceAdjustmentIsLinkedToPaidAdvance(claim);
     await this.assertInvoiceReferenceIsUnique(input, lineItemId);
 
     const updatedLine = await this.claims.updateLineItem(claimId, lineItemId, input);
@@ -248,13 +248,13 @@ export class ClaimService {
       throw conflict("Claim cannot be submitted until all gate checks pass.", { errors: gateErrors });
     }
 
-    if (claim.claimKind === "Settlement") {
+    if (claim.advanceClaimId) {
       const advance = claim.advanceClaimId ? await this.claims.getClaimDetail(claim.advanceClaimId) : null;
       if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
-        throw conflict("Settlement claims must be linked to a paid advance.");
+        throw conflict("Advance adjustments must be linked to a paid advance.");
       }
       if (await this.claims.activeSettlementExists(advance.claimId, claim.claimId)) {
-        throw conflict("Another settlement for this advance is already being processed.");
+        throw conflict("Another reimbursement is already adjusting this advance.");
       }
     }
 
@@ -265,6 +265,28 @@ export class ClaimService {
 
     const approvalSteps = await this.buildOperationalApprovalSteps(claim, submitter, user);
     const firstApprover = approvalSteps[0]?.approver;
+    if (!firstApprover && claim.claimKind === "Advance") {
+      const updatedClaim = await this.claims.submitClaim(claimId, "HodApproved");
+      await Promise.all([
+        this.claims.createFinanceApprovalStep(claimId),
+        this.claims.appendAuditLog({
+          claimId,
+          actorUserId: user.userId,
+          actionType: "SUBMIT",
+          preActionStatus: claim.status,
+          postActionStatus: updatedClaim.status,
+          auditRemarks: "Advance routed directly to Finance because no operational approval is required.",
+          correlationId: user.correlationId
+        })
+      ]);
+      await this.notifyFinanceTeam(claim, claimId);
+      return {
+        status: updatedClaim.status,
+        statusLabel: statusLabel(updatedClaim.status),
+        assignedTo: "Finance team",
+        message: "Your advance request has been submitted to Finance."
+      };
+    }
     if (!firstApprover) {
       throw conflict("No approver is configured for this claim.");
     }
@@ -322,6 +344,16 @@ export class ClaimService {
       }
     };
 
+    const cashTotal = claim.lineItems
+      .filter((item) => item.paymentMode === "Cash")
+      .reduce((sum, item) => sum + item.amount, 0);
+    if (claim.claimKind === "Reimbursement" && cashTotal > 10_000) {
+      const md = await this.claims.findManagingDirector();
+      if (!md) throw conflict("No Managing Director is configured for high-value cash approval.");
+      addStep("MD", md);
+      return steps;
+    }
+
     const sites = await this.claims.listActiveSites();
     const site = claim.siteId ? sites.find((item) => item.siteId === claim.siteId) : null;
     if (site?.clusterHeadEmployeeId) {
@@ -331,39 +363,51 @@ export class ClaimService {
       }
     }
 
-    if (submitter.isHod) {
-      const md = await this.claims.findManagingDirector();
-      if (md) addStep("MD", md);
-    } else if (submitter.directManagerId) {
-      const manager = await this.claims.getEmployee(submitter.directManagerId);
-      if (manager) {
-        if (manager.role === "ClusterHead") {
-          addStep("ClusterHead", manager);
-          if (manager.directManagerId) {
-            const hodManager = await this.claims.getEmployee(manager.directManagerId);
-            if (hodManager) {
-              addStep(hodManager.role === "MD" ? "MD" : "HOD", hodManager);
-            }
-          }
-        } else {
-          addStep(manager.role === "MD" ? "MD" : "HOD", manager);
-        }
+    let managerId = submitter.directManagerId;
+    const visited = new Set<string>();
+    while (managerId && !visited.has(managerId)) {
+      visited.add(managerId);
+      const manager = await this.claims.getEmployee(managerId);
+      if (!manager) break;
+      if (manager.role === "ClusterHead") addStep("ClusterHead", manager);
+      if (manager.role === "HOD") {
+        addStep("HOD", manager);
+        break;
       }
+      if (manager.role === "MD") {
+        if (submitter.isHod && claim.claimKind !== "Advance") addStep("MD", manager);
+        break;
+      }
+      managerId = manager.directManagerId;
     }
 
-    const cashTotal = claim.lineItems
-      .filter((item) => item.paymentMode === "Cash")
-      .reduce((sum, item) => sum + item.amount, 0);
-    if (cashTotal > 10_000 && !steps.some((step) => step.role === "MD")) {
+    if (submitter.isHod && claim.claimKind !== "Advance" && !steps.some((step) => step.role === "MD")) {
       const md = await this.claims.findManagingDirector();
       if (md) addStep("MD", md);
     }
 
-    if (steps.length === 0) {
-      throw conflict("No approver is configured for this employee or site.");
+    if (claim.claimKind === "Advance" && claim.totalAmount > 400_000 && !steps.some((step) => step.role === "MD")) {
+      const md = await this.claims.findManagingDirector();
+      if (md) addStep("MD", md);
     }
 
     return steps;
+  }
+
+  private async notifyFinanceTeam(claim: ClaimDetail, claimId: string) {
+    const employees = await this.claims.listEmployees();
+    await Promise.all(
+      employees
+        .filter((employee) => ["Finance", "FinanceHOD"].includes(employee.role))
+        .map((employee) =>
+          this.notifyEmployee(
+            employee,
+            `Advance ${claim.ticketId} is ready for Finance review`,
+            `Advance ${claim.ticketId} for Rs ${claim.totalAmount.toLocaleString("en-IN")} is ready for Finance review.`,
+            claimId
+          )
+        )
+    );
   }
 
   private async notifyEmployee(employee: NonNullable<Awaited<ReturnType<ClaimRepository["getEmployee"]>>>, subject: string, body: string, claimId: string) {
@@ -419,20 +463,109 @@ export class ClaimService {
     await this.assertCanView(claim, user);
 
     const auditEntries = await this.claims.listAuditLogForClaim(claimId);
+    const approvalActors = await Promise.all(
+      claim.approvalSteps.map((step) => step.assignedApproverId ? this.claims.getEmployee(step.assignedApproverId) : null)
+    );
+    const rows = [
+      ...auditEntries.map((entry) => ({
+        timestamp: entry.actionTimestamp,
+        actor: entry.actorName ?? "",
+        actorId: entry.actorUserId,
+        action: entry.actionType,
+        approvalRole: "",
+        decision: "",
+        fromStatus: entry.preActionStatus ?? "",
+        toStatus: entry.postActionStatus,
+        remarks: entry.auditRemarks ?? "",
+        correlationId: entry.correlationId
+      })),
+      ...claim.approvalSteps
+        .map((step, index) => ({
+          timestamp: step.decisionAt!,
+          actor: approvalActors[index]?.fullName ?? "",
+          actorId: step.assignedApproverId ?? "",
+          action: "APPROVAL_DECISION",
+          approvalRole: step.requiredApproverRole,
+          decision: step.decision,
+          fromStatus: "",
+          toStatus: "",
+          remarks: step.remarks ?? "",
+          correlationId: ""
+        }))
+        .filter((entry) => entry.timestamp)
+    ].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
     return toCsv(
-      ["Timestamp", "Ticket", "Actor", "Actor ID", "Action", "From Status", "To Status", "Remarks", "Correlation ID"],
-      auditEntries.map((entry) => [
-        entry.actionTimestamp,
+      ["Timestamp", "Ticket", "Actor", "Actor ID", "Action", "Approval Role", "Decision", "From Status", "To Status", "Remarks", "Correlation ID"],
+      rows.map((entry) => [
+        entry.timestamp,
         claim.ticketId,
-        entry.actorName ?? "",
-        entry.actorUserId,
-        entry.actionType,
-        entry.preActionStatus ?? "",
-        entry.postActionStatus,
-        entry.auditRemarks ?? "",
+        entry.actor,
+        entry.actorId,
+        entry.action,
+        entry.approvalRole,
+        entry.decision,
+        entry.fromStatus,
+        entry.toStatus,
+        entry.remarks,
         entry.correlationId
       ])
     );
+  }
+
+  async getProfile(user: UserContext) {
+    if (!["Claimant", "ClusterHead", "HOD"].includes(user.role)) {
+      throw forbidden("Profile self-service is available to Claimant, Cluster Head, and HOD users.");
+    }
+    const [employee, employees, sites, claims] = await Promise.all([
+      this.claims.getEmployee(user.userId),
+      this.claims.listEmployees(),
+      this.claims.listActiveSites(),
+      this.claims.listClaimsForUser(user.userId, user.role)
+    ]);
+    if (!employee) throw notFound("Employee profile was not found.");
+
+    const linkedEmployees: typeof employees = [];
+    const managerIds = new Set([user.userId]);
+    for (let index = 0; index < employees.length; index += 1) {
+      const reports = employees.filter((item) => item.directManagerId && managerIds.has(item.directManagerId));
+      for (const report of reports) {
+        if (!linkedEmployees.some((item) => item.employeeId === report.employeeId)) {
+          linkedEmployees.push(report);
+          managerIds.add(report.employeeId);
+        }
+      }
+    }
+    const linkedSiteIds = new Set(claims.map((claim) => claim.siteId).filter((siteId): siteId is string => Boolean(siteId)));
+    if (user.role === "ClusterHead") {
+      sites.filter((site) => site.clusterHeadEmployeeId === user.userId).forEach((site) => linkedSiteIds.add(site.siteId));
+    }
+    if (user.role === "HOD") {
+      const reportIds = new Set(linkedEmployees.map((item) => item.employeeId));
+      sites.filter((site) => site.clusterHeadEmployeeId && reportIds.has(site.clusterHeadEmployeeId)).forEach((site) => linkedSiteIds.add(site.siteId));
+    }
+
+    return {
+      employee,
+      linkedEmployees: linkedEmployees.map((item) => ({
+        employeeId: item.employeeId,
+        fullName: item.fullName,
+        email: item.email,
+        role: item.role,
+        directManagerId: item.directManagerId
+      })),
+      linkedSites: sites.filter((site) => linkedSiteIds.has(site.siteId))
+    };
+  }
+
+  async updateProfileBankDetails(input: UpdateBankDetailsInput, user: UserContext) {
+    if (!["Claimant", "ClusterHead", "HOD"].includes(user.role)) {
+      throw forbidden("You cannot update bank details from this profile.");
+    }
+    return {
+      employee: await this.claims.updateEmployeeBankDetails(user.userId, input),
+      message: "Bank account details updated."
+    };
   }
 
   private async assertCanView(claim: ClaimDetail, user: UserContext) {
@@ -444,12 +577,7 @@ export class ClaimService {
       return;
     }
 
-    const pendingStep = claim.approvalSteps.find((step) => step.decision === "Pending");
-    if (
-      pendingStep &&
-      pendingStep.assignedApproverId === user.userId &&
-      pendingStep.requiredApproverRole === user.role
-    ) {
+    if (claim.approvalSteps.some((step) => step.assignedApproverId === user.userId && step.requiredApproverRole === user.role)) {
       return;
     }
 
@@ -481,14 +609,14 @@ export class ClaimService {
     }
   }
 
-  private async assertSettlementIsLinkedToPaidAdvance(claim: ClaimDetail) {
-    if (claim.claimKind !== "Settlement") {
+  private async assertAdvanceAdjustmentIsLinkedToPaidAdvance(claim: ClaimDetail) {
+    if (!claim.advanceClaimId) {
       return;
     }
 
     const advance = claim.advanceClaimId ? await this.claims.getClaimDetail(claim.advanceClaimId) : null;
     if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
-      throw conflict("Settlement claims must be linked to a paid advance.");
+      throw conflict("Advance adjustments must be linked to a paid advance.");
     }
   }
 
@@ -504,7 +632,7 @@ export class ClaimService {
       throw conflict("Select an outstanding advance before applying an adjustment.");
     }
     if (claim.advanceClaimId && claim.advanceClaimId !== advanceClaimId) {
-      throw conflict("A settlement claim cannot be switched to a different advance.");
+      throw conflict("An advance adjustment cannot be switched to a different advance.");
     }
     if (claim.claimKind === "Reimbursement" && input.advanceAdjustmentAmount === 0) {
       throw conflict("Enter an advance adjustment amount greater than zero.");
@@ -517,10 +645,10 @@ export class ClaimService {
       advance.status !== "PaymentReleased" ||
       advance.submitterEmployeeId !== claim.submitterEmployeeId
     ) {
-      throw conflict("Settlement claims must be linked to a paid advance.");
+      throw conflict("Advance adjustments must be linked to a paid advance.");
     }
     if (await this.claims.activeSettlementExists(advance.claimId, claim.claimId)) {
-      throw conflict("Another settlement for this advance is already being processed.");
+      throw conflict("Another reimbursement is already adjusting this advance.");
     }
 
     const maximumAdjustment = Math.min(claim.totalAmount, advance.advanceBalance);
@@ -573,10 +701,6 @@ export class ClaimService {
 
     if (claim.lineItems.length === 0) {
       errors.push("At least one line item is required.");
-    }
-
-    if (claim.claimKind === "Settlement" && !claim.advanceClaimId) {
-      errors.push("Settlement claims must be linked to a paid advance.");
     }
 
     if (claim.submissionMode === "Proforma" && claim.lineItems.length < 2) {

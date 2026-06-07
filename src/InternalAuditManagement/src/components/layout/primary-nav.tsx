@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, ClipboardCheck, FileText, Link2, ReceiptText, Settings, ShieldCheck } from "lucide-react";
+import { BarChart3, ClipboardCheck, FileText, Link2, ReceiptText, Settings, ShieldCheck, UserRound } from "lucide-react";
 
 const iconMap = {
   BarChart3,
@@ -11,7 +11,8 @@ const iconMap = {
   Link2,
   ReceiptText,
   Settings,
-  ShieldCheck
+  ShieldCheck,
+  UserRound
 };
 
 type PrimaryNavLink = {

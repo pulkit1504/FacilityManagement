@@ -186,14 +186,14 @@ export class FinanceService {
       }
     }
 
-    if (claim.claimKind === "Settlement") {
+    if (claim.advanceClaimId) {
       await this.claims.updateClaimTotal(claimId);
       claim = await this.claims.getClaimDetail(claimId);
       if (!claim) throw notFound("Claim was not found.");
 
       const advance = claim.advanceClaimId ? await this.claims.getClaimDetail(claim.advanceClaimId) : null;
       if (!advance || advance.claimKind !== "Advance" || advance.status !== "PaymentReleased") {
-        throw conflict("Settlement claims must be linked to a paid advance.");
+        throw conflict("Advance adjustments must be linked to a paid advance.");
       }
     }
 

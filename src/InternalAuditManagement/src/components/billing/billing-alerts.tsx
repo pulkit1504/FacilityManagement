@@ -10,6 +10,7 @@ type BillingAlertItem = {
   claimId: string;
   lineItemDescription: string;
   amount: number;
+  billableAmount: number;
   claimantName: string;
   siteName: string | null;
   createdAt: string;
@@ -92,7 +93,7 @@ export function BillingAlerts() {
           <tr>
             <th>Claim</th>
             <th>Line item</th>
-            <th>Amount</th>
+            <th>Expense / billable</th>
             <th>Age</th>
             <th>Invoice</th>
             <th>Action</th>
@@ -117,7 +118,11 @@ export function BillingAlerts() {
                 <span className="muted">{item.siteName ?? item.claimantName}</span>
               </td>
               <td>{item.lineItemDescription}</td>
-              <td>Rs {item.amount.toLocaleString("en-IN")}</td>
+              <td>
+                <strong>Rs {item.amount.toLocaleString("en-IN")}</strong>
+                <br />
+                <span className="muted">Bill Rs {item.billableAmount.toLocaleString("en-IN")}</span>
+              </td>
               <td>
                 <span className={`badge ${item.daysOpen >= 7 ? "danger" : item.daysOpen >= 2 ? "warning" : "success"}`}>
                   {item.urgencyLabel}

@@ -7,7 +7,6 @@ export default async function NewClaimPage({
   searchParams?: Promise<{ kind?: string; advanceClaimId?: string }>;
 }>) {
   const params = await searchParams;
-  const initialClaimKind = params?.kind === "Settlement" ? "Settlement" : "Reimbursement";
   const initialAdvanceClaimId = params?.advanceClaimId;
 
   return (
@@ -19,7 +18,7 @@ export default async function NewClaimPage({
           <p className="muted">Start with a draft, add itemized line details, then submit for routing.</p>
         </div>
       </div>
-      <ClaimWizard initialClaimKind={initialClaimKind} initialAdvanceClaimId={initialAdvanceClaimId} />
+      <ClaimWizard initialAdvanceClaimId={initialAdvanceClaimId} />
     </AppShell>
   );
 }

@@ -8,7 +8,7 @@ import { getProblemMessage } from "@/components/ui/problem-message";
 type FinanceItem = {
   claimId: string;
   ticketId: string;
-  claimKind: "Advance" | "Settlement" | "Reimbursement";
+  claimKind: "Advance" | "Reimbursement";
   submittedBy: string;
   siteName: string | null;
   totalAmount: number;
@@ -364,7 +364,7 @@ export function FinanceQueue() {
         <thead>
           <tr>
             <th>Claim</th>
-            <th>Settlement</th>
+            <th>Payable / advance</th>
             <th>Beneficiary</th>
             <th>Receipt gate</th>
             <th>Billing</th>
@@ -515,8 +515,8 @@ export function FinanceQueue() {
         </table>
       </section>
 
-      <section aria-label="Advances pending settlement table" className="panel" tabIndex={0}>
-        <h2>Advances Pending Settlement</h2>
+      <section aria-label="Advances with open balances table" className="panel" tabIndex={0}>
+        <h2>Advances with open balances</h2>
         <table className="table">
           <thead>
             <tr>
@@ -563,7 +563,7 @@ export function FinanceQueue() {
             ))}
             {!isLoading && advances.length === 0 ? (
               <tr>
-                <td colSpan={7}>No paid advances pending settlement.</td>
+                <td colSpan={7}>No paid advances with an open balance.</td>
               </tr>
             ) : null}
           </tbody>

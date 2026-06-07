@@ -19,7 +19,7 @@ npm run dev
 
 Apply the SQL in `db/001_initial_schema.sql` to Supabase before testing real persistence.
 Apply later files in numeric order, for example `db/003_add_admin_role.sql`, when upgrading an existing database.
-`db/011_atomic_payment_release.sql` is required before deploying the matching application version because payment release calls its transactional database function.
+`db/011_atomic_payment_release.sql` and `db/012_reimbursement_advance_adjustments.sql` are required before deploying the matching application version. Expense claims remain Reimbursements when an advance is applied, and payment release adjusts the linked advance atomically.
 
 ## Verification
 
@@ -47,6 +47,7 @@ fmsstorage-connectionstring
 ```
 
 Receipt files are stored in the `nimbus` container in storage account `fmsstorage15`.
+Azure Blob Storage remains the document storage integration; no OneDrive configuration is required.
 
 For Vercel, configure `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, and `AZURE_CLIENT_SECRET` as encrypted environment variables so `DefaultAzureCredential` can read Key Vault. For Azure hosting later, use Managed Identity instead.
 

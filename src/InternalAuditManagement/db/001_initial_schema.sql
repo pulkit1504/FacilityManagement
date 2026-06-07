@@ -15,7 +15,6 @@ declare
 begin
   prefix := case claim_kind_input
     when 'Advance' then 'ADV'
-    when 'Settlement' then 'SET'
     else 'EXP'
   end;
 
@@ -73,7 +72,7 @@ create table if not exists expense_claims (
   claim_id uuid primary key default gen_random_uuid(),
   ticket_id text not null unique default next_claim_ticket_id('Reimbursement'),
   submitter_employee_id text not null references employees(employee_id),
-  claim_kind text not null default 'Reimbursement' check (claim_kind in ('Advance', 'Settlement', 'Reimbursement')),
+  claim_kind text not null default 'Reimbursement' check (claim_kind in ('Advance', 'Reimbursement')),
   submission_mode text not null check (submission_mode in ('SingleVoucher', 'Proforma')),
   proforma_period_start date,
   proforma_period_end date,

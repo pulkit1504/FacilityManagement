@@ -66,7 +66,7 @@ begin
     raise exception 'Beneficiary bank details are required before payment release.';
   end if;
 
-  if claim_record.claim_kind = 'Settlement' then
+  if claim_record.advance_claim_id is not null then
     select *
     into advance_record
     from expense_claims
@@ -77,7 +77,7 @@ begin
     for update;
 
     if not found then
-      raise exception 'Settlement claims must be linked to a paid advance.';
+      raise exception 'Advance adjustments must be linked to a paid advance.';
     end if;
 
     if claim_record.advance_adjustment_amount > advance_record.advance_balance then

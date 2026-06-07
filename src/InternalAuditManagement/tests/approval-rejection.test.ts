@@ -11,12 +11,12 @@ const approver: UserContext = {
   correlationId: "test-correlation"
 };
 
-function settlementClaim(): ClaimDetail {
+function adjustedReimbursementClaim(): ClaimDetail {
   return {
     claimId: "settlement-1",
-    ticketId: "SET-TEST",
+    ticketId: "EXP-TEST",
     submitterEmployeeId: "claimant-1",
-    claimKind: "Settlement",
+    claimKind: "Reimbursement",
     submissionMode: "SingleVoucher",
     proformaPeriodStart: null,
     proformaPeriodEnd: null,
@@ -68,7 +68,7 @@ function claimant(): Employee {
   };
 }
 
-describe("Imprest settlement rejection remarks", () => {
+describe("Advance-adjusted reimbursement rejection remarks", () => {
   it("requires meaningful remarks", () => {
     expect(rejectClaimSchema.safeParse({ reason: "" }).success).toBe(false);
     expect(rejectClaimSchema.safeParse({ reason: "no" }).success).toBe(false);
@@ -78,7 +78,7 @@ describe("Imprest settlement rejection remarks", () => {
   });
 
   it("stores remarks in the claim, approval history, audit trail, and notification", async () => {
-    const claim = settlementClaim();
+    const claim = adjustedReimbursementClaim();
     const reason = "Receipt amount does not match.";
     const claims = {
       getClaimDetail: vi.fn().mockResolvedValue(claim),

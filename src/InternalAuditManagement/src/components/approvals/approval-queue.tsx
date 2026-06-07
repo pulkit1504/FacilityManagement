@@ -226,7 +226,7 @@ export function ApprovalQueue() {
           <tr>
             <th>Claim</th>
             <th>Site</th>
-            <th>Settlement</th>
+            <th>Payable / advance</th>
             <th>Receipts</th>
             <th>Age</th>
             <th>Actions</th>

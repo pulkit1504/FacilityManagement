@@ -1,7 +1,9 @@
 import { FraudReview } from "@/components/audit/fraud-review";
 import { AppShell } from "@/components/layout/app-shell";
+import { getUserContext, requireRole } from "@/server/auth/user-context";
 
-export default function AuditPage() {
+export default async function AuditPage() {
+  requireRole(await getUserContext(), ["FinanceHOD", "MD"]);
   return (
     <AppShell>
       <div className="topbar">

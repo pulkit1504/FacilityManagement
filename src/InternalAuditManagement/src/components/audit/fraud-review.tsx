@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Eye, Loader2, Play, ShieldAlert } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
+import { expenseTagLabel } from "@/shared/expense-tags";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
 type FraudFlagItem = {
@@ -169,7 +170,7 @@ export function FraudReview() {
                             <strong>{line.description}</strong>
                             <br />
                             <span className="muted">
-                              {line.transactionDate} · {line.expenseTag}
+                              {line.transactionDate} · {expenseTagLabel(line.expenseTag)}
                             </span>
                           </div>
                           <div>

@@ -413,7 +413,7 @@ export function FinanceQueue() {
                     {!item.physicalReceiptRequired ? "Not required" : item.physicalReceiptConfirmed ? "Confirmed" : "Pending"}
                   </span>
                 </td>
-                <td>{item.pendingBillingItemCount} pending billing items</td>
+                <td>{item.pendingBillingItemCount} B2C - Pending Billing items</td>
                 <td>
                   <div className="actions">
                     <button className="button secondary" onClick={() => void toggleReceipts(item.claimId)} type="button">

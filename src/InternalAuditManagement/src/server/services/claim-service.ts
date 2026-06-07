@@ -118,10 +118,17 @@ export class ClaimService {
       throw conflict("Employee profile is missing or inactive.");
     }
 
-    if (employee.imprestAdvanceLimit > 0 && input.amount > employee.imprestAdvanceLimit) {
-      throw conflict("Advance request exceeds the configured employee limit.", {
-        errors: [`Configured advance limit is Rs ${employee.imprestAdvanceLimit.toLocaleString("en-IN")}.`]
-      });
+    if (employee.imprestAdvanceLimit > 0) {
+      const openAdvanceBalance = (await this.claims.listPendingAdvances(user.userId, user.role))
+        .reduce((sum, advance) => sum + advance.advanceBalance, 0);
+      const projectedAdvanceBalance = openAdvanceBalance + input.amount;
+      if (projectedAdvanceBalance > employee.imprestAdvanceLimit) {
+        throw conflict("Advance request exceeds the configured employee limit.", {
+          errors: [
+            `Open advances plus this request would be Rs ${projectedAdvanceBalance.toLocaleString("en-IN")} against an imprest limit of Rs ${employee.imprestAdvanceLimit.toLocaleString("en-IN")}.`
+          ]
+        });
+      }
     }
 
     const claim = await this.claims.createClaim({
@@ -601,11 +608,30 @@ export class ClaimService {
   }
 
   private assertLineItemDateIsValidForClaim(claim: ClaimDetail, input: CreateLineItemInput) {
+    const today = new Date().toISOString().slice(0, 10);
+    const allowedAgeDays = claim.submissionMode === "Proforma" ? 50 : 20;
+    const oldestAllowedDate = addUtcDays(today, -allowedAgeDays);
+
+    if (input.transactionDate < oldestAllowedDate) {
+      throw conflict(
+        claim.submissionMode === "Proforma"
+          ? "Periodic claim expense date cannot be more than 50 days older than today."
+          : "Single voucher expense date cannot be more than 20 days older than today."
+      );
+    }
+
     if (
       claim.submissionMode === "Proforma" &&
       (input.transactionDate < claim.proformaPeriodStart! || input.transactionDate > claim.proformaPeriodEnd!)
     ) {
       throw conflict("Line item date must fall within the declared proforma period.");
+    }
+
+    if (claim.claimPeriodMonth) {
+      const selectedMonth = claim.claimPeriodMonth.slice(0, 7);
+      if (!input.transactionDate.startsWith(`${selectedMonth}-`)) {
+        throw conflict("Line item date must fall within the expense month selected for the claim.");
+      }
     }
   }
 
@@ -709,7 +735,7 @@ export class ClaimService {
 
     for (const item of claim.lineItems) {
       if (item.expenseTag === "AlreadyBilled" && !item.clientInvoiceNumber) {
-        errors.push(`Line item ${item.lineItemId} requires a client invoice number.`);
+        errors.push(`Line item ${item.lineItemId} requires an invoice number.`);
       }
 
       if (item.expenseTag === "ContractPartCost" && !item.siteId) {
@@ -733,4 +759,10 @@ function csvCell(value: string) {
   }
 
   return `"${value.replaceAll("\"", "\"\"")}"`;
+}
+
+function addUtcDays(dateValue: string, days: number) {
+  const date = new Date(`${dateValue}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }

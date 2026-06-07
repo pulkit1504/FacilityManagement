@@ -79,7 +79,7 @@ export function BillingAlerts() {
     <section className="panel">
       <div className="topbar" style={{ marginBottom: 12 }}>
         <div>
-          <h2>Pending Billing Alerts</h2>
+          <h2>B2C - Pending Billing Alerts</h2>
           <p className="muted">Link client invoices to stop revenue leakage reminders.</p>
         </div>
         <button className="button secondary" disabled={isLoading} onClick={() => void load()} type="button">

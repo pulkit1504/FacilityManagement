@@ -71,7 +71,7 @@ export const createLineItemSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["clientInvoiceNumber"],
-        message: "A valid Client Invoice Number is required for Already Billed items."
+        message: "Invoice number is required for B2C - Already Billed items."
       });
     }
 
@@ -79,7 +79,7 @@ export const createLineItemSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["billableAmount"],
-        message: "Pending Billing items require the billable amount."
+        message: "B2C - Pending Billing items require the billable amount."
       });
     }
 

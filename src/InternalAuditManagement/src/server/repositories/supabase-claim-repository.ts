@@ -817,6 +817,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
   async updateSettlementAdjustment(
     claimId: string,
+    advanceClaimId: string,
     totalAmount: number,
     openAdvanceBalance: number,
     adjustmentAmount: number
@@ -826,6 +827,8 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const { data, error } = await db
       .from("expense_claims")
       .update({
+        claim_kind: "Settlement",
+        advance_claim_id: advanceClaimId,
         advance_adjustment_amount: amounts.advanceAdjusted,
         final_payable_amount: amounts.finalPayable,
         net_advance_left_amount: amounts.netAdvanceLeft,

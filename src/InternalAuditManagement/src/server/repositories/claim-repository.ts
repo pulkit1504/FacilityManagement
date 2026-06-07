@@ -96,7 +96,7 @@ export interface ClaimRepository {
   invoiceReferenceExists(invoiceNumber: string, excludingLineItemId?: string): Promise<boolean>;
   submitClaim(claimId: string, nextStatus: ClaimStatus): Promise<ExpenseClaim>;
   updateClaimTotal(claimId: string): Promise<void>;
-  updateSettlementAdjustment(claimId: string, totalAmount: number, openAdvanceBalance: number, adjustmentAmount: number): Promise<ExpenseClaim>;
+  updateSettlementAdjustment(claimId: string, advanceClaimId: string, totalAmount: number, openAdvanceBalance: number, adjustmentAmount: number): Promise<ExpenseClaim>;
   createApprovalSteps(steps: Omit<ApprovalStep, "stepId" | "decision" | "decisionAt" | "remarks">[]): Promise<void>;
   appendAuditLog(input: AuditLogInput): Promise<void>;
   listAuditLogForClaim(claimId: string): Promise<AuditLogEntry[]>;

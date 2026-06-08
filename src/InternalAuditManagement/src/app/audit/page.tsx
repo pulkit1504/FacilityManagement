@@ -9,8 +9,8 @@ export default async function AuditPage() {
       <div className="topbar">
         <div>
           <div className="eyebrow">Internal Audit</div>
-          <h1>Fraud detection review</h1>
-          <p className="muted">Duplicate vouchers, threshold splits, and non-operational day expenses surface here.</p>
+          <h1>Audit dashboard</h1>
+          <p className="muted">Monitor audit risk, run sweeps, and close fraud review actions from one workspace.</p>
         </div>
       </div>
       <FraudReview />

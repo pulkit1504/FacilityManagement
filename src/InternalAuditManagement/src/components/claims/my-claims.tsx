@@ -30,6 +30,7 @@ type ClaimDetail = ClaimSummary & {
     transactionDate: string;
     expenseTag: string;
     clientInvoiceNumber: string | null;
+    vendorInvoiceNumber: string | null;
     missingReceiptFlag: boolean;
     attachments: Array<{
       attachmentId: string;
@@ -310,7 +311,7 @@ function ClaimDetailPanel({
           <div>
             <strong>Rs {line.amount.toLocaleString("en-IN")}</strong>
             <br />
-            <span className="muted">{line.clientInvoiceNumber ? `Invoice ${line.clientInvoiceNumber}` : "No invoice reference"}</span>
+            <span className="muted">{invoiceReferenceLabel(line.clientInvoiceNumber, line.vendorInvoiceNumber)}</span>
           </div>
           <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
             {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
@@ -372,6 +373,14 @@ function approverRoleLabel(role: string) {
 
 function roleOrder(role: string) {
   return ["ClusterHead", "HOD", "MD", "Finance"].indexOf(role);
+}
+
+function invoiceReferenceLabel(clientInvoiceNumber: string | null, vendorInvoiceNumber: string | null) {
+  const references = [
+    clientInvoiceNumber ? `Client ${clientInvoiceNumber}` : null,
+    vendorInvoiceNumber ? `Vendor ${vendorInvoiceNumber}` : null
+  ].filter(Boolean);
+  return references.length > 0 ? references.join(" · ") : "No invoice reference";
 }
 
 function formatDate(value: string) {

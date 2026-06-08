@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { expenseTagLabel } from "@/shared/expense-tags";
@@ -17,6 +17,7 @@ type LineItemDraft = {
   paymentMode: PaymentMode;
   expenseTag: ExpenseTag;
   clientInvoiceNumber: string;
+  vendorInvoiceNumber: string;
   vendorName: string;
   billableAmount: string;
   siteOrDepartment: string;
@@ -101,6 +102,7 @@ const emptyLineItem: LineItemDraft = {
   paymentMode: "Cash",
   expenseTag: "PendingBilling",
   clientInvoiceNumber: "",
+  vendorInvoiceNumber: "",
   vendorName: "",
   billableAmount: "",
   siteOrDepartment: "",
@@ -218,6 +220,7 @@ export function ClaimWizard({
     if (!lineItem.description || !lineItem.amount || Number(lineItem.amount) <= 0) return false;
     if (!lineItem.transactionDate || lineItem.transactionDate < lineDateMin || lineItem.transactionDate > lineDateMax) return false;
     if (requiresInvoice && !lineItem.clientInvoiceNumber.trim()) return false;
+    if (requiresInvoice && !lineItem.vendorInvoiceNumber.trim()) return false;
     if (requiresBillableAmount && (!lineItem.billableAmount || Number(lineItem.billableAmount) <= 0)) return false;
     if (requiresSite && !lineItem.siteId) return false;
     if (requiresSiteOrDepartment && !lineItem.siteOrDepartment) return false;
@@ -260,6 +263,54 @@ export function ClaimWizard({
     void loadPendingAdvances();
   }, []);
 
+  const applyLoadedClaim = useCallback((data: LoadedClaim) => {
+    setClaimId(data.claimId);
+    setClaimStatus(data.status);
+    setAdvanceClaimId(data.advanceClaimId ?? "");
+    setAdvanceAdjustmentAmount(data.advanceAdjustmentAmount ?? 0);
+    setRejectionReason(data.rejectionReason);
+    setSubmissionMode(data.submissionMode);
+    setClaimPeriodMonth(data.claimPeriodMonth?.slice(0, 7) ?? new Date().toISOString().slice(0, 7));
+    setSiteId(data.siteId ?? "");
+    setProformaPeriodStart(data.proformaPeriodStart ?? "");
+    setProformaPeriodEnd(data.proformaPeriodEnd ?? "");
+    setSavedLineItems(
+      data.lineItems.map((item) => ({
+        lineItemId: item.lineItemId,
+        expenseHead: item.expenseHead,
+        description: item.description,
+        amount: item.amount,
+        transactionDate: item.transactionDate,
+        paymentMode: item.paymentMode,
+        expenseTag: item.expenseTag,
+        clientInvoiceNumber: item.clientInvoiceNumber,
+        vendorName: item.vendorName,
+        vendorInvoiceNumber: item.vendorInvoiceNumber,
+        billableAmount: item.billableAmount,
+        siteOrDepartment: item.siteOrDepartment,
+        siteId: item.siteId,
+        missingReceiptFlag: item.missingReceiptFlag,
+        attachmentHash: item.attachments[0]?.contentHash?.slice(0, 12)
+      }))
+    );
+    setLineItem((current) => ({
+      ...current,
+      transactionDate: data.proformaPeriodStart ?? current.transactionDate
+    }));
+  }, []);
+
+  const loadClaimById = useCallback(async (claimIdToLoad: string, fallbackMessage = "Could not load claim.") => {
+    const response = await fetch(`/api/v1/claims/${claimIdToLoad}`, { cache: "no-store" });
+    const data = (await response.json()) as LoadedClaim & ProblemResponse;
+    if (!response.ok) {
+      setErrorMessages(getProblemMessages(data, fallbackMessage));
+      return null;
+    }
+
+    applyLoadedClaim(data);
+    return data;
+  }, [applyLoadedClaim]);
+
   useEffect(() => {
     if (!initialClaimId) return;
 
@@ -268,53 +319,14 @@ export function ClaimWizard({
       setMessage("");
       setErrorMessages([]);
       try {
-        const response = await fetch(`/api/v1/claims/${initialClaimId}`);
-        const data = (await response.json()) as LoadedClaim & ProblemResponse;
-        if (!response.ok) {
-          setErrorMessages(getProblemMessages(data, "Could not load claim."));
-          return;
-        }
-
-        setClaimId(data.claimId);
-        setClaimStatus(data.status);
-        setAdvanceClaimId(data.advanceClaimId ?? "");
-        setAdvanceAdjustmentAmount(data.advanceAdjustmentAmount ?? 0);
-        setRejectionReason(data.rejectionReason);
-        setSubmissionMode(data.submissionMode);
-        setClaimPeriodMonth(data.claimPeriodMonth?.slice(0, 7) ?? new Date().toISOString().slice(0, 7));
-        setSiteId(data.siteId ?? "");
-        setProformaPeriodStart(data.proformaPeriodStart ?? "");
-        setProformaPeriodEnd(data.proformaPeriodEnd ?? "");
-        setSavedLineItems(
-          data.lineItems.map((item) => ({
-            lineItemId: item.lineItemId,
-            expenseHead: item.expenseHead,
-            description: item.description,
-            amount: item.amount,
-            transactionDate: item.transactionDate,
-            paymentMode: item.paymentMode,
-            expenseTag: item.expenseTag,
-            clientInvoiceNumber: item.clientInvoiceNumber,
-            vendorName: item.vendorName,
-            vendorInvoiceNumber: item.vendorInvoiceNumber,
-            billableAmount: item.billableAmount,
-            siteOrDepartment: item.siteOrDepartment,
-            siteId: item.siteId,
-            missingReceiptFlag: item.missingReceiptFlag,
-            attachmentHash: item.attachments[0]?.contentHash?.slice(0, 12)
-          }))
-        );
-        setLineItem((current) => ({
-          ...current,
-          transactionDate: data.proformaPeriodStart ?? current.transactionDate
-        }));
+        await loadClaimById(initialClaimId!, "Could not load claim.");
       } finally {
         setIsLoadingClaim(false);
       }
     }
 
     void loadClaim();
-  }, [initialClaimId]);
+  }, [initialClaimId, loadClaimById]);
 
   async function createDraft() {
     setBusy(true);
@@ -386,7 +398,7 @@ export function ClaimWizard({
           expenseTag: lineItem.expenseTag,
           clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
           vendorName: lineItem.vendorName || null,
-          vendorInvoiceNumber: requiresInvoice ? null : lineItem.clientInvoiceNumber || null,
+          vendorInvoiceNumber: lineItem.vendorInvoiceNumber || null,
           billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
           siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
           lineTicketId: null,
@@ -415,7 +427,7 @@ export function ClaimWizard({
                   expenseTag: lineItem.expenseTag,
                   clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
                   vendorName: lineItem.vendorName || null,
-                  vendorInvoiceNumber: requiresInvoice ? null : lineItem.clientInvoiceNumber || null,
+                  vendorInvoiceNumber: lineItem.vendorInvoiceNumber || null,
                   billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
                   siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
                   siteId: requiresSite ? lineItem.siteId : null
@@ -436,7 +448,7 @@ export function ClaimWizard({
             expenseTag: lineItem.expenseTag,
             clientInvoiceNumber: requiresInvoice ? lineItem.clientInvoiceNumber : null,
             vendorName: lineItem.vendorName || null,
-            vendorInvoiceNumber: requiresInvoice ? null : lineItem.clientInvoiceNumber || null,
+            vendorInvoiceNumber: lineItem.vendorInvoiceNumber || null,
             billableAmount: requiresBillableAmount ? Number(lineItem.billableAmount) : null,
             siteOrDepartment: requiresSiteOrDepartment ? lineItem.siteOrDepartment : null,
             siteId: requiresSite ? lineItem.siteId : null,
@@ -463,7 +475,8 @@ export function ClaimWizard({
       expenseHead: item.expenseHead ?? "",
       paymentMode: item.paymentMode ?? "Cash",
       expenseTag: item.expenseTag,
-      clientInvoiceNumber: item.clientInvoiceNumber ?? item.vendorInvoiceNumber ?? "",
+      clientInvoiceNumber: item.clientInvoiceNumber ?? "",
+      vendorInvoiceNumber: item.vendorInvoiceNumber ?? "",
       vendorName: item.vendorName ?? "",
       billableAmount: item.billableAmount ? String(item.billableAmount) : "",
       siteOrDepartment: item.siteOrDepartment ?? "",
@@ -629,8 +642,11 @@ export function ClaimWizard({
         setErrorMessages(getProblemMessages(data, "Could not reopen claim."));
         return;
       }
-      setClaimStatus("Draft");
+      setSubmissionResult(null);
+      setEditingLineItemId(null);
+      setClaimStatus(data.status ?? "Draft");
       setRejectionReason(null);
+      await loadClaimById(claimId, "Claim reopened, but could not refresh the latest claim details.");
       setMessage(data.message ?? "Claim reopened for correction.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not reopen claim.");
@@ -859,9 +875,15 @@ export function ClaimWizard({
                 <input value={lineItem.vendorName} onChange={(event) => setLineItem({ ...lineItem, vendorName: event.target.value })} />
               </label>
               <label>
-                <span className="muted">{requiresInvoice ? "Invoice number" : "Vendor invoice number"}</span>
-                <input value={lineItem.clientInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, clientInvoiceNumber: event.target.value })} />
+                <span className="muted">{requiresInvoice ? "Client invoice number" : "Vendor invoice number"}</span>
+                <input value={requiresInvoice ? lineItem.clientInvoiceNumber : lineItem.vendorInvoiceNumber} onChange={(event) => setLineItem(requiresInvoice ? { ...lineItem, clientInvoiceNumber: event.target.value } : { ...lineItem, vendorInvoiceNumber: event.target.value })} />
               </label>
+              {requiresInvoice ? (
+                <label>
+                  <span className="muted">Vendor invoice number</span>
+                  <input value={lineItem.vendorInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, vendorInvoiceNumber: event.target.value })} />
+                </label>
+              ) : null}
               <label>
                 <span className="muted">Expense tag</span>
                 <select
@@ -871,6 +893,7 @@ export function ClaimWizard({
                       ...lineItem,
                       expenseTag: event.target.value as ExpenseTag,
                       clientInvoiceNumber: lineItem.clientInvoiceNumber,
+                      vendorInvoiceNumber: lineItem.vendorInvoiceNumber,
                       billableAmount: "",
                       siteOrDepartment: "",
                       siteId: ""
@@ -979,6 +1002,8 @@ export function ClaimWizard({
                     <td>
                       {submissionResult ? (
                         <span className="muted">Locked</span>
+                      ) : !isDraft ? (
+                        <span className="muted">Reopen first</span>
                       ) : (
                         <div className="actions">
                           <button className="button secondary" disabled={busy} onClick={() => startEditLineItem(item)} type="button">

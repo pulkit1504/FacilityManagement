@@ -627,7 +627,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         expense_tag: input.expenseTag,
         client_invoice_number: input.expenseTag === "AlreadyBilled" ? input.clientInvoiceNumber?.trim() || null : null,
         vendor_name: input.vendorName ?? null,
-        vendor_invoice_number: input.vendorInvoiceNumber ?? null,
+        vendor_invoice_number: input.vendorInvoiceNumber?.trim() || null,
         billable_amount: input.expenseTag === "PendingBilling" ? input.billableAmount ?? input.amount : input.billableAmount ?? null,
         site_or_department: input.siteOrDepartment ?? null,
         line_ticket_id: input.lineTicketId ?? null,
@@ -657,7 +657,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         expense_tag: input.expenseTag,
         client_invoice_number: input.expenseTag === "AlreadyBilled" ? input.clientInvoiceNumber?.trim() || null : null,
         vendor_name: input.vendorName ?? null,
-        vendor_invoice_number: input.vendorInvoiceNumber ?? null,
+        vendor_invoice_number: input.vendorInvoiceNumber?.trim() || null,
         billable_amount: input.expenseTag === "PendingBilling" ? input.billableAmount ?? input.amount : input.billableAmount ?? null,
         site_or_department: input.siteOrDepartment ?? null,
         line_ticket_id: input.lineTicketId ?? null,
@@ -1323,6 +1323,13 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
   async reopenRejectedClaim(claimId: string): Promise<ExpenseClaim> {
     const db = await getSupabaseAdminClient();
+    const { error: stepError } = await db
+      .from("approval_steps")
+      .delete()
+      .eq("claim_id", claimId);
+
+    if (stepError) throw stepError;
+
     const { data, error } = await db
       .from("expense_claims")
       .update({

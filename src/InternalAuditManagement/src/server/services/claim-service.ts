@@ -712,13 +712,17 @@ export class ClaimService {
   }
 
   private async assertInvoiceReferenceIsUnique(input: CreateLineItemInput, excludingLineItemId?: string) {
-    const invoiceNumber = input.clientInvoiceNumber?.trim() || input.vendorInvoiceNumber?.trim();
-    if (!invoiceNumber) return;
+    const invoiceNumbers = [
+      input.clientInvoiceNumber?.trim(),
+      input.vendorInvoiceNumber?.trim()
+    ].filter((invoiceNumber): invoiceNumber is string => Boolean(invoiceNumber));
 
-    if (await this.claims.invoiceReferenceExists(invoiceNumber, excludingLineItemId)) {
-      throw conflict("Duplicate invoice number detected.", {
-        errors: [`Invoice number ${invoiceNumber} is already used on another claim line.`]
-      });
+    for (const invoiceNumber of invoiceNumbers) {
+      if (await this.claims.invoiceReferenceExists(invoiceNumber, excludingLineItemId)) {
+        throw conflict("Duplicate invoice number detected.", {
+          errors: [`Invoice number ${invoiceNumber} is already used on another claim line.`]
+        });
+      }
     }
   }
 
@@ -735,7 +739,11 @@ export class ClaimService {
 
     for (const item of claim.lineItems) {
       if (item.expenseTag === "AlreadyBilled" && !item.clientInvoiceNumber) {
-        errors.push(`Line item ${item.lineItemId} requires an invoice number.`);
+        errors.push(`Line item ${item.lineItemId} requires a client invoice number.`);
+      }
+
+      if (item.expenseTag === "AlreadyBilled" && !item.vendorInvoiceNumber) {
+        errors.push(`Line item ${item.lineItemId} requires a vendor invoice number.`);
       }
 
       if (item.expenseTag === "ContractPartCost" && !item.siteId) {

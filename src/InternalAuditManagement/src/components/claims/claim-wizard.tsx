@@ -914,16 +914,6 @@ export function ClaimWizard({
                 <input value={lineItem.vendorName} onChange={(event) => setLineItem({ ...lineItem, vendorName: event.target.value })} />
               </label>
               <label>
-                <span className="muted">{requiresInvoice ? "Client invoice number" : "Vendor invoice number"}</span>
-                <input value={requiresInvoice ? lineItem.clientInvoiceNumber : lineItem.vendorInvoiceNumber} onChange={(event) => setLineItem(requiresInvoice ? { ...lineItem, clientInvoiceNumber: event.target.value } : { ...lineItem, vendorInvoiceNumber: event.target.value })} />
-              </label>
-              {requiresInvoice ? (
-                <label>
-                  <span className="muted">Vendor invoice number</span>
-                  <input value={lineItem.vendorInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, vendorInvoiceNumber: event.target.value })} />
-                </label>
-              ) : null}
-              <label>
                 <span className="muted">Expense tag</span>
                 <select
                   value={lineItem.expenseTag}
@@ -944,6 +934,16 @@ export function ClaimWizard({
                   <option value="ContractPartCost">{expenseTagLabel("ContractPartCost")}</option>
                   <option value="BackendCTC">{expenseTagLabel("BackendCTC")}</option>
                 </select>
+              </label>
+              {requiresInvoice ? (
+                <label>
+                  <span className="muted">Client invoice number</span>
+                  <input value={lineItem.clientInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, clientInvoiceNumber: event.target.value })} />
+                </label>
+              ) : null}
+              <label>
+                <span className="muted">Vendor invoice number</span>
+                <input value={lineItem.vendorInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, vendorInvoiceNumber: event.target.value })} />
               </label>
               {requiresBillableAmount ? (
                 <label>

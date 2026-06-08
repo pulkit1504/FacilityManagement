@@ -164,6 +164,19 @@ test.describe("role journeys", () => {
 
   test("Approver can reach an accessible approval queue", async ({ page }) => {
     await signInAs(page, "ClusterHead");
+    await page.route("**/api/v1/approvals/queue", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ items: [] })
+      });
+    });
+    await page.route("**/api/v1/sites", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ items: [] })
+      });
+    });
+
     await page.goto("/approvals");
 
     await expect(page.getByRole("heading", { level: 1, name: "Operational approvals" })).toBeVisible();
@@ -239,6 +252,12 @@ test.describe("role journeys", () => {
         })
       });
     });
+    await page.route("**/api/v1/claims/claim-audit-queue-1", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(auditClaimDetailFixture())
+      });
+    });
 
     await page.goto("/audit");
 
@@ -274,11 +293,15 @@ test.describe("role journeys", () => {
     await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Pending information" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Reject" })).toBeVisible();
+    await page.getByRole("button", { name: "View receipts" }).click();
+    await expect(page.getByRole("heading", { level: 3, name: "Receipt Evidence" })).toBeVisible();
+    await expect(page.getByText("B2C - Already Billed | Demo Vendor | Client CLI-100 | Vendor VEND-100")).toBeVisible();
+    await expect(page.getByRole("button", { name: "receipt.pdf" })).toBeVisible();
 
     await page.getByRole("button", { name: "Evidence", exact: true }).click();
     await expect(page.getByRole("heading", { level: 3, name: "Drill-down Evidence" })).toBeVisible();
     await expect(page.getByText("2026-06-06 | B2C - Already Billed | Demo Vendor")).toBeVisible();
-    await expect(page.getByText("Vendor VEND-100")).toBeVisible();
+    await expect(page.getByText("Client CLI-100 | Vendor VEND-100", { exact: true })).toBeVisible();
     await expect(page.getByText("Approval trail")).toBeVisible();
     await expectAccessiblePage(page);
     await expectNoHorizontalOverflow(page);
@@ -414,5 +437,78 @@ function auditQueueFixture() {
     urgencyLevel: "Normal",
     receiptConfirmedAt: "2026-06-08T10:00:00.000Z",
     pendingBillingItemCount: 1
+  };
+}
+
+function auditClaimDetailFixture() {
+  return {
+    claimId: "claim-audit-queue-1",
+    ticketId: "EXP-AUD-QUEUE",
+    submitterEmployeeId: "emp-claimant-001",
+    claimKind: "Reimbursement",
+    submissionMode: "SingleVoucher",
+    proformaPeriodStart: null,
+    proformaPeriodEnd: null,
+    claimPeriodMonth: "2026-06-01",
+    advanceClaimId: null,
+    advanceAmount: 0,
+    settledAmount: 0,
+    advanceBalance: 0,
+    advanceAdjustmentAmount: 0,
+    finalPayableAmount: 4800,
+    netAdvanceLeftAmount: 0,
+    status: "AuditPending",
+    statusLabel: "Audit review pending",
+    totalAmount: 4800,
+    siteId: "site-1",
+    rejectionReason: null,
+    physicalReceiptConfirmedAt: "2026-06-08T10:00:00.000Z",
+    physicalReceiptConfirmedBy: "emp-finance-001",
+    createdAt: "2026-06-07T00:00:00.000Z",
+    updatedAt: "2026-06-08T10:00:00.000Z",
+    lineItems: [{
+      lineItemId: "line-audit-queue-1",
+      claimId: "claim-audit-queue-1",
+      expenseHead: "Client Rechargeable",
+      description: "Material purchase",
+      amount: 4800,
+      transactionDate: "2026-06-06",
+      paymentMode: "UPI",
+      expenseTag: "AlreadyBilled",
+      clientInvoiceNumber: "CLI-100",
+      vendorName: "Demo Vendor",
+      vendorInvoiceNumber: "VEND-100",
+      billableAmount: null,
+      siteOrDepartment: null,
+      lineTicketId: null,
+      invoiceValidationStatus: "PendingErpValidation",
+      financeReviewStatus: "Pending",
+      financeReviewRemarks: null,
+      billingAlertCreated: false,
+      siteId: null,
+      missingReceiptFlag: false,
+      sortOrder: 0,
+      attachments: [{
+        attachmentId: "attachment-audit-queue-1",
+        lineItemId: "line-audit-queue-1",
+        storagePath: "receipts/demo.pdf",
+        contentHash: "abcdef1234567890",
+        originalFileName: "receipt.pdf",
+        fileSizeBytes: 1024,
+        contentType: "application/pdf",
+        uploadedAt: "2026-06-06T00:00:00.000Z",
+        uploadedByUserId: "emp-claimant-001"
+      }]
+    }],
+    approvalSteps: [{
+      stepId: "step-audit-queue-1",
+      claimId: "claim-audit-queue-1",
+      stepOrder: 2,
+      requiredApproverRole: "Auditor",
+      assignedApproverId: null,
+      decision: "Pending",
+      decisionAt: null,
+      remarks: null
+    }]
   };
 }

@@ -97,6 +97,7 @@ describe("Auditor receipt workflow", () => {
       getClaimDetail: vi.fn().mockResolvedValue(claim),
       decideApprovalStep: vi.fn(),
       submitClaim: vi.fn().mockResolvedValue({ ...claim, status: "FinanceConfirmed" }),
+      createFinanceApprovalStep: vi.fn(),
       createBillingAlert: vi.fn().mockResolvedValue({ alertId: "alert-1" }),
       appendAuditLog: vi.fn(),
       listEmployees: vi.fn().mockResolvedValue([employee("emp-finance-001", "Finance")])
@@ -109,6 +110,7 @@ describe("Auditor receipt workflow", () => {
 
     expect(result.newStatus).toBe("FinanceConfirmed");
     expect(claims.decideApprovalStep).toHaveBeenCalledWith("audit-step-1", "Approved", "Evidence reviewed.");
+    expect(claims.createFinanceApprovalStep).toHaveBeenCalledWith("claim-1");
     expect(claims.createBillingAlert).toHaveBeenCalledWith(expect.objectContaining({ claimId: "claim-1", lineItemId: "line-1" }));
     expect(notifications.enqueueAndSend).toHaveBeenCalledOnce();
   });

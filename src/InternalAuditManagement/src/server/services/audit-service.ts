@@ -25,6 +25,10 @@ export class AuditService {
 
     await this.claims.decideApprovalStep(pendingStep.stepId, "Approved", input.remarks);
     const updated = await this.claims.submitClaim(claimId, "FinanceConfirmed");
+    const hasPendingFinanceStep = claim.approvalSteps.some((step) => step.requiredApproverRole === "Finance" && step.decision === "Pending");
+    if (!hasPendingFinanceStep) {
+      await this.claims.createFinanceApprovalStep(claimId);
+    }
     await Promise.all([
       this.createBillingAlertsForClaim(claim, user),
       this.claims.appendAuditLog({

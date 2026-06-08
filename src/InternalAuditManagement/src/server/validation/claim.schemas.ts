@@ -71,7 +71,15 @@ export const createLineItemSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["clientInvoiceNumber"],
-        message: "Invoice number is required for B2C - Already Billed items."
+        message: "Client invoice number is required for B2C - Already Billed items."
+      });
+    }
+
+    if (value.expenseTag === "AlreadyBilled" && !value.vendorInvoiceNumber) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["vendorInvoiceNumber"],
+        message: "Vendor invoice number is required for B2C - Already Billed items."
       });
     }
 

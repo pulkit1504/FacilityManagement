@@ -128,6 +128,7 @@ create table if not exists expense_line_items (
   created_at timestamptz not null default now(),
   is_deleted boolean not null default false,
   constraint chk_already_billed_invoice check (expense_tag <> 'AlreadyBilled' or client_invoice_number is not null),
+  constraint chk_already_billed_vendor_invoice check (expense_tag <> 'AlreadyBilled' or vendor_invoice_number is not null),
   constraint chk_contract_part_site check (expense_tag <> 'ContractPartCost' or site_id is not null)
 );
 

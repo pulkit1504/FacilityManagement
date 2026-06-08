@@ -1,9 +1,10 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Eye, Loader2, Play, ShieldAlert } from "lucide-react";
+import { AlertTriangle, BarChart3, CheckCircle2, Clock3, Eye, Loader2, Play, ShieldAlert } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { expenseTagLabel } from "@/shared/expense-tags";
+import { MetricCard } from "@/components/ui/metric-card";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
 type FraudFlagItem = {
@@ -33,6 +34,13 @@ export function FraudReview() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const highPriorityFlags = flags.filter((flag) => flag.daysOpen >= 7);
+  const agedFlags = flags.filter((flag) => flag.daysOpen >= 2);
+  const evidenceLineCount = flags.reduce((sum, flag) => sum + flag.flaggedLineItems.length, 0);
+  const ruleCounts = flags.reduce<Record<string, number>>((acc, flag) => {
+    acc[flag.ruleLabel] = (acc[flag.ruleLabel] ?? 0) + 1;
+    return acc;
+  }, {});
 
   async function load() {
     try {
@@ -97,21 +105,71 @@ export function FraudReview() {
   }
 
   return (
-    <section className="panel">
-      <div className="topbar" style={{ marginBottom: 12 }}>
-        <div>
-          <h2>Fraud Review Queue</h2>
-          <p className="muted">
-            Run sweeps, review evidence lines, then clear or mark flags escalated in the audit trail.
-          </p>
-        </div>
-        <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void runSweep()} type="button">
-          {busyAction === "sweep" ? <Loader2 size={16} /> : <Play size={16} />}
-          {busyAction === "sweep" ? "Running..." : "Run sweep"}
-        </button>
+    <div className="grid" style={{ gap: 16 }}>
+      <div className="grid cols-3">
+        <MetricCard label="Open audit flags" value={String(flags.length)} tone={flags.length > 0 ? "warning" : "success"} />
+        <MetricCard label="High priority" value={String(highPriorityFlags.length)} tone={highPriorityFlags.length > 0 ? "danger" : "success"} />
+        <MetricCard label="Evidence lines" value={String(evidenceLineCount)} tone={evidenceLineCount > 0 ? "warning" : "success"} />
       </div>
-      <ActionFeedback message={message} onDismiss={() => setMessage("")} />
-      <table className="table">
+
+      <section className="panel">
+        <div className="topbar" style={{ marginBottom: 12 }}>
+          <div>
+            <h2>Audit Command Center</h2>
+            <p className="muted">Prioritize aging flags, watch rule concentration, and keep review decisions moving.</p>
+          </div>
+          <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void runSweep()} type="button">
+            {busyAction === "sweep" ? <Loader2 size={16} /> : <Play size={16} />}
+            {busyAction === "sweep" ? "Running..." : "Run sweep"}
+          </button>
+        </div>
+        <ActionFeedback message={message} onDismiss={() => setMessage("")} />
+        <div className="grid cols-3">
+          <div className="audit-evidence-row">
+            <div>
+              <strong style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <Clock3 size={16} />
+                Aging watch
+              </strong>
+              <p className="muted">{agedFlags.length} flags are older than two days; {highPriorityFlags.length} are seven days or older.</p>
+            </div>
+            <span className={`badge ${highPriorityFlags.length > 0 ? "danger" : agedFlags.length > 0 ? "warning" : "success"}`}>
+              {highPriorityFlags.length > 0 ? "Escalate" : agedFlags.length > 0 ? "Review today" : "Clear"}
+            </span>
+          </div>
+          <div className="audit-evidence-row">
+            <div>
+              <strong style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <BarChart3 size={16} />
+                Rule mix
+              </strong>
+              <p className="muted">{formatRuleMix(ruleCounts)}</p>
+            </div>
+            <span className="badge warning">Sweep based</span>
+          </div>
+          <div className="audit-evidence-row">
+            <div>
+              <strong style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <ShieldAlert size={16} />
+                Audit actions
+              </strong>
+              <p className="muted">Clear legitimate items or escalate exceptions with an audit-trail entry.</p>
+            </div>
+            <span className="badge success">Logged</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
+        <div className="topbar" style={{ marginBottom: 12 }}>
+          <div>
+            <h2>Fraud Review Queue</h2>
+            <p className="muted">
+              Run sweeps, review evidence lines, then clear or mark flags escalated in the audit trail.
+            </p>
+          </div>
+        </div>
+        <table className="table">
         <thead>
           <tr>
             <th>Rule</th>
@@ -202,7 +260,14 @@ export function FraudReview() {
             </tr>
           ) : null}
         </tbody>
-      </table>
-    </section>
+        </table>
+      </section>
+    </div>
   );
+}
+
+function formatRuleMix(ruleCounts: Record<string, number>) {
+  const entries = Object.entries(ruleCounts);
+  if (entries.length === 0) return "No active rule clusters right now.";
+  return entries.map(([rule, count]) => `${rule}: ${count}`).join(" · ");
 }

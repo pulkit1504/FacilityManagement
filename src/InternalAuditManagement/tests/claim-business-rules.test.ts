@@ -93,13 +93,21 @@ describe("claim business rules", () => {
     vi.useRealTimers();
   });
 
-  it("requires invoice numbers for B2C - Already Billed line items", () => {
+  it("requires client and vendor invoice numbers for B2C - Already Billed line items", () => {
     expect(() =>
       createLineItemSchema.parse(line({ expenseTag: "AlreadyBilled", transactionDate: "2026-06-03" }))
-    ).toThrow("Invoice number is required for B2C - Already Billed items.");
+    ).toThrow("Client invoice number is required for B2C - Already Billed items.");
+
+    expect(() =>
+      createLineItemSchema.parse(line({
+        expenseTag: "AlreadyBilled",
+        transactionDate: "2026-06-03",
+        clientInvoiceNumber: "CLIENT-INV-1"
+      }))
+    ).toThrow("Vendor invoice number is required for B2C - Already Billed items.");
   });
 
-  it("allows B2C - Already Billed line items when an invoice number is supplied", async () => {
+  it("allows B2C - Already Billed line items when client and vendor invoice numbers are supplied", async () => {
     const draft = claim();
     const savedLine = {
       ...line({ expenseTag: "AlreadyBilled", transactionDate: "2026-06-03" }),
@@ -120,15 +128,40 @@ describe("claim business rules", () => {
     const parsed = createLineItemSchema.parse(line({
       expenseTag: "AlreadyBilled",
       transactionDate: "2026-06-03",
-      clientInvoiceNumber: "INV-2026-0001"
+      clientInvoiceNumber: "CLIENT-INV-2026-0001",
+      vendorInvoiceNumber: "VENDOR-INV-2026-0001"
     }));
     const result = await new ClaimService(claims, notifications).addLineItem(draft.claimId, parsed, user);
 
     expect(claims.addLineItem).toHaveBeenCalledWith(draft.claimId, expect.objectContaining({
       expenseTag: "AlreadyBilled",
-      clientInvoiceNumber: "INV-2026-0001"
+      clientInvoiceNumber: "CLIENT-INV-2026-0001",
+      vendorInvoiceNumber: "VENDOR-INV-2026-0001"
     }));
     expect(result.lineItemId).toBe("line-1");
+  });
+
+  it("checks both client and vendor invoice numbers for duplicates", async () => {
+    const draft = claim();
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(draft),
+      invoiceReferenceExists: vi.fn(async (invoiceNumber: string) => invoiceNumber === "VENDOR-DUPLICATE")
+    } as unknown as ClaimRepository;
+
+    await expect(
+      new ClaimService(claims, notifications).addLineItem(
+        draft.claimId,
+        createLineItemSchema.parse(line({
+          expenseTag: "AlreadyBilled",
+          transactionDate: "2026-06-03",
+          clientInvoiceNumber: "CLIENT-UNIQUE",
+          vendorInvoiceNumber: "VENDOR-DUPLICATE"
+        })),
+        user
+      )
+    ).rejects.toMatchObject({ message: "Duplicate invoice number detected." });
+    expect(claims.invoiceReferenceExists).toHaveBeenCalledWith("CLIENT-UNIQUE", undefined);
+    expect(claims.invoiceReferenceExists).toHaveBeenCalledWith("VENDOR-DUPLICATE", undefined);
   });
 
   it("blocks single voucher dates more than 20 days old", async () => {
@@ -229,5 +262,24 @@ describe("claim business rules", () => {
       status: "Draft",
       message: "Claim reopened. Apply corrections and submit again."
     });
+  });
+
+  it("blocks non-claimants from reopening someone else's returned claim", async () => {
+    const returned = claim({
+      status: "Rejected",
+      rejectionReason: "Correct the invoice date."
+    });
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(returned),
+      reopenRejectedClaim: vi.fn()
+    } as unknown as ClaimRepository;
+
+    await expect(
+      new ClaimService(claims, notifications).reopenReturnedClaim(returned.claimId, {
+        ...user,
+        userId: "other-user"
+      })
+    ).rejects.toMatchObject({ message: "Only the original claimant can reopen this claim." });
+    expect(claims.reopenRejectedClaim).not.toHaveBeenCalled();
   });
 });

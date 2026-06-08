@@ -86,12 +86,20 @@ type SubmissionResult = {
 
 type ProblemResponse = {
   detail?: string;
+  activeClaimId?: string;
+  activeTicketId?: string;
   errors?:
     | string[]
     | {
         formErrors?: string[];
         fieldErrors?: Record<string, string[] | undefined>;
       };
+};
+
+type CorrectionBlocker = {
+  message: string;
+  activeClaimId?: string;
+  activeTicketId?: string;
 };
 
 const emptyLineItem: LineItemDraft = {
@@ -156,6 +164,7 @@ export function ClaimWizard({
   const [isLoadingClaim, setIsLoadingClaim] = useState(Boolean(initialClaimId));
   const [isPreparingCorrection, setIsPreparingCorrection] = useState(false);
   const [autoReopenAttemptedClaimId, setAutoReopenAttemptedClaimId] = useState<string | null>(null);
+  const [correctionBlocker, setCorrectionBlocker] = useState<CorrectionBlocker | null>(null);
 
   const requiresSite = lineItem.expenseTag === "ContractPartCost";
   const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
@@ -268,6 +277,7 @@ export function ClaimWizard({
   const applyLoadedClaim = useCallback((data: LoadedClaim) => {
     setClaimId(data.claimId);
     setClaimStatus(data.status);
+    setCorrectionBlocker(null);
     setAdvanceClaimId(data.advanceClaimId ?? "");
     setAdvanceAdjustmentAmount(data.advanceAdjustmentAmount ?? 0);
     setRejectionReason(data.rejectionReason);
@@ -642,13 +652,19 @@ export function ClaimWizard({
       const response = await fetch(`/api/v1/claims/${claimId}/reopen`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) {
-        setErrorMessages(getProblemMessages(data, "Could not prepare this claim for correction."));
+        const messages = getProblemMessages(data, "Could not prepare this claim for correction.");
+        setCorrectionBlocker({
+          message: messages[0],
+          activeClaimId: data.activeClaimId,
+          activeTicketId: data.activeTicketId
+        });
         return;
       }
       setSubmissionResult(null);
       setEditingLineItemId(null);
       setClaimStatus(data.status ?? "Draft");
       setRejectionReason(null);
+      setCorrectionBlocker(null);
       await loadClaimById(claimId, "Claim reopened, but could not refresh the latest claim details.");
       setMessage(data.message ?? "Claim reopened for correction.");
     } catch (error) {
@@ -735,7 +751,7 @@ export function ClaimWizard({
           <div className="actions" style={{ alignItems: "end" }}>
             <button className="button" disabled={busy || Boolean(claimId) || !canCreateDraft} onClick={createDraft} type="button">
               <Check size={18} />
-              {claimId ? "Draft ready" : "Create draft"}
+              {claimId ? (isDraft ? "Draft ready" : "Claim loaded") : "Create draft"}
             </button>
             {claimId && !submissionResult && !initialClaimId ? (
               <button className="button secondary" disabled={busy} onClick={resetDraft} type="button">
@@ -750,7 +766,7 @@ export function ClaimWizard({
             Select a valid proforma period before creating the draft.
           </p>
         ) : null}
-        {claimId ? <p className="muted" style={{ marginTop: 12 }}>Draft ID: {claimId}</p> : null}
+        {claimId ? <p className="muted" style={{ marginTop: 12 }}>{isDraft ? "Draft" : "Claim"} ID: {claimId}</p> : null}
         {selectedAdvance ? (
           <div className="settlement-summary" style={{ marginTop: 12 }}>
             <div>
@@ -816,23 +832,23 @@ export function ClaimWizard({
         ) : null}
         {isReturned ? (
           <div className="return-panel" style={{ marginTop: 12 }}>
-            <strong>Preparing correction workspace</strong>
-            <p>
-              This claim was returned with this note: <strong>{rejectionReason ?? "No correction reason was provided."}</strong>
-            </p>
-            <p className="muted">
-              Opening this page automatically unlocks the claim for editing. Once ready, the line items below will become editable.
-            </p>
-            {isPreparingCorrection || busy ? (
+            <strong>{correctionBlocker ? "Correction blocked" : "Preparing correction workspace"}</strong>
+            {correctionBlocker ? (
+              <>
+                <p>{correctionBlocker.message}</p>
+                {correctionBlocker.activeClaimId ? (
+                  <a className="button secondary" href={`/claims/${correctionBlocker.activeClaimId}/edit`}>
+                    Open active claim {correctionBlocker.activeTicketId ?? ""}
+                  </a>
+                ) : null}
+              </>
+            ) : isPreparingCorrection || busy ? (
               <span className="loading-inline">
                 <Loader2 size={16} />
                 Preparing this claim for correction...
               </span>
             ) : (
-              <button className="button secondary" disabled={busy} onClick={() => void reopenReturnedClaim()} type="button">
-                <RotateCcw size={18} />
-                Try preparing again
-              </button>
+              <p className="muted">This claim was returned with this note: {rejectionReason ?? "No correction reason was provided."}</p>
             )}
           </div>
         ) : null}
@@ -977,7 +993,7 @@ export function ClaimWizard({
           </section>
           ) : null}
 
-          <section className="panel">
+          <section aria-label="Saved line items table" className="panel" tabIndex={0}>
             <div className="topbar" style={{ marginBottom: 12 }}>
               <div>
                 <h2>Saved Line Items</h2>
@@ -1026,7 +1042,7 @@ export function ClaimWizard({
                       {submissionResult ? (
                         <span className="muted">Locked</span>
                       ) : !isDraft ? (
-                        <span className="muted">Reopen first</span>
+                        <span className="muted">{correctionBlocker ? "Use active claim" : "Preparing correction"}</span>
                       ) : (
                         <div className="actions">
                           <button className="button secondary" disabled={busy} onClick={() => startEditLineItem(item)} type="button">

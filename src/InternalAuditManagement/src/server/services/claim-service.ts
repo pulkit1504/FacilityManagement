@@ -446,8 +446,19 @@ export class ClaimService {
       updatedClaim = await this.claims.reopenRejectedClaim(claimId);
     } catch (error) {
       if (isUniqueConstraintError(error)) {
+        const activeClaim = claim.advanceClaimId
+          ? await this.claims.findActiveAdvanceAdjustment(claim.advanceClaimId, claim.claimId)
+          : null;
         throw conflict(
-          "This returned claim cannot be prepared for correction because another active draft or submitted claim already exists for the same advance. Open the active claim or ask Finance to close the duplicate before correcting this one."
+          activeClaim
+            ? `This returned claim cannot be prepared for correction because ${activeClaim.ticketId} is already active for the same advance. Continue with that claim or ask Finance to close it before correcting this one.`
+            : "This returned claim cannot be prepared for correction because another active draft or submitted claim already exists for the same advance. Open the active claim or ask Finance to close the duplicate before correcting this one.",
+          activeClaim
+            ? {
+                activeClaimId: activeClaim.claimId,
+                activeTicketId: activeClaim.ticketId
+              }
+            : undefined
         );
       }
       throw error;

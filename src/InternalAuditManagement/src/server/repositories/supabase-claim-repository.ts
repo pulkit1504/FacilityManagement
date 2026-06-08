@@ -1259,17 +1259,23 @@ export class SupabaseClaimRepository implements ClaimRepository {
   }
 
   async activeSettlementExists(advanceClaimId: string, excludingClaimId: string): Promise<boolean> {
+    return Boolean(await this.findActiveAdvanceAdjustment(advanceClaimId, excludingClaimId));
+  }
+
+  async findActiveAdvanceAdjustment(advanceClaimId: string, excludingClaimId: string): Promise<ExpenseClaim | null> {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db
       .from("expense_claims")
-      .select("claim_id")
+      .select("*")
       .eq("advance_claim_id", advanceClaimId)
       .in("status", ["Draft", "Submitted", "HodApproved", "MdApproved", "FinanceConfirmed"])
       .neq("claim_id", excludingClaimId)
       .eq("is_deleted", false)
-      .limit(1);
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
     if (error) throw error;
-    return (data ?? []).length > 0;
+    return data ? mapClaim(data as ClaimRow) : null;
   }
 
   async releasePaymentAtomically(claimId: string, actorUserId: string, correlationId: string): Promise<ExpenseClaim> {

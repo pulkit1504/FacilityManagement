@@ -1350,13 +1350,6 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
   async reopenRejectedClaim(claimId: string): Promise<ExpenseClaim> {
     const db = await getSupabaseAdminClient();
-    const { error: stepError } = await db
-      .from("approval_steps")
-      .delete()
-      .eq("claim_id", claimId);
-
-    if (stepError) throw stepError;
-
     const { data, error } = await db
       .from("expense_claims")
       .update({
@@ -1370,6 +1363,13 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .single();
 
     if (error) throw error;
+
+    const { error: stepError } = await db
+      .from("approval_steps")
+      .delete()
+      .eq("claim_id", claimId);
+
+    if (stepError) throw stepError;
     return mapClaim(data as ClaimRow);
   }
 

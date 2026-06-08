@@ -19,7 +19,8 @@ const ids = {
   billingAlert: "33333333-3333-4333-8333-333333333331",
   fraudFlag: "44444444-4444-4444-8444-444444444441",
   approvalFinance: "55555555-5555-4555-8555-555555555551",
-  approvalReturned: "55555555-5555-4555-8555-555555555552"
+  approvalReturned: "55555555-5555-4555-8555-555555555552",
+  approvalAudit: "55555555-5555-4555-8555-555555555553"
 };
 
 async function main() {
@@ -136,6 +137,17 @@ async function seedReferenceData(db) {
         full_name: "Finance HOD",
         email: "financehod@example.com",
         role: "FinanceHOD",
+        direct_manager_id: "emp-md-001",
+        is_hod: false,
+        approval_threshold_amount: 0,
+        imprest_advance_limit: 0,
+        is_active: true
+      },
+      {
+        employee_id: "emp-auditor-001",
+        full_name: "Internal Auditor",
+        email: "auditor@example.com",
+        role: "Auditor",
         direct_manager_id: "emp-md-001",
         is_hod: false,
         approval_threshold_amount: 0,
@@ -327,16 +339,28 @@ async function seedFinanceReleaseReadyClaim(db) {
   );
 
   await must(
-    db.from("approval_steps").insert({
-      step_id: ids.approvalFinance,
-      claim_id: ids.financeClaim,
-      step_order: 1,
-      required_approver_role: "Finance",
-      assigned_approver_id: "emp-finance-001",
-      decision: "Approved",
-      decision_at: "2026-06-08T08:30:00.000Z",
-      remarks: "Finance confirmed original voucher and accepted line items."
-    }),
+    db.from("approval_steps").insert([
+      {
+        step_id: ids.approvalFinance,
+        claim_id: ids.financeClaim,
+        step_order: 1,
+        required_approver_role: "Finance",
+        assigned_approver_id: "emp-finance-001",
+        decision: "Approved",
+        decision_at: "2026-06-08T08:30:00.000Z",
+        remarks: "Finance confirmed original voucher and accepted line items."
+      },
+      {
+        step_id: ids.approvalAudit,
+        claim_id: ids.financeClaim,
+        step_order: 3,
+        required_approver_role: "Auditor",
+        assigned_approver_id: "emp-auditor-001",
+        decision: "Approved",
+        decision_at: "2026-06-08T09:00:00.000Z",
+        remarks: "Auditor reviewed receipt evidence and approved for payment release."
+      }
+    ]),
     "insert finance-ready demo approval step"
   );
 }

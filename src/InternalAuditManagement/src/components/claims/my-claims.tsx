@@ -56,7 +56,7 @@ export function MyClaims() {
   const totals = useMemo(
     () => ({
       drafts: claims.filter((claim) => claim.status === "Draft").length,
-      inProgress: claims.filter((claim) => ["Submitted", "HodApproved", "MdApproved", "FinanceConfirmed"].includes(claim.status)).length,
+      inProgress: claims.filter((claim) => ["Submitted", "HodApproved", "MdApproved", "AuditPending", "FinanceConfirmed"].includes(claim.status)).length,
       paid: claims.filter((claim) => claim.status === "PaymentReleased").length,
       returned: claims.filter((claim) => claim.status === "Rejected").length
     }),
@@ -339,6 +339,7 @@ function ClaimDetailPanel({
 
 function statusTone(status: string) {
   if (status === "PaymentReleased" || status === "FinanceConfirmed") return "success";
+  if (status === "AuditPending") return "warning";
   if (status === "Rejected") return "danger";
   return "warning";
 }
@@ -356,6 +357,7 @@ function claimPendingLocation(claim: Pick<ClaimDetail, "status" | "approvalSteps
   }
 
   if (claim.status === "FinanceConfirmed") return "Pending payment release by Finance";
+  if (claim.status === "AuditPending") return "Pending Auditor review";
   if (claim.status === "HodApproved" || claim.status === "MdApproved") return "Pending with Finance";
   if (claim.status === "Submitted") return "Pending operational approval";
   return "Status updated";

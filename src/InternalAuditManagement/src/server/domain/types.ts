@@ -12,6 +12,7 @@ export const claimStatuses = [
   "Submitted",
   "HodApproved",
   "MdApproved",
+  "AuditPending",
   "FinanceConfirmed",
   "PaymentReleased",
   "Rejected"
@@ -34,6 +35,7 @@ export const userRoles = [
   "Finance",
   "BillingTeam",
   "FinanceHOD",
+  "Auditor",
   "Admin"
 ] as const;
 export type UserRole = (typeof userRoles)[number];
@@ -51,6 +53,9 @@ export const auditActionTypes = [
   "FINANCE_LINE_ACCEPT",
   "FINANCE_LINE_REJECT",
   "PHYSICAL_RECEIPT_CONFIRM",
+  "AUDIT_APPROVE",
+  "AUDIT_REJECT",
+  "AUDIT_INFO_REQUEST",
   "PAYMENT_RELEASE",
   "REJECT",
   "BILLABLE_TAG_CHANGE",
@@ -177,7 +182,7 @@ export type ApprovalStep = {
   stepId: string;
   claimId: string;
   stepOrder: number;
-  requiredApproverRole: "ClusterHead" | "HOD" | "MD" | "Finance";
+  requiredApproverRole: "ClusterHead" | "HOD" | "MD" | "Finance" | "Auditor";
   assignedApproverId: string | null;
   decision: "Pending" | "Approved" | "Rejected";
   decisionAt: string | null;
@@ -321,6 +326,11 @@ export type FraudFlagQueueItem = FraudFlag & {
   }>;
 };
 
+export type AuditQueueItem = FinanceQueueItem & {
+  receiptConfirmedAt: string | null;
+  auditDecisionRequired: boolean;
+};
+
 export type OverviewMetrics = {
   pendingApprovals: number;
   financeQueueCount: number;
@@ -402,6 +412,7 @@ export function statusLabel(status: ClaimStatus): string {
     Submitted: "Submitted - waiting for your manager",
     HodApproved: "Manager approved - now with Finance",
     MdApproved: "Director approved - now with Finance",
+    AuditPending: "Receipt confirmed - waiting for Auditor",
     FinanceConfirmed: "Finance confirmed - payment being processed",
     PaymentReleased: "Paid",
     Rejected: "Returned - see reason below"

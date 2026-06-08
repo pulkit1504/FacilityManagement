@@ -165,6 +165,10 @@ export const reviewFraudFlagSchema = z.object({
   remarks: z.string().trim().min(5).max(1000)
 });
 
+export const auditClaimDecisionSchema = z.object({
+  remarks: z.string().trim().min(5).max(1000)
+});
+
 export const createContractSchema = z.object({
   clientName: z.string().trim().min(2).max(200),
   description: z.string().trim().max(500).nullable().optional(),
@@ -241,6 +245,7 @@ export type FinanceLineReviewInput = z.infer<typeof financeLineReviewSchema>;
 export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptSchema>;
 export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;
 export type ReviewFraudFlagInput = z.infer<typeof reviewFraudFlagSchema>;
+export type AuditClaimDecisionInput = z.infer<typeof auditClaimDecisionSchema>;
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 export type CreateSiteInput = z.infer<typeof createSiteSchema>;
 export type AssignSiteClusterHeadInput = z.infer<typeof assignSiteClusterHeadSchema>;

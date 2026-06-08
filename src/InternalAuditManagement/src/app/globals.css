@@ -238,6 +238,21 @@ h1 {
   gap: 8px;
 }
 
+.metric-action {
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+}
+
+.metric-action:hover,
+.metric-action:focus-visible,
+.metric-action.active {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(17 107 89 / 16%);
+}
+
 .metric strong {
   font-size: 28px;
 }

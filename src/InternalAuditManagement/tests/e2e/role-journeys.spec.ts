@@ -1,13 +1,13 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-type TestRole = "Claimant" | "ClusterHead" | "Finance" | "FinanceHOD" | "Admin";
+type TestRole = "Claimant" | "ClusterHead" | "Finance" | "Auditor" | "Admin";
 
 const profiles: Record<TestRole, { userId: string; role: TestRole }> = {
   Claimant: { userId: "emp-claimant-001", role: "Claimant" },
   ClusterHead: { userId: "emp-cluster-001", role: "ClusterHead" },
   Finance: { userId: "emp-finance-001", role: "Finance" },
-  FinanceHOD: { userId: "emp-finance-hod-001", role: "FinanceHOD" },
+  Auditor: { userId: "emp-auditor-001", role: "Auditor" },
   Admin: { userId: "emp-admin-001", role: "Admin" }
 };
 
@@ -218,8 +218,8 @@ test.describe("role journeys", () => {
     await expectNoHorizontalOverflow(page);
   });
 
-  test("Finance HOD can see Audit Review must-have dashboard controls", async ({ page }) => {
-    await signInAs(page, "FinanceHOD");
+  test("Auditor can see Audit Review must-have dashboard controls", async ({ page }) => {
+    await signInAs(page, "Auditor");
     await page.route("**/api/v1/fraud/flags?status=Open", async (route) => {
       await route.fulfill({
         contentType: "application/json",
@@ -230,11 +230,21 @@ test.describe("role journeys", () => {
         })
       });
     });
+    await page.route("**/api/v1/audit/queue", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          totalPending: 1,
+          items: [auditQueueFixture()]
+        })
+      });
+    });
 
     await page.goto("/audit");
 
     await expect(page.getByRole("heading", { level: 1, name: "Audit dashboard" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Open Risk Summary" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Auditor Receipt Review Queue" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Risk Score Per Claim" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Aging Buckets" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Claim Status Tracker" })).toBeVisible();
@@ -258,8 +268,14 @@ test.describe("role journeys", () => {
     await expect(page.getByRole("button", { name: "Mark suspicious" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Escalate" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Assign owner" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "High-risk claims" })).toBeVisible();
+    await page.getByRole("button", { name: "High-risk claims" }).click();
+    await expect(page.locator("tbody").getByText("Duplicate voucher", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pending information" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reject" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Evidence" }).click();
+    await page.getByRole("button", { name: "Evidence", exact: true }).click();
     await expect(page.getByRole("heading", { level: 3, name: "Drill-down Evidence" })).toBeVisible();
     await expect(page.getByText("2026-06-06 | B2C - Already Billed | Demo Vendor")).toBeVisible();
     await expect(page.getByText("Vendor VEND-100")).toBeVisible();
@@ -380,5 +396,23 @@ function auditFlagFixture() {
       decidedAt: "2026-06-07T10:00:00.000Z",
       remarks: "Duplicate vendor invoice needs correction."
     }]
+  };
+}
+
+function auditQueueFixture() {
+  return {
+    claimId: "claim-audit-queue-1",
+    ticketId: "EXP-AUD-QUEUE",
+    claimKind: "Reimbursement",
+    submittedBy: "Riya Sharma",
+    siteName: "Investor Demo Site",
+    totalAmount: 4800,
+    finalPayableAmount: 4800,
+    lineItemCount: 1,
+    missingReceiptCount: 0,
+    daysPending: 1,
+    urgencyLevel: "Normal",
+    receiptConfirmedAt: "2026-06-08T10:00:00.000Z",
+    pendingBillingItemCount: 1
   };
 }

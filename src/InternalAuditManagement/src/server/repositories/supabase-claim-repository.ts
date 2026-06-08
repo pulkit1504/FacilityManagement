@@ -4,6 +4,7 @@ import type {
   ApprovalStep,
   ApprovalQueueItem,
   AuditLogEntry,
+  AuditQueueItem,
   BillableClaimReportRow,
   BillingAlert,
   BillingAlertQueueItem,
@@ -251,6 +252,7 @@ function auditPendingLocation(claim: ClaimDetail) {
     .sort((a, b) => a.stepOrder - b.stepOrder)[0];
   if (pendingStep) return `Pending with ${approverRoleLabel(pendingStep.requiredApproverRole)}`;
 
+  if (claim.status === "AuditPending") return "Pending with Auditor";
   if (claim.status === "FinanceConfirmed") return "Pending payment release by Finance";
   if (claim.status === "HodApproved" || claim.status === "MdApproved") return "Pending with Finance";
   if (claim.status === "Submitted") return "Pending operational approval";
@@ -262,7 +264,8 @@ function approverRoleLabel(role: string) {
     ClusterHead: "Cluster Head",
     HOD: "HOD",
     MD: "Managing Director",
-    Finance: "Finance"
+    Finance: "Finance",
+    Auditor: "Auditor"
   };
   return labels[role] ?? role;
 }
@@ -1216,6 +1219,86 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return items;
   }
 
+  async listAuditQueue(): Promise<AuditQueueItem[]> {
+    const db = await getSupabaseAdminClient();
+    const [{ data, error }, siteNames, employees] = await Promise.all([
+      db
+        .from("expense_claims")
+        .select("claim_id,ticket_id,claim_kind,advance_claim_id,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
+        .eq("status", "AuditPending")
+        .eq("is_deleted", false)
+        .order("updated_at", { ascending: false })
+        .limit(50),
+      this.getSiteNameMap(),
+      this.listEmployees()
+    ]);
+
+    if (error) throw error;
+    const claims = data ?? [];
+    const lineStats = await this.getQueueLineStats(claims.map((row) => String(row.claim_id)));
+    const employeesById = new Map(employees.map((employee) => [employee.employeeId, employee]));
+    const advanceClaimIds = claims
+      .filter((claim) => claim.advance_claim_id)
+      .map((claim) => String(claim.advance_claim_id));
+    const { data: advances, error: advancesError } = advanceClaimIds.length
+      ? await db.from("expense_claims").select("claim_id,advance_balance").in("claim_id", advanceClaimIds)
+      : { data: [], error: null };
+
+    if (advancesError) throw advancesError;
+    const advanceBalances = new Map(
+      (advances ?? []).map((advance) => [String(advance.claim_id), Number(advance.advance_balance ?? 0)])
+    );
+
+    return claims.map((claim) => {
+      const claimId = String(claim.claim_id);
+      const submitter = employeesById.get(String(claim.submitter_employee_id));
+      const stats = lineStats.get(claimId) ?? {
+        lineItemCount: 0,
+        missingReceiptCount: 0,
+        pendingBillingItemCount: 0
+      };
+      const submittedAt = String(claim.updated_at ?? claim.created_at);
+      const daysPending = Math.max(0, Math.floor((Date.now() - new Date(submittedAt).getTime()) / 86_400_000));
+      const siteId = claim.site_id ? String(claim.site_id) : null;
+      const currentSettlementAmounts =
+        claim.advance_claim_id
+          ? calculateSelectedSettlementAmounts(
+              Number(claim.total_amount),
+              advanceBalances.get(String(claim.advance_claim_id)) ?? 0,
+              Number(claim.advance_adjustment_amount ?? 0)
+            )
+          : null;
+
+      return {
+        claimId,
+        ticketId: claim.ticket_id ? String(claim.ticket_id) : `EXP-${claimId.slice(0, 8).toUpperCase()}`,
+        claimKind: (claim.claim_kind ?? "Reimbursement") as AuditQueueItem["claimKind"],
+        submittedBy: submitter?.fullName ?? String(claim.submitter_employee_id),
+        submittedByRole: submitter?.role ?? "Claimant",
+        siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
+        totalAmount: Number(claim.total_amount),
+        advanceAdjustmentAmount: currentSettlementAmounts?.advanceAdjusted ?? Number(claim.advance_adjustment_amount ?? 0),
+        finalPayableAmount: currentSettlementAmounts?.finalPayable ?? Number(claim.final_payable_amount ?? claim.total_amount),
+        netAdvanceLeftAmount: currentSettlementAmounts?.netAdvanceLeft ?? Number(claim.net_advance_left_amount ?? 0),
+        lineItemCount: stats.lineItemCount,
+        missingReceiptCount: stats.missingReceiptCount,
+        submittedAt,
+        daysPending,
+        urgencyLevel: daysPending > 5 ? "Overdue" as const : daysPending >= 3 ? "Attention" as const : "Normal" as const,
+        physicalReceiptRequired: claim.claim_kind !== "Advance",
+        physicalReceiptConfirmed: claim.claim_kind === "Advance" || Boolean(claim.physical_receipt_confirmed_at),
+        hasPendingBillingItems: stats.pendingBillingItemCount > 0,
+        pendingBillingItemCount: stats.pendingBillingItemCount,
+        bankAccountHolderName: submitter?.bankAccountHolderName ?? null,
+        bankAccountNumber: submitter?.bankAccountNumber ?? null,
+        bankIfsc: submitter?.bankIfsc ?? null,
+        bankName: submitter?.bankName ?? null,
+        receiptConfirmedAt: claim.physical_receipt_confirmed_at ? String(claim.physical_receipt_confirmed_at) : null,
+        auditDecisionRequired: true
+      };
+    });
+  }
+
   async listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]> {
     const db = await getSupabaseAdminClient();
     let query = db
@@ -1268,7 +1351,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .from("expense_claims")
       .select("*")
       .eq("advance_claim_id", advanceClaimId)
-      .in("status", ["Draft", "Submitted", "HodApproved", "MdApproved", "FinanceConfirmed"])
+      .in("status", ["Draft", "Submitted", "HodApproved", "MdApproved", "AuditPending", "FinanceConfirmed"])
       .neq("claim_id", excludingClaimId)
       .eq("is_deleted", false)
       .order("updated_at", { ascending: false })
@@ -1404,6 +1487,22 @@ export class SupabaseClaimRepository implements ClaimRepository {
       step_order: 2,
       required_approver_role: "Finance",
       assigned_approver_id: null,
+      decision: "Pending"
+    });
+
+    if (error) throw error;
+  }
+
+  async createAuditorApprovalStep(claimId: string): Promise<void> {
+    const db = await getSupabaseAdminClient();
+    const auditors = (await this.listEmployees()).filter((employee) => employee.role === "Auditor");
+    const assignedAuditor = auditors[0]?.employeeId ?? null;
+    const { error } = await db.from("approval_steps").insert({
+      step_id: randomUUID(),
+      claim_id: claimId,
+      step_order: 3,
+      required_approver_role: "Auditor",
+      assigned_approver_id: assignedAuditor,
       decision: "Pending"
     });
 
@@ -1645,7 +1744,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const { data, error } = await db
       .from("expense_claims")
       .select("claim_id")
-      .in("status", ["FinanceConfirmed", "PaymentReleased"])
+      .in("status", ["AuditPending", "FinanceConfirmed", "PaymentReleased"])
       .eq("is_deleted", false)
       .order("updated_at", { ascending: false })
       .limit(500);

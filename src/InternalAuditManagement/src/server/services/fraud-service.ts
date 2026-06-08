@@ -167,8 +167,8 @@ export class FraudService {
   }
 
   private assertAuditAccess(user: UserContext) {
-    if (!["FinanceHOD", "MD"].includes(user.role)) {
-      throw forbidden("Only Finance HOD or MD can access fraud review.");
+    if (!["Auditor", "MD"].includes(user.role)) {
+      throw forbidden("Only Auditor or MD can access fraud review.");
     }
   }
 }

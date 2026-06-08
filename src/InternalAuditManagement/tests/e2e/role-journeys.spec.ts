@@ -1,12 +1,13 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-type TestRole = "Claimant" | "ClusterHead" | "Finance" | "Admin";
+type TestRole = "Claimant" | "ClusterHead" | "Finance" | "FinanceHOD" | "Admin";
 
 const profiles: Record<TestRole, { userId: string; role: TestRole }> = {
   Claimant: { userId: "emp-claimant-001", role: "Claimant" },
   ClusterHead: { userId: "emp-cluster-001", role: "ClusterHead" },
   Finance: { userId: "emp-finance-001", role: "Finance" },
+  FinanceHOD: { userId: "emp-finance-hod-001", role: "FinanceHOD" },
   Admin: { userId: "emp-admin-001", role: "Admin" }
 };
 
@@ -166,6 +167,56 @@ test.describe("role journeys", () => {
     await expectAccessiblePage(page);
     await expectNoHorizontalOverflow(page);
   });
+
+  test("Finance HOD can see Audit Review must-have dashboard controls", async ({ page }) => {
+    await signInAs(page, "FinanceHOD");
+    await page.route("**/api/v1/fraud/flags?status=Open", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          openFlagsCount: 1,
+          flagsByRule: { DuplicateVoucher: 1 },
+          flags: [auditFlagFixture()]
+        })
+      });
+    });
+
+    await page.goto("/audit");
+
+    await expect(page.getByRole("heading", { level: 1, name: "Audit dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Open Risk Summary" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Risk Score Per Claim" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Aging Buckets" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Claim Status Tracker" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Reopen / Correction Tracking" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Filters" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Exception Queue" })).toBeVisible();
+    await expect(page.locator("tbody").getByText("Duplicate voucher", { exact: true }).first()).toBeVisible();
+    await expect(page.getByLabel("Employee")).toBeVisible();
+    await expect(page.getByLabel("Department / Site")).toBeVisible();
+    await expect(page.getByLabel("Claim type")).toBeVisible();
+    await expect(page.getByLabel("Expense tag")).toBeVisible();
+    await expect(page.getByLabel("Month")).toBeVisible();
+    await expect(page.getByLabel("Approver")).toBeVisible();
+    await expect(page.getByLabel("Vendor")).toBeVisible();
+    await expect(page.getByLabel("Risk type")).toBeVisible();
+    await expect(page.getByLabel("Status")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export CSV" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export PDF" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Clear" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Request clarification" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mark suspicious" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Escalate" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Assign owner" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Evidence" }).click();
+    await expect(page.getByRole("heading", { level: 3, name: "Drill-down Evidence" })).toBeVisible();
+    await expect(page.getByText("2026-06-06 | B2C - Already Billed | Demo Vendor")).toBeVisible();
+    await expect(page.getByText("Vendor VEND-100")).toBeVisible();
+    await expect(page.getByText("Approval trail")).toBeVisible();
+    await expectAccessiblePage(page);
+    await expectNoHorizontalOverflow(page);
+  });
 });
 
 function returnedClaimFixture(status: "Draft" | "Rejected") {
@@ -238,5 +289,46 @@ function returnedClaimFixture(status: "Draft" | "Rejected") {
       decisionAt: "2026-06-04T00:00:00.000Z",
       remarks: "Correct the invoice date."
     }] : []
+  };
+}
+
+function auditFlagFixture() {
+  return {
+    flagId: "flag-1",
+    primaryClaimId: "claim-audit-1",
+    relatedClaimIds: ["claim-audit-2"],
+    ruleName: "DuplicateVoucher",
+    ruleLabel: "Duplicate Voucher Suspected",
+    ruleDescription: "Matching amount and transaction date found across claims.",
+    relatedClaimCount: 1,
+    daysOpen: 4,
+    ticketId: "EXP-AUDIT-1",
+    employeeName: "Riya Sharma",
+    claimKind: "Reimbursement",
+    submissionMode: "SingleVoucher",
+    claimStatus: "Rejected",
+    statusLabel: "Returned - see reason below",
+    pendingLocation: "Claimant correction",
+    siteName: "Investor Demo Site",
+    totalAmount: 4800,
+    flaggedLineItems: [{
+      claimId: "claim-audit-1",
+      lineItemId: "line-audit-1",
+      description: "Material purchase",
+      amount: 4800,
+      transactionDate: "2026-06-06",
+      expenseTag: "AlreadyBilled",
+      clientInvoiceNumber: "CLI-100",
+      vendorName: "Demo Vendor",
+      vendorInvoiceNumber: "VEND-100",
+      missingReceiptFlag: false,
+      receiptAttachmentCount: 1
+    }],
+    approvalTrail: [{
+      role: "HOD",
+      decision: "Rejected",
+      decidedAt: "2026-06-07T10:00:00.000Z",
+      remarks: "Duplicate vendor invoice needs correction."
+    }]
   };
 }

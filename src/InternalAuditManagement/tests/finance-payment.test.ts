@@ -40,6 +40,54 @@ function advanceClaim(): ClaimDetail {
   };
 }
 
+function approvedReimbursementClaim(): ClaimDetail {
+  return {
+    ...advanceClaim(),
+    claimId: "claim-reimbursement-1",
+    ticketId: "EXP-TEST",
+    claimKind: "Reimbursement",
+    advanceAmount: 0,
+    advanceBalance: 0,
+    status: "HodApproved",
+    totalAmount: 1_500,
+    finalPayableAmount: 1_500,
+    lineItems: [{
+      lineItemId: "line-1",
+      claimId: "claim-reimbursement-1",
+      expenseHead: "Supplies",
+      description: "Office supplies",
+      amount: 1_500,
+      transactionDate: "2026-06-06",
+      paymentMode: "UPI",
+      expenseTag: "PendingBilling",
+      clientInvoiceNumber: null,
+      vendorName: "Vendor",
+      vendorInvoiceNumber: "V-1",
+      billableAmount: 1_500,
+      siteOrDepartment: null,
+      lineTicketId: null,
+      invoiceValidationStatus: "NotApplicable",
+      financeReviewStatus: "Accepted",
+      financeReviewRemarks: null,
+      billingAlertCreated: false,
+      siteId: "site-1",
+      missingReceiptFlag: false,
+      sortOrder: 0,
+      attachments: []
+    }],
+    approvalSteps: [{
+      stepId: "finance-step-1",
+      claimId: "claim-reimbursement-1",
+      stepOrder: 2,
+      requiredApproverRole: "Finance",
+      assignedApproverId: null,
+      decision: "Pending",
+      decisionAt: null,
+      remarks: null
+    }]
+  };
+}
+
 function employee(bankReady: boolean): Employee {
   return {
     employeeId: "claimant-1",
@@ -58,6 +106,16 @@ function employee(bankReady: boolean): Employee {
   };
 }
 
+function auditorEmployee(): Employee {
+  return {
+    ...employee(false),
+    employeeId: "emp-auditor-001",
+    fullName: "Internal Auditor",
+    email: "auditor@example.com",
+    role: "Auditor"
+  };
+}
+
 function repository(bankReady: boolean) {
   const claim = advanceClaim();
   return {
@@ -69,6 +127,34 @@ function repository(bankReady: boolean) {
 }
 
 describe("Finance payment release", () => {
+  it("routes confirmed physical receipts to Auditor before payment release", async () => {
+    const claim = approvedReimbursementClaim();
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      confirmPhysicalReceipt: vi.fn().mockResolvedValue({ ...claim, physicalReceiptConfirmedAt: "2026-06-08T10:00:00.000Z" }),
+      getPendingApprovalStep: vi.fn().mockResolvedValue(claim.approvalSteps[0]),
+      decideApprovalStep: vi.fn(),
+      submitClaim: vi.fn().mockResolvedValue({ ...claim, status: "AuditPending" }),
+      createAuditorApprovalStep: vi.fn(),
+      appendAuditLog: vi.fn(),
+      listEmployees: vi.fn().mockResolvedValue([auditorEmployee()])
+    } as unknown as ClaimRepository;
+    const notification = { enqueueAndSend: vi.fn().mockResolvedValue({ status: "Sent" }) } as unknown as NotificationService;
+    const service = new FinanceService(claims, notification);
+
+    const result = await service.confirmPhysicalReceipt("claim-reimbursement-1", {
+      physicalReceiptDate: "2026-06-08",
+      physicalReceiptTime: "15:30",
+      receivedByName: "Finance desk"
+    }, financeUser);
+
+    expect(result.message).toContain("Auditor");
+    expect(claims.submitClaim).toHaveBeenCalledWith("claim-reimbursement-1", "AuditPending");
+    expect(claims.createAuditorApprovalStep).toHaveBeenCalledWith("claim-reimbursement-1");
+    expect(claims.decideApprovalStep).toHaveBeenCalledWith("finance-step-1", "Approved", "Physical voucher received by Finance desk");
+    expect(notification.enqueueAndSend).toHaveBeenCalledOnce();
+  });
+
   it("blocks payment when beneficiary details are incomplete", async () => {
     const service = new FinanceService(repository(false), {
       enqueueAndSend: vi.fn()

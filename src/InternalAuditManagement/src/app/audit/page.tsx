@@ -3,7 +3,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { getUserContext, requireRole } from "@/server/auth/user-context";
 
 export default async function AuditPage() {
-  requireRole(await getUserContext(), ["FinanceHOD", "MD"]);
+  requireRole(await getUserContext(), ["Auditor", "MD"]);
   return (
     <AppShell>
       <div className="topbar">

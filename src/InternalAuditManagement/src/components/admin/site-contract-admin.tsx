@@ -30,7 +30,7 @@ type Employee = {
   employeeId: string;
   fullName: string;
   email: string;
-  role: "Claimant" | "ClusterHead" | "HOD" | "MD" | "Finance" | "BillingTeam" | "FinanceHOD" | "Admin";
+  role: "Claimant" | "ClusterHead" | "HOD" | "MD" | "Finance" | "BillingTeam" | "FinanceHOD" | "Auditor" | "Admin";
   directManagerId: string | null;
   isHod: boolean;
   approvalThresholdAmount: number;
@@ -63,7 +63,7 @@ type NotificationItem = {
 };
 
 const today = new Date().toISOString().slice(0, 10);
-const roles: Employee["role"][] = ["Claimant", "ClusterHead", "HOD", "MD", "Finance", "BillingTeam", "FinanceHOD", "Admin"];
+const roles: Employee["role"][] = ["Claimant", "ClusterHead", "HOD", "MD", "Finance", "BillingTeam", "FinanceHOD", "Auditor", "Admin"];
 
 export function SiteContractAdmin() {
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -112,7 +112,7 @@ export function SiteContractAdmin() {
   });
 
   const managerOptions = useMemo(
-    () => employees.filter((employee) => ["ClusterHead", "HOD", "MD", "FinanceHOD", "Finance"].includes(employee.role)),
+    () => employees.filter((employee) => ["ClusterHead", "HOD", "MD", "FinanceHOD", "Finance", "Auditor"].includes(employee.role)),
     [employees]
   );
   const clusterHeadOptions = useMemo(

@@ -1,6 +1,7 @@
 import { SupabaseClaimRepository } from "../repositories/supabase-claim-repository";
 import { ApprovalService } from "./approval-service";
 import { AdminService } from "./admin-service";
+import { AuditService } from "./audit-service";
 import { BillingService } from "./billing-service";
 import { ClaimService } from "./claim-service";
 import { DashboardService } from "./dashboard-service";
@@ -14,6 +15,7 @@ import { instrumentAsyncMethods } from "../observability/performance";
 let claimService: ClaimService | null = null;
 let adminService: AdminService | null = null;
 let approvalService: ApprovalService | null = null;
+let auditService: AuditService | null = null;
 let billingService: BillingService | null = null;
 let dashboardService: DashboardService | null = null;
 let financeService: FinanceService | null = null;
@@ -39,6 +41,11 @@ export function getClaimService() {
 export function getApprovalService() {
   approvalService ??= instrumentAsyncMethods(new ApprovalService(getRepository(), getNotificationService()), "service.approval");
   return approvalService;
+}
+
+export function getAuditService() {
+  auditService ??= instrumentAsyncMethods(new AuditService(getRepository(), getNotificationService()), "service.audit");
+  return auditService;
 }
 
 export function getAdminService() {

@@ -86,47 +86,37 @@ export class FinanceService {
     const claim = await this.claims.getClaimDetail(claimId);
     if (!claim) throw notFound("Claim was not found.");
 
-    if (!["HodApproved", "MdApproved", "FinanceConfirmed"].includes(claim.status)) {
+    if (!["HodApproved", "MdApproved"].includes(claim.status)) {
       throw conflict("Physical receipt can only be confirmed after operational approval.");
     }
 
     const confirmedAt = new Date(`${input.physicalReceiptDate}T${input.physicalReceiptTime}:00+05:30`).toISOString();
     const [updated, pendingStep] = await Promise.all([
       this.claims.confirmPhysicalReceipt(claimId, confirmedAt, user.userId),
-      claim.status === "FinanceConfirmed" ? Promise.resolve(null) : this.claims.getPendingApprovalStep(claimId)
+      this.claims.getPendingApprovalStep(claimId)
     ]);
 
-    if (claim.status !== "FinanceConfirmed") {
-      if (pendingStep?.requiredApproverRole === "Finance") {
-        await this.claims.decideApprovalStep(pendingStep.stepId, "Approved", `Physical voucher received by ${input.receivedByName}`);
-      }
-      const financeConfirmed = await this.claims.submitClaim(claimId, "FinanceConfirmed");
-      await Promise.all([
-        this.createBillingAlertsForClaim(claimId, user, claim),
-        this.claims.appendAuditLog({
-          claimId,
-          actorUserId: user.userId,
-          actionType: "FINANCE_CONFIRM",
-          preActionStatus: claim.status,
-          postActionStatus: financeConfirmed.status,
-          auditRemarks: `Physical voucher received by ${input.receivedByName}`,
-          correlationId: user.correlationId
-        })
-      ]);
+    if (pendingStep?.requiredApproverRole === "Finance") {
+      await this.claims.decideApprovalStep(pendingStep.stepId, "Approved", `Physical voucher received by ${input.receivedByName}`);
     }
+    const auditPending = await this.claims.submitClaim(claimId, "AuditPending");
+    await this.claims.createAuditorApprovalStep(claimId);
 
-    await this.claims.appendAuditLog({
-      claimId,
-      actorUserId: user.userId,
-      actionType: "PHYSICAL_RECEIPT_CONFIRM",
-      preActionStatus: claim.status,
-      postActionStatus: "FinanceConfirmed",
-      auditRemarks: `Physical voucher received by ${input.receivedByName}`,
-      correlationId: user.correlationId
-    });
+    await Promise.all([
+      this.claims.appendAuditLog({
+        claimId,
+        actorUserId: user.userId,
+        actionType: "PHYSICAL_RECEIPT_CONFIRM",
+        preActionStatus: claim.status,
+        postActionStatus: auditPending.status,
+        auditRemarks: `Physical voucher received by ${input.receivedByName}. Routed to Auditor for pre-payment review.`,
+        correlationId: user.correlationId
+      }),
+      this.notifyAuditors(claim)
+    ]);
 
     return {
-      message: "Physical receipt confirmed. You can now release the payment.",
+      message: "Physical receipt confirmed. Claim routed to Auditor for pre-payment review.",
       physicalReceiptConfirmedAt: updated.physicalReceiptConfirmedAt
     };
   }
@@ -265,6 +255,21 @@ export class FinanceService {
         });
       }
     }
+  }
+
+  private async notifyAuditors(claim: NonNullable<Awaited<ReturnType<ClaimRepository["getClaimDetail"]>>>) {
+    const auditors = (await this.claims.listEmployees()).filter((employee) => employee.role === "Auditor");
+    await Promise.all(
+      auditors.map((auditor) =>
+        this.notifications.enqueueAndSend({
+          recipientEmployeeId: auditor.employeeId,
+          recipientEmail: auditor.email,
+          subject: `Audit review required for ${claim.ticketId}`,
+          body: `${claim.ticketId} has a confirmed physical receipt and is waiting for Auditor review.`,
+          relatedClaimId: claim.claimId
+        })
+      )
+    );
   }
 }
 

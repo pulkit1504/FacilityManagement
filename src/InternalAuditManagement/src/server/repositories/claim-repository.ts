@@ -3,6 +3,7 @@ import type {
   ApprovalQueueItem,
   AuditActionType,
   AuditLogEntry,
+  AuditQueueItem,
   BillingAlert,
   BillingAlertQueueItem,
   BillableClaimReportRow,
@@ -112,6 +113,7 @@ export interface ClaimRepository {
   cleanupStaleRecords(cutoffIso: string): Promise<CleanupResult>;
   listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
   listFinanceQueue(): Promise<FinanceQueueItem[]>;
+  listAuditQueue(): Promise<AuditQueueItem[]>;
   listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]>;
   activeSettlementExists(advanceClaimId: string, excludingClaimId: string): Promise<boolean>;
   findActiveAdvanceAdjustment(advanceClaimId: string, excludingClaimId: string): Promise<ExpenseClaim | null>;
@@ -122,6 +124,7 @@ export interface ClaimRepository {
   reopenRejectedClaim(claimId: string): Promise<ExpenseClaim>;
   confirmPhysicalReceipt(claimId: string, confirmedAt: string, confirmedBy: string): Promise<ExpenseClaim>;
   createFinanceApprovalStep(claimId: string): Promise<void>;
+  createAuditorApprovalStep(claimId: string): Promise<void>;
   createAttachment(input: CreateAttachmentRecord): Promise<ExpenseAttachment>;
   getAttachment(attachmentId: string): Promise<ExpenseAttachment | null>;
   clearMissingReceiptFlag(lineItemId: string): Promise<void>;

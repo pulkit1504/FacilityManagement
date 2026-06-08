@@ -23,7 +23,7 @@ const links: NavLink[] = [
   { href: "/approvals", label: "Approvals", icon: "ClipboardCheck", allowedRoles: ["ClusterHead", "HOD", "MD"] satisfies UserRole[] },
   { href: "/finance", label: "Finance Queue", icon: "FileText", allowedRoles: ["Finance", "FinanceHOD"] satisfies UserRole[] },
   { href: "/billing", label: "Billing Alerts", icon: "Link2", allowedRoles: ["BillingTeam", "Finance", "FinanceHOD"] satisfies UserRole[] },
-  { href: "/audit", label: "Audit Review", icon: "ShieldCheck", allowedRoles: ["FinanceHOD", "MD"] satisfies UserRole[] },
+  { href: "/audit", label: "Audit Review", icon: "ShieldCheck", allowedRoles: ["Auditor", "MD"] satisfies UserRole[] },
   { href: "/admin", label: "Admin", icon: "Settings", allowedRoles: ["Admin"] satisfies UserRole[] }
 ];
 

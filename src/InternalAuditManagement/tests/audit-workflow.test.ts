@@ -1,0 +1,136 @@
+import { describe, expect, it, vi } from "vitest";
+import type { ClaimDetail, Employee, UserContext } from "../src/server/domain/types";
+import type { ClaimRepository } from "../src/server/repositories/claim-repository";
+import { AuditService } from "../src/server/services/audit-service";
+import type { NotificationService } from "../src/server/services/notification-service";
+
+const auditor: UserContext = {
+  userId: "emp-auditor-001",
+  role: "Auditor",
+  correlationId: "audit-test"
+};
+
+function employee(employeeId: string, role: Employee["role"]): Employee {
+  return {
+    employeeId,
+    fullName: employeeId,
+    email: `${employeeId}@example.com`,
+    role,
+    directManagerId: null,
+    isHod: false,
+    approvalThresholdAmount: 0,
+    imprestAdvanceLimit: 0,
+    bankAccountHolderName: null,
+    bankAccountNumber: null,
+    bankIfsc: null,
+    bankName: null,
+    isActive: true
+  };
+}
+
+function auditPendingClaim(): ClaimDetail {
+  return {
+    claimId: "claim-1",
+    ticketId: "EXP-000001",
+    submitterEmployeeId: "claimant-1",
+    claimKind: "Reimbursement",
+    submissionMode: "SingleVoucher",
+    proformaPeriodStart: null,
+    proformaPeriodEnd: null,
+    claimPeriodMonth: "2026-06-01",
+    advanceClaimId: null,
+    advanceAmount: 0,
+    settledAmount: 0,
+    advanceBalance: 0,
+    status: "AuditPending",
+    totalAmount: 2_000,
+    advanceAdjustmentAmount: 0,
+    finalPayableAmount: 2_000,
+    netAdvanceLeftAmount: 0,
+    siteId: "site-1",
+    rejectionReason: null,
+    physicalReceiptConfirmedAt: "2026-06-08T10:00:00.000Z",
+    physicalReceiptConfirmedBy: "emp-finance-001",
+    createdAt: "2026-06-08T00:00:00.000Z",
+    updatedAt: "2026-06-08T10:00:00.000Z",
+    lineItems: [{
+      lineItemId: "line-1",
+      claimId: "claim-1",
+      expenseHead: "Supplies",
+      description: "Supplies",
+      amount: 2_000,
+      transactionDate: "2026-06-07",
+      paymentMode: "UPI",
+      expenseTag: "PendingBilling",
+      clientInvoiceNumber: null,
+      vendorName: "Vendor",
+      vendorInvoiceNumber: "V-1",
+      billableAmount: 2_000,
+      siteOrDepartment: null,
+      lineTicketId: null,
+      invoiceValidationStatus: "NotApplicable",
+      financeReviewStatus: "Accepted",
+      financeReviewRemarks: null,
+      billingAlertCreated: false,
+      siteId: "site-1",
+      missingReceiptFlag: false,
+      sortOrder: 0,
+      attachments: []
+    }],
+    approvalSteps: [{
+      stepId: "audit-step-1",
+      claimId: "claim-1",
+      stepOrder: 3,
+      requiredApproverRole: "Auditor",
+      assignedApproverId: "emp-auditor-001",
+      decision: "Pending",
+      decisionAt: null,
+      remarks: null
+    }]
+  };
+}
+
+describe("Auditor receipt workflow", () => {
+  it("approves audit-pending claims back to FinanceConfirmed", async () => {
+    const claim = auditPendingClaim();
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      decideApprovalStep: vi.fn(),
+      submitClaim: vi.fn().mockResolvedValue({ ...claim, status: "FinanceConfirmed" }),
+      createBillingAlert: vi.fn().mockResolvedValue({ alertId: "alert-1" }),
+      appendAuditLog: vi.fn(),
+      listEmployees: vi.fn().mockResolvedValue([employee("emp-finance-001", "Finance")])
+    } as unknown as ClaimRepository;
+    const notifications = { enqueueAndSend: vi.fn().mockResolvedValue({ status: "Sent" }) } as unknown as NotificationService;
+
+    const result = await new AuditService(claims, notifications).approveClaim("claim-1", {
+      remarks: "Evidence reviewed."
+    }, auditor);
+
+    expect(result.newStatus).toBe("FinanceConfirmed");
+    expect(claims.decideApprovalStep).toHaveBeenCalledWith("audit-step-1", "Approved", "Evidence reviewed.");
+    expect(claims.createBillingAlert).toHaveBeenCalledWith(expect.objectContaining({ claimId: "claim-1", lineItemId: "line-1" }));
+    expect(notifications.enqueueAndSend).toHaveBeenCalledOnce();
+  });
+
+  it("returns pending information requests to the claimant with the auditor reason", async () => {
+    const claim = auditPendingClaim();
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      decideApprovalStep: vi.fn(),
+      rejectClaim: vi.fn().mockResolvedValue({ ...claim, status: "Rejected" }),
+      appendAuditLog: vi.fn(),
+      getEmployee: vi.fn().mockResolvedValue(employee("claimant-1", "Claimant"))
+    } as unknown as ClaimRepository;
+    const notifications = { enqueueAndSend: vi.fn().mockResolvedValue({ status: "Sent" }) } as unknown as NotificationService;
+
+    const result = await new AuditService(claims, notifications).requestInformation("claim-1", {
+      remarks: "Attach the missing signed voucher."
+    }, auditor);
+
+    expect(result.newStatus).toBe("Rejected");
+    expect(claims.rejectClaim).toHaveBeenCalledWith("claim-1", "Pending information: Attach the missing signed voucher.");
+    expect(claims.decideApprovalStep).toHaveBeenCalledWith("audit-step-1", "Rejected", "Pending information: Attach the missing signed voucher.");
+    expect(notifications.enqueueAndSend).toHaveBeenCalledOnce();
+  });
+});

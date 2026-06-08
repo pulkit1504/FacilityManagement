@@ -8,7 +8,7 @@ export class DashboardService {
   async getOverview(user: UserContext) {
     const metrics = await this.claims.getOverviewMetrics(user.userId, user.role);
     const canViewBillingMetrics = ["MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"].includes(user.role);
-    const canViewFraudFlags = ["MD", "FinanceHOD"].includes(user.role);
+    const canViewFraudFlags = ["MD", "Auditor"].includes(user.role);
 
     return {
       generatedAt: new Date().toISOString(),

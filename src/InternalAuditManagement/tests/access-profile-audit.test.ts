@@ -91,6 +91,13 @@ describe("role visibility", () => {
     const service = new FraudService({} as ClaimRepository);
     await expect(service.listFlags({ ...claimant, role: "Finance" })).rejects.toMatchObject({ status: 403 });
   });
+
+  it("allows Auditor users to review fraud flags", async () => {
+    const service = new FraudService({ listFraudFlags: vi.fn().mockResolvedValue([]) } as unknown as ClaimRepository);
+    const result = await service.listFlags({ ...claimant, role: "Auditor", userId: "auditor-1" });
+
+    expect(result.openFlagsCount).toBe(0);
+  });
 });
 
 describe("profile and audit trail", () => {

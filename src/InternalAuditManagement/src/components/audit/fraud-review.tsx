@@ -61,13 +61,31 @@ type FraudFlagItem = {
   }>;
 };
 
+type AuditClaimItem = {
+  claimId: string;
+  ticketId: string;
+  claimKind: string;
+  submittedBy: string;
+  siteName: string | null;
+  totalAmount: number;
+  finalPayableAmount: number;
+  lineItemCount: number;
+  missingReceiptCount: number;
+  daysPending: number;
+  urgencyLevel: string;
+  receiptConfirmedAt: string | null;
+  pendingBillingItemCount: number;
+};
+
 type PriorityFilter = "All" | "Critical" | "High" | "Medium";
 type AuditAction = "Cleared" | "Escalated" | "Clarification" | "Suspicious";
+type SummaryFilter = "All" | "HighRisk" | "Aging" | "PendingActions" | "Exposure" | "Evidence";
 
 const ownerOptions = ["Unassigned", "Finance HOD", "Internal Audit", "MD Office"];
 
 export function FraudReview() {
   const [flags, setFlags] = useState<FraudFlagItem[]>([]);
+  const [auditItems, setAuditItems] = useState<AuditClaimItem[]>([]);
   const [expandedFlagId, setExpandedFlagId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -84,6 +102,7 @@ export function FraudReview() {
   const [approverFilter, setApproverFilter] = useState("All");
   const [vendorFilter, setVendorFilter] = useState("All");
   const [query, setQuery] = useState("");
+  const [summaryFilter, setSummaryFilter] = useState<SummaryFilter>("All");
 
   const enrichedFlags = useMemo(() => flags.map((flag) => enrichFlag(flag)), [flags]);
   const filteredFlags = useMemo(
@@ -119,6 +138,7 @@ export function FraudReview() {
           .toLowerCase();
 
         return (
+          matchesSummaryFilter(flag, summaryFilter) &&
           (ruleFilter === "All" || flag.exceptionType === ruleFilter || flag.ruleName === ruleFilter) &&
           (priorityFilter === "All" || flag.priority === priorityFilter) &&
           (statusFilter === "All" || flag.claimStatus === statusFilter) &&
@@ -144,6 +164,7 @@ export function FraudReview() {
       query,
       ruleFilter,
       siteFilter,
+      summaryFilter,
       statusFilter,
       vendorFilter
     ]
@@ -183,17 +204,53 @@ export function FraudReview() {
   async function load() {
     try {
       setIsLoading(true);
-      const response = await fetch("/api/v1/fraud/flags?status=Open", { cache: "no-store" });
-      const data = await response.json();
-      if (!response.ok) {
-        setMessage(getProblemMessage(data, "Could not load fraud flags."));
+      const [flagsResponse, queueResponse] = await Promise.all([
+        fetch("/api/v1/fraud/flags?status=Open", { cache: "no-store" }),
+        fetch("/api/v1/audit/queue", { cache: "no-store" })
+      ]);
+      const [flagsData, queueData] = await Promise.all([flagsResponse.json(), queueResponse.json()]);
+      if (!flagsResponse.ok) {
+        setMessage(getProblemMessage(flagsData, "Could not load fraud flags."));
         return;
       }
-      setFlags(data.flags ?? []);
+      setFlags(flagsData.flags ?? []);
+      setAuditItems(queueResponse.ok ? queueData.items ?? [] : []);
+      if (!queueResponse.ok) {
+        setMessage(getProblemMessage(queueData, "Audit claim queue could not be loaded."));
+      }
     } catch {
       setMessage("Could not load fraud flags. Check your connection and try again.");
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function auditClaim(claimId: string, action: "approve" | "reject" | "request-information") {
+    const labels = {
+      approve: "Approve",
+      reject: "Reject",
+      "request-information": "Mark pending information"
+    };
+    const defaultRemark = action === "approve" ? "Audit evidence reviewed and approved for payment release." : "";
+    const remarks = window.prompt(`${labels[action]} claim - enter audit remarks`, defaultRemark);
+    if (!remarks) return;
+
+    setBusyAction(`${action}:${claimId}`);
+    setMessage(`${labels[action]} audit action in progress...`);
+    try {
+      const response = await fetch(`/api/v1/audit/claims/${claimId}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remarks })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getProblemMessage(data, "Audit action failed."));
+      setMessage(data.message ?? "Audit action recorded.");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Audit action failed.");
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -303,13 +360,84 @@ export function FraudReview() {
         </div>
         <ActionFeedback message={message} onDismiss={() => setMessage("")} />
         <div className="grid cols-3">
-          <MetricCard label="Total open flags" value={String(enrichedFlags.length)} tone={enrichedFlags.length > 0 ? "warning" : "success"} />
-          <MetricCard label="High-risk claims" value={String(highRiskFlags.length)} tone={highRiskFlags.length > 0 ? "danger" : "success"} />
-          <MetricCard label="Aging exceptions" value={String(agedFlags.length)} tone={agedFlags.length > 0 ? "warning" : "success"} />
-          <MetricCard label="Pending audit actions" value={String(filteredFlags.length)} tone={filteredFlags.length > 0 ? "warning" : "success"} />
-          <MetricCard label="Exposure under audit" value={formatCurrency(totalExposure)} tone={totalExposure > 0 ? "warning" : "success"} />
-          <MetricCard label="Evidence lines" value={String(evidenceLineCount)} tone={missingReceiptCount > 0 ? "danger" : evidenceLineCount > 0 ? "warning" : "success"} />
+          <MetricCard label="Total open flags" value={String(enrichedFlags.length)} tone={enrichedFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "All"} onClick={() => setSummaryFilter("All")} />
+          <MetricCard label="High-risk claims" value={String(highRiskFlags.length)} tone={highRiskFlags.length > 0 ? "danger" : "success"} active={summaryFilter === "HighRisk"} onClick={() => setSummaryFilter("HighRisk")} />
+          <MetricCard label="Aging exceptions" value={String(agedFlags.length)} tone={agedFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "Aging"} onClick={() => setSummaryFilter("Aging")} />
+          <MetricCard label="Pending audit actions" value={String(auditItems.length + filteredFlags.length)} tone={auditItems.length + filteredFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "PendingActions"} onClick={() => setSummaryFilter("PendingActions")} />
+          <MetricCard label="Exposure under audit" value={formatCurrency(totalExposure)} tone={totalExposure > 0 ? "warning" : "success"} active={summaryFilter === "Exposure"} onClick={() => setSummaryFilter("Exposure")} />
+          <MetricCard label="Evidence lines" value={String(evidenceLineCount)} tone={missingReceiptCount > 0 ? "danger" : evidenceLineCount > 0 ? "warning" : "success"} active={summaryFilter === "Evidence"} onClick={() => setSummaryFilter("Evidence")} />
         </div>
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <h2>Auditor Receipt Review Queue</h2>
+            <p className="muted">Finance-confirmed receipts waiting for audit approval, rejection, or pending-information return.</p>
+          </div>
+          <span className="badge warning">{auditItems.length} pending</span>
+        </div>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Claim</th>
+              <th>Claimant / site</th>
+              <th>Receipt and evidence</th>
+              <th>Amount</th>
+              <th>Auditor decision</th>
+            </tr>
+          </thead>
+          <tbody>
+            {auditItems.map((item) => (
+              <tr key={item.claimId}>
+                <td>
+                  <strong>{item.ticketId}</strong>
+                  <br />
+                  <span className="muted">{item.claimKind} | {item.daysPending} days pending</span>
+                </td>
+                <td>
+                  {item.submittedBy}
+                  <br />
+                  <span className="muted">{item.siteName ?? "No site linked"}</span>
+                </td>
+                <td>
+                  <span className={`badge ${item.missingReceiptCount > 0 ? "warning" : "success"}`}>
+                    {item.missingReceiptCount > 0 ? `${item.missingReceiptCount} missing` : "Receipts present"}
+                  </span>
+                  <br />
+                  <span className="muted">{item.lineItemCount} lines | receipt {item.receiptConfirmedAt ? "confirmed" : "not confirmed"}</span>
+                </td>
+                <td>
+                  <strong>{formatCurrency(item.finalPayableAmount)}</strong>
+                  <br />
+                  <span className="muted">{item.pendingBillingItemCount} B2C - Pending Billing</span>
+                </td>
+                <td>
+                  <div className="actions">
+                    <button className="button" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "approve")} type="button">
+                      {busyAction === `approve:${item.claimId}` ? <Loader2 size={16} /> : <CheckCircle2 size={16} />}
+                      Approve
+                    </button>
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "request-information")} type="button">
+                      {busyAction === `request-information:${item.claimId}` ? <Loader2 size={16} /> : <FileText size={16} />}
+                      Pending information
+                    </button>
+                    <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "reject")} type="button">
+                      {busyAction === `reject:${item.claimId}` ? <Loader2 size={16} /> : <AlertTriangle size={16} />}
+                      Reject
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {isLoading ? (
+              <tr><td colSpan={5}><span className="loading-inline"><Loader2 size={16} />Loading audit queue...</span></td></tr>
+            ) : null}
+            {!isLoading && auditItems.length === 0 ? (
+              <tr><td colSpan={5}>No finance-confirmed receipts are waiting for Auditor review.</td></tr>
+            ) : null}
+          </tbody>
+        </table>
       </section>
 
       <section className="panel">
@@ -663,6 +791,16 @@ function SelectField({ label, value, options, onChange, allLabel }: { label: str
       </select>
     </label>
   );
+}
+
+function matchesSummaryFilter(flag: ReturnType<typeof enrichFlag>, filter: SummaryFilter) {
+  if (filter === "All") return true;
+  if (filter === "HighRisk") return flag.priority === "Critical" || flag.priority === "High";
+  if (filter === "Aging") return flag.daysOpen >= 3;
+  if (filter === "PendingActions") return true;
+  if (filter === "Exposure") return flag.totalAmount > 0;
+  if (filter === "Evidence") return flag.flaggedLineItems.length > 0;
+  return true;
 }
 
 function enrichFlag(flag: FraudFlagItem) {

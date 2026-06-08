@@ -3,10 +3,11 @@ type MetricCardProps = {
   value: string;
   tone?: "success" | "warning" | "danger";
   active?: boolean;
+  ariaPressed?: boolean;
   onClick?: () => void;
 };
 
-export function MetricCard({ label, value, tone = "success", active = false, onClick }: MetricCardProps) {
+export function MetricCard({ label, value, tone = "success", active = false, ariaPressed, onClick }: MetricCardProps) {
   const content = (
     <>
       <span>{label}</span>
@@ -17,7 +18,7 @@ export function MetricCard({ label, value, tone = "success", active = false, onC
 
   if (onClick) {
     return (
-      <button className={`card metric metric-action${active ? " active" : ""}`} onClick={onClick} type="button">
+      <button aria-pressed={ariaPressed ?? active} className={`card metric metric-action${active ? " active" : ""}`} onClick={onClick} type="button">
         {content}
       </button>
     );

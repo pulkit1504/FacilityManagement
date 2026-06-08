@@ -267,18 +267,31 @@ describe("claim business rules", () => {
   it("explains when a returned advance adjustment cannot be reopened because another active claim exists", async () => {
     const returned = claim({
       status: "Rejected",
+      advanceClaimId: "advance-1",
       rejectionReason: "Correct the invoice date."
+    });
+    const active = claim({
+      claimId: "active-claim-1",
+      ticketId: "EXP-ACTIVE-1",
+      advanceClaimId: "advance-1",
+      status: "Draft"
     });
     const claims = {
       getClaimDetail: vi.fn().mockResolvedValue(returned),
       reopenRejectedClaim: vi.fn().mockRejectedValue({ code: "23505", message: "duplicate key value violates unique constraint" }),
+      findActiveAdvanceAdjustment: vi.fn().mockResolvedValue(active),
       appendAuditLog: vi.fn()
     } as unknown as ClaimRepository;
 
     await expect(new ClaimService(claims, notifications).reopenReturnedClaim(returned.claimId, user)).rejects.toMatchObject({
       status: 409,
-      message: "This returned claim cannot be prepared for correction because another active draft or submitted claim already exists for the same advance. Open the active claim or ask Finance to close the duplicate before correcting this one."
+      message: "This returned claim cannot be prepared for correction because EXP-ACTIVE-1 is already active for the same advance. Continue with that claim or ask Finance to close it before correcting this one.",
+      details: {
+        activeClaimId: "active-claim-1",
+        activeTicketId: "EXP-ACTIVE-1"
+      }
     });
+    expect(claims.findActiveAdvanceAdjustment).toHaveBeenCalledWith("advance-1", returned.claimId);
     expect(claims.appendAuditLog).not.toHaveBeenCalled();
   });
 

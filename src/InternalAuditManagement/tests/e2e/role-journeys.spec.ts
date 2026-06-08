@@ -97,6 +97,61 @@ test.describe("role journeys", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("Claimant sees the active claim when returned correction is blocked by an advance duplicate", async ({ page }) => {
+    await signInAs(page, "Claimant");
+
+    await page.route("**/api/v1/sites", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [{
+            siteId: "site-1",
+            siteName: "Investor Demo Site",
+            clientName: "Demo Client",
+            serviceType: "SoftServices"
+          }]
+        })
+      });
+    });
+    await page.route("**/api/v1/claims/advances", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+    });
+    await page.route("**/api/v1/claims/claim-returned-1", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(returnedClaimFixture("Rejected"))
+      });
+    });
+    await page.route("**/api/v1/claims/claim-returned-1/reopen", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        status: 409,
+        body: JSON.stringify({
+          status: 409,
+          title: "Conflict",
+          detail: "This returned claim cannot be prepared for correction because EXP-ACTIVE-1 is already active for the same advance. Continue with that claim or ask Finance to close it before correcting this one.",
+          activeClaimId: "claim-active-1",
+          activeTicketId: "EXP-ACTIVE-1"
+        })
+      });
+    });
+
+    await page.goto("/claims/claim-returned-1/edit");
+
+    await expect(page.getByText("Correction blocked")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open active claim EXP-ACTIVE-1" })).toHaveAttribute("href", "/claims/claim-active-1/edit");
+    await expect(page.getByRole("button", { name: "Try preparing again" })).toBeHidden();
+    await expect(page.getByText("Reopen first")).toBeHidden();
+    await expect(page.getByText("Use active claim")).toBeVisible();
+    await expectAccessiblePage(page);
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("Claimant can reach an accessible new-claim workflow", async ({ page }) => {
     await signInAs(page, "Claimant");
     await page.goto("/claims/new");

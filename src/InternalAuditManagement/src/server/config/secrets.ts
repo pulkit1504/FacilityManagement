@@ -20,6 +20,7 @@ const keyVaultNameMap: Record<SecretName, string> = {
 
 const cache = new Map<SecretName, Promise<string>>();
 let keyVaultClient: SecretClient | null = null;
+let coreSecretsWarmPromise: Promise<void> | null = null;
 
 export async function getRequiredSecret(name: SecretName): Promise<string> {
   const cached = cache.get(name);
@@ -37,6 +38,20 @@ export async function getOptionalSecret(name: SecretName): Promise<string | null
     return await getRequiredSecret(name);
   } catch {
     return null;
+  }
+}
+
+export async function warmCoreSecrets(): Promise<void> {
+  coreSecretsWarmPromise ??= Promise.all([
+    getRequiredSecret("SUPABASE_URL"),
+    getRequiredSecret("SUPABASE_SERVICE_ROLE_KEY")
+  ]).then(() => undefined);
+
+  try {
+    await coreSecretsWarmPromise;
+  } catch (error) {
+    coreSecretsWarmPromise = null;
+    throw error;
   }
 }
 

@@ -78,7 +78,16 @@ function databaseErrorDetail(error: { code: string; message?: string; details?: 
   }
 
   if (error.code === "23505") {
-    return "A matching record already exists.";
+    const rawText = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+    if (rawText.includes("client_invoice")) {
+      return "This client invoice number is already used on another active expense line. Use a different invoice number or edit the existing claim instead.";
+    }
+
+    if (rawText.includes("advance_claim_id") || rawText.includes("active_adjustment") || rawText.includes("settlement")) {
+      return "Another active claim already exists for this advance. Open that active claim or ask Finance to close the duplicate before continuing.";
+    }
+
+    return "A duplicate active record already exists. Check whether this claim, invoice, or advance has already been created before continuing.";
   }
 
   return error.details ?? error.message ?? "Database rejected the submitted data.";

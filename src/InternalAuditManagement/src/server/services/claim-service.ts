@@ -441,7 +441,17 @@ export class ClaimService {
       throw conflict("Only returned claims can be reopened for correction.");
     }
 
-    const updatedClaim = await this.claims.reopenRejectedClaim(claimId);
+    let updatedClaim: ExpenseClaim;
+    try {
+      updatedClaim = await this.claims.reopenRejectedClaim(claimId);
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        throw conflict(
+          "This returned claim cannot be prepared for correction because another active draft or submitted claim already exists for the same advance. Open the active claim or ask Finance to close the duplicate before correcting this one."
+        );
+      }
+      throw error;
+    }
 
     await this.claims.appendAuditLog({
       claimId,
@@ -753,6 +763,15 @@ export class ClaimService {
 
     return errors;
   }
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "23505"
+  );
 }
 
 function toCsv(headers: string[], rows: Array<Array<string | number>>) {

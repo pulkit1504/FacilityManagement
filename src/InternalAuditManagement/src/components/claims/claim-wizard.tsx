@@ -154,6 +154,8 @@ export function ClaimWizard({
   const [errorMessages, setErrorMessages] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [isLoadingClaim, setIsLoadingClaim] = useState(Boolean(initialClaimId));
+  const [isPreparingCorrection, setIsPreparingCorrection] = useState(false);
+  const [autoReopenAttemptedClaimId, setAutoReopenAttemptedClaimId] = useState<string | null>(null);
 
   const requiresSite = lineItem.expenseTag === "ContractPartCost";
   const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
@@ -630,16 +632,17 @@ export function ClaimWizard({
     }
   }
 
-  async function reopenReturnedClaim() {
+  const reopenReturnedClaim = useCallback(async (options: { automatic?: boolean } = {}) => {
     if (!claimId) return;
     setBusy(true);
+    setIsPreparingCorrection(Boolean(options.automatic));
     setMessage("");
     setErrorMessages([]);
     try {
       const response = await fetch(`/api/v1/claims/${claimId}/reopen`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) {
-        setErrorMessages(getProblemMessages(data, "Could not reopen claim."));
+        setErrorMessages(getProblemMessages(data, "Could not prepare this claim for correction."));
         return;
       }
       setSubmissionResult(null);
@@ -649,11 +652,19 @@ export function ClaimWizard({
       await loadClaimById(claimId, "Claim reopened, but could not refresh the latest claim details.");
       setMessage(data.message ?? "Claim reopened for correction.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not reopen claim.");
+      setErrorMessages([error instanceof Error ? error.message : "Could not prepare this claim for correction."]);
     } finally {
+      setIsPreparingCorrection(false);
       setBusy(false);
     }
-  }
+  }, [claimId, loadClaimById]);
+
+  useEffect(() => {
+    if (!initialClaimId || !claimId || !isReturned || autoReopenAttemptedClaimId === claimId) return;
+
+    setAutoReopenAttemptedClaimId(claimId);
+    void reopenReturnedClaim({ automatic: true });
+  }, [autoReopenAttemptedClaimId, claimId, initialClaimId, isReturned, reopenReturnedClaim]);
 
   if (isLoadingClaim) {
     return (
@@ -805,12 +816,24 @@ export function ClaimWizard({
         ) : null}
         {isReturned ? (
           <div className="return-panel" style={{ marginTop: 12 }}>
-            <strong>Returned for correction</strong>
-            <p>{rejectionReason ?? "Review the claim details and reopen it before making changes."}</p>
-            <button className="button" disabled={busy} onClick={() => void reopenReturnedClaim()} type="button">
-              <RotateCcw size={18} />
-              Reopen for correction
-            </button>
+            <strong>Preparing correction workspace</strong>
+            <p>
+              This claim was returned with this note: <strong>{rejectionReason ?? "No correction reason was provided."}</strong>
+            </p>
+            <p className="muted">
+              Opening this page automatically unlocks the claim for editing. Once ready, the line items below will become editable.
+            </p>
+            {isPreparingCorrection || busy ? (
+              <span className="loading-inline">
+                <Loader2 size={16} />
+                Preparing this claim for correction...
+              </span>
+            ) : (
+              <button className="button secondary" disabled={busy} onClick={() => void reopenReturnedClaim()} type="button">
+                <RotateCcw size={18} />
+                Try preparing again
+              </button>
+            )}
           </div>
         ) : null}
       </section>

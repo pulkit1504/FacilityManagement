@@ -27,6 +27,7 @@ import type {
   PendingAdvanceItem,
   Site
 } from "../domain/types";
+import { statusLabel } from "../domain/types";
 import type {
   AuditLogInput,
   ClaimRepository,
@@ -238,6 +239,32 @@ function mapFraudFlag(row: Record<string, unknown>): FraudFlag {
     reviewRemarks: row.review_remarks ? String(row.review_remarks) : null,
     reviewedAt: row.reviewed_at ? String(row.reviewed_at) : null
   };
+}
+
+function auditPendingLocation(claim: ClaimDetail) {
+  if (claim.status === "Draft") return "With claimant for drafting";
+  if (claim.status === "Rejected") return "With claimant for correction";
+  if (claim.status === "PaymentReleased") return "Payment released";
+
+  const pendingStep = claim.approvalSteps
+    .filter((step) => step.decision === "Pending")
+    .sort((a, b) => a.stepOrder - b.stepOrder)[0];
+  if (pendingStep) return `Pending with ${approverRoleLabel(pendingStep.requiredApproverRole)}`;
+
+  if (claim.status === "FinanceConfirmed") return "Pending payment release by Finance";
+  if (claim.status === "HodApproved" || claim.status === "MdApproved") return "Pending with Finance";
+  if (claim.status === "Submitted") return "Pending operational approval";
+  return "Status updated";
+}
+
+function approverRoleLabel(role: string) {
+  const labels: Record<string, string> = {
+    ClusterHead: "Cluster Head",
+    HOD: "HOD",
+    MD: "Managing Director",
+    Finance: "Finance"
+  };
+  return labels[role] ?? role;
 }
 
 function slugify(value: string) {
@@ -1680,8 +1707,13 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     const flags = (data ?? []).map(mapFraudFlag);
     const claimIds = flags.flatMap((flag) => [flag.primaryClaimId, ...flag.relatedClaimIds]);
-    const claims = await this.getClaimDetails(claimIds);
+    const [claims, siteNames, employees] = await Promise.all([
+      this.getClaimDetails(claimIds),
+      this.getSiteNameMap(),
+      this.listEmployees()
+    ]);
     const claimsById = new Map(claims.map((claim) => [claim.claimId, claim]));
+    const employeeNames = new Map(employees.map((employee) => [employee.employeeId, employee.fullName]));
 
     return flags.map((flag) => {
       const claim = claimsById.get(flag.primaryClaimId) ?? null;
@@ -1696,7 +1728,13 @@ export class SupabaseClaimRepository implements ClaimRepository {
         ruleDescription: ruleText.description,
         relatedClaimCount: flag.relatedClaimIds.length,
         daysOpen,
-        employeeName: claim?.submitterEmployeeId ?? "Unknown",
+        ticketId: claim?.ticketId ?? flag.primaryClaimId.slice(0, 8),
+        employeeName: claim ? employeeNames.get(claim.submitterEmployeeId) ?? claim.submitterEmployeeId : "Unknown",
+        claimStatus: claim?.status ?? "Unknown",
+        statusLabel: claim ? statusLabel(claim.status) : "Unknown",
+        pendingLocation: claim ? auditPendingLocation(claim) : "Claim detail unavailable",
+        siteName: claim?.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,
+        totalAmount: claim?.totalAmount ?? 0,
         flaggedLineItems: this.findFlaggedLineItems(flag.ruleName, claimGroup)
       };
     });
@@ -2051,6 +2089,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         transactionDate: line.transactionDate,
         expenseTag: line.expenseTag,
         clientInvoiceNumber: line.clientInvoiceNumber,
+        vendorInvoiceNumber: line.vendorInvoiceNumber,
         missingReceiptFlag: line.missingReceiptFlag
       }))
     );

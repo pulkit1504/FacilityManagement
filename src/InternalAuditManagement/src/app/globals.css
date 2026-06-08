@@ -607,6 +607,23 @@ h1 {
   padding: 12px;
 }
 
+.audit-filter-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(220px, 1.3fr) repeat(3, minmax(160px, 0.9fr));
+}
+
+.input-with-icon {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto 1fr;
+}
+
+.input-with-icon input {
+  min-width: 0;
+}
+
 @media (max-width: 860px) {
   .shell {
     grid-template-columns: 1fr;
@@ -649,6 +666,10 @@ h1 {
 
   .audit-evidence-row {
     align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .audit-filter-grid {
     grid-template-columns: 1fr;
   }
 

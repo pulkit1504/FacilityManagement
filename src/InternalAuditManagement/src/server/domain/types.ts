@@ -291,7 +291,13 @@ export type FraudFlagQueueItem = FraudFlag & {
   ruleDescription: string;
   relatedClaimCount: number;
   daysOpen: number;
+  ticketId: string;
   employeeName: string;
+  claimStatus: ClaimStatus | "Unknown";
+  statusLabel: string;
+  pendingLocation: string;
+  siteName: string | null;
+  totalAmount: number;
   flaggedLineItems: Array<{
     claimId: string;
     lineItemId: string;
@@ -300,6 +306,7 @@ export type FraudFlagQueueItem = FraudFlag & {
     transactionDate: string;
     expenseTag: ExpenseTag;
     clientInvoiceNumber: string | null;
+    vendorInvoiceNumber: string | null;
     missingReceiptFlag: boolean;
   }>;
 };

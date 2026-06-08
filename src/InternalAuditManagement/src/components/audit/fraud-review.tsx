@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
@@ -82,8 +82,18 @@ type AuditAction = "Cleared" | "Escalated" | "Clarification" | "Suspicious";
 type SummaryFilter = "All" | "HighRisk" | "Aging" | "PendingActions" | "Exposure" | "Evidence";
 
 const ownerOptions = ["Unassigned", "Finance HOD", "Internal Audit", "MD Office"];
+const summaryLabels: Record<SummaryFilter, string> = {
+  All: "Total open flags",
+  HighRisk: "High-risk claims",
+  Aging: "Aging exceptions",
+  PendingActions: "Pending audit actions",
+  Exposure: "Exposure under audit",
+  Evidence: "Evidence lines"
+};
 
 export function FraudReview() {
+  const auditorQueueRef = useRef<HTMLElement | null>(null);
+  const exceptionQueueRef = useRef<HTMLElement | null>(null);
   const [flags, setFlags] = useState<FraudFlagItem[]>([]);
   const [auditItems, setAuditItems] = useState<AuditClaimItem[]>([]);
   const [expandedFlagId, setExpandedFlagId] = useState<string | null>(null);
@@ -335,6 +345,30 @@ export function FraudReview() {
     window.print();
   }
 
+  function resetListFilters() {
+    setRuleFilter("All");
+    setPriorityFilter("All");
+    setStatusFilter("All");
+    setEmployeeFilter("All");
+    setSiteFilter("All");
+    setClaimTypeFilter("All");
+    setExpenseTagFilter("All");
+    setMonthFilter("All");
+    setApproverFilter("All");
+    setVendorFilter("All");
+    setQuery("");
+  }
+
+  function openSummaryList(filter: SummaryFilter) {
+    resetListFilters();
+    setSummaryFilter(filter);
+    setMessage(`Showing ${summaryLabels[filter]} list.`);
+    window.requestAnimationFrame(() => {
+      const target = filter === "PendingActions" && auditItems.length > 0 ? auditorQueueRef.current : exceptionQueueRef.current;
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   return (
     <div className="grid audit-dashboard" style={{ gap: 16 }}>
       <section className="panel">
@@ -360,16 +394,16 @@ export function FraudReview() {
         </div>
         <ActionFeedback message={message} onDismiss={() => setMessage("")} />
         <div className="grid cols-3">
-          <MetricCard label="Total open flags" value={String(enrichedFlags.length)} tone={enrichedFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "All"} onClick={() => setSummaryFilter("All")} />
-          <MetricCard label="High-risk claims" value={String(highRiskFlags.length)} tone={highRiskFlags.length > 0 ? "danger" : "success"} active={summaryFilter === "HighRisk"} onClick={() => setSummaryFilter("HighRisk")} />
-          <MetricCard label="Aging exceptions" value={String(agedFlags.length)} tone={agedFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "Aging"} onClick={() => setSummaryFilter("Aging")} />
-          <MetricCard label="Pending audit actions" value={String(auditItems.length + filteredFlags.length)} tone={auditItems.length + filteredFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "PendingActions"} onClick={() => setSummaryFilter("PendingActions")} />
-          <MetricCard label="Exposure under audit" value={formatCurrency(totalExposure)} tone={totalExposure > 0 ? "warning" : "success"} active={summaryFilter === "Exposure"} onClick={() => setSummaryFilter("Exposure")} />
-          <MetricCard label="Evidence lines" value={String(evidenceLineCount)} tone={missingReceiptCount > 0 ? "danger" : evidenceLineCount > 0 ? "warning" : "success"} active={summaryFilter === "Evidence"} onClick={() => setSummaryFilter("Evidence")} />
+          <MetricCard label="Total open flags" value={String(enrichedFlags.length)} tone={enrichedFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "All"} onClick={() => openSummaryList("All")} />
+          <MetricCard label="High-risk claims" value={String(highRiskFlags.length)} tone={highRiskFlags.length > 0 ? "danger" : "success"} active={summaryFilter === "HighRisk"} onClick={() => openSummaryList("HighRisk")} />
+          <MetricCard label="Aging exceptions" value={String(agedFlags.length)} tone={agedFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "Aging"} onClick={() => openSummaryList("Aging")} />
+          <MetricCard label="Pending audit actions" value={String(auditItems.length + filteredFlags.length)} tone={auditItems.length + filteredFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "PendingActions"} onClick={() => openSummaryList("PendingActions")} />
+          <MetricCard label="Exposure under audit" value={formatCurrency(totalExposure)} tone={totalExposure > 0 ? "warning" : "success"} active={summaryFilter === "Exposure"} onClick={() => openSummaryList("Exposure")} />
+          <MetricCard label="Evidence lines" value={String(evidenceLineCount)} tone={missingReceiptCount > 0 ? "danger" : evidenceLineCount > 0 ? "warning" : "success"} active={summaryFilter === "Evidence"} onClick={() => openSummaryList("Evidence")} />
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel" ref={auditorQueueRef}>
         <div className="section-heading">
           <div>
             <h2>Auditor Receipt Review Queue</h2>
@@ -556,11 +590,11 @@ export function FraudReview() {
         </div>
       </section>
 
-      <section className="panel">
+      <section className="panel" ref={exceptionQueueRef}>
         <div className="topbar" style={{ marginBottom: 12 }}>
           <div>
             <h2>Exception Queue</h2>
-            <p className="muted">Duplicate voucher, threshold split, missing receipt, backdated expense, out-of-month expense, and advance-limit breach coverage.</p>
+            <p className="muted">Showing {summaryLabels[summaryFilter]}: {filteredFlags.length} claim exception(s) from the selected Open Risk Summary tab.</p>
           </div>
           <span className="badge success">
             <Filter size={14} />

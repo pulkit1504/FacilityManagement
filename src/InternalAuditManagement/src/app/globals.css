@@ -613,6 +613,10 @@ h1 {
   grid-template-columns: minmax(220px, 1.3fr) repeat(3, minmax(160px, 0.9fr));
 }
 
+.audit-filter-grid.wide {
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+}
+
 .input-with-icon {
   align-items: center;
   display: grid;
@@ -673,11 +677,38 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .audit-filter-grid.wide {
+    grid-template-columns: 1fr;
+  }
+
   .settlement-summary {
     grid-template-columns: 1fr;
   }
 
   .admin-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media print {
+  .sidebar,
+  .button,
+  .actions select,
+  .feedback-dismiss {
+    display: none !important;
+  }
+
+  .shell {
+    display: block;
+  }
+
+  .main {
+    padding: 0;
+  }
+
+  .panel,
+  .card {
+    box-shadow: none;
+    overflow: visible;
   }
 }

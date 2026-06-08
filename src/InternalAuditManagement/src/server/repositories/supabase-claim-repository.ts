@@ -1730,12 +1730,20 @@ export class SupabaseClaimRepository implements ClaimRepository {
         daysOpen,
         ticketId: claim?.ticketId ?? flag.primaryClaimId.slice(0, 8),
         employeeName: claim ? employeeNames.get(claim.submitterEmployeeId) ?? claim.submitterEmployeeId : "Unknown",
+        claimKind: claim?.claimKind ?? "Unknown",
+        submissionMode: claim?.submissionMode ?? "Unknown",
         claimStatus: claim?.status ?? "Unknown",
         statusLabel: claim ? statusLabel(claim.status) : "Unknown",
         pendingLocation: claim ? auditPendingLocation(claim) : "Claim detail unavailable",
         siteName: claim?.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,
         totalAmount: claim?.totalAmount ?? 0,
-        flaggedLineItems: this.findFlaggedLineItems(flag.ruleName, claimGroup)
+        flaggedLineItems: this.findFlaggedLineItems(flag.ruleName, claimGroup),
+        approvalTrail: (claim?.approvalSteps ?? []).map((step) => ({
+          role: step.requiredApproverRole,
+          decision: step.decision,
+          decidedAt: step.decisionAt,
+          remarks: step.remarks
+        }))
       };
     });
   }
@@ -2089,8 +2097,10 @@ export class SupabaseClaimRepository implements ClaimRepository {
         transactionDate: line.transactionDate,
         expenseTag: line.expenseTag,
         clientInvoiceNumber: line.clientInvoiceNumber,
+        vendorName: line.vendorName,
         vendorInvoiceNumber: line.vendorInvoiceNumber,
-        missingReceiptFlag: line.missingReceiptFlag
+        missingReceiptFlag: line.missingReceiptFlag,
+        receiptAttachmentCount: line.attachments.length
       }))
     );
 

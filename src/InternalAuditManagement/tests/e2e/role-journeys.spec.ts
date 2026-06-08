@@ -41,7 +41,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 test.describe("role journeys", () => {
-  test("Claimant can reopen a returned claim and resume corrections", async ({ page }) => {
+  test("Claimant can correct a returned claim without a second reopen decision", async ({ page }) => {
     await signInAs(page, "Claimant");
     let reopened = false;
 
@@ -89,13 +89,8 @@ test.describe("role journeys", () => {
     await page.goto("/claims/claim-returned-1/edit");
 
     await expect(page.getByRole("heading", { level: 1, name: "Continue claim" })).toBeVisible();
-    await expect(page.getByText("Returned for correction")).toBeVisible();
-    await expect(page.getByText("Correct the invoice date.")).toBeVisible();
-
-    await page.getByRole("button", { name: "Reopen for correction" }).click();
-
     await expect(page.getByText("Claim reopened. Apply corrections and submit again.")).toBeVisible();
-    await expect(page.getByText("Returned for correction")).toBeHidden();
+    await expect(page.getByRole("button", { name: "Reopen for correction" })).toBeHidden();
     await expect(page.getByRole("heading", { level: 2, name: "Add Line Item" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Submit Claim" })).toBeVisible();
     await expectAccessiblePage(page);

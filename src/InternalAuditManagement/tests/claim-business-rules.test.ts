@@ -264,6 +264,24 @@ describe("claim business rules", () => {
     });
   });
 
+  it("explains when a returned advance adjustment cannot be reopened because another active claim exists", async () => {
+    const returned = claim({
+      status: "Rejected",
+      rejectionReason: "Correct the invoice date."
+    });
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(returned),
+      reopenRejectedClaim: vi.fn().mockRejectedValue({ code: "23505", message: "duplicate key value violates unique constraint" }),
+      appendAuditLog: vi.fn()
+    } as unknown as ClaimRepository;
+
+    await expect(new ClaimService(claims, notifications).reopenReturnedClaim(returned.claimId, user)).rejects.toMatchObject({
+      status: 409,
+      message: "This returned claim cannot be prepared for correction because another active draft or submitted claim already exists for the same advance. Open the active claim or ask Finance to close the duplicate before correcting this one."
+    });
+    expect(claims.appendAuditLog).not.toHaveBeenCalled();
+  });
+
   it("blocks non-claimants from reopening someone else's returned claim", async () => {
     const returned = claim({
       status: "Rejected",

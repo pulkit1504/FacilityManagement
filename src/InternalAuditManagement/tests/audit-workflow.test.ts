@@ -91,6 +91,19 @@ function auditPendingClaim(): ClaimDetail {
 }
 
 describe("Auditor receipt workflow", () => {
+  const receivedLog = {
+    auditId: "audit-receipt-1",
+    claimId: "claim-1",
+    actorUserId: auditor.userId,
+    actorName: "Auditor",
+    actionType: "AUDITOR_VOUCHERS_RECEIVED" as const,
+    preActionStatus: "AuditPending",
+    postActionStatus: "AuditPending",
+    auditRemarks: "Voucher pack received.",
+    correlationId: auditor.correlationId,
+    actionTimestamp: "2026-06-08T11:00:00.000Z"
+  };
+
   it("approves audit-pending claims back to FinanceConfirmed", async () => {
     const claim = auditPendingClaim();
     const claims = {
@@ -100,6 +113,7 @@ describe("Auditor receipt workflow", () => {
       createFinanceApprovalStep: vi.fn(),
       createBillingAlert: vi.fn().mockResolvedValue({ alertId: "alert-1" }),
       appendAuditLog: vi.fn(),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog]),
       listEmployees: vi.fn().mockResolvedValue([employee("emp-finance-001", "Finance")])
     } as unknown as ClaimRepository;
     const notifications = { enqueueAndSend: vi.fn().mockResolvedValue({ status: "Sent" }) } as unknown as NotificationService;
@@ -122,6 +136,7 @@ describe("Auditor receipt workflow", () => {
       decideApprovalStep: vi.fn(),
       rejectClaim: vi.fn().mockResolvedValue({ ...claim, status: "Rejected" }),
       appendAuditLog: vi.fn(),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog]),
       getEmployee: vi.fn().mockResolvedValue(employee("claimant-1", "Claimant"))
     } as unknown as ClaimRepository;
     const notifications = { enqueueAndSend: vi.fn().mockResolvedValue({ status: "Sent" }) } as unknown as NotificationService;
@@ -134,5 +149,26 @@ describe("Auditor receipt workflow", () => {
     expect(claims.rejectClaim).toHaveBeenCalledWith("claim-1", "Pending information: Attach the missing signed voucher.");
     expect(claims.decideApprovalStep).toHaveBeenCalledWith("audit-step-1", "Rejected", "Pending information: Attach the missing signed voucher.");
     expect(notifications.enqueueAndSend).toHaveBeenCalledOnce();
+  });
+
+  it("requires the Auditor to mark vouchers received before making a decision", async () => {
+    const claim = auditPendingClaim();
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([]),
+      appendAuditLog: vi.fn()
+    } as unknown as ClaimRepository;
+    const service = new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService);
+
+    await expect(service.approveClaim("claim-1", { remarks: "Evidence reviewed." }, auditor)).rejects.toThrow(
+      "Auditor must mark the voucher pack as received"
+    );
+
+    const result = await service.receiveVouchers("claim-1", auditor);
+    expect(result.message).toContain("marked as received");
+    expect(claims.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: "AUDITOR_VOUCHERS_RECEIVED",
+      postActionStatus: "AuditPending"
+    }));
   });
 });

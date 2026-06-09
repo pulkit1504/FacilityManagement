@@ -53,6 +53,7 @@ export const auditActionTypes = [
   "FINANCE_LINE_ACCEPT",
   "FINANCE_LINE_REJECT",
   "PHYSICAL_RECEIPT_CONFIRM",
+  "AUDITOR_VOUCHERS_RECEIVED",
   "AUDIT_APPROVE",
   "AUDIT_REJECT",
   "AUDIT_INFO_REQUEST",
@@ -213,6 +214,7 @@ export type ApprovalQueueItem = {
 export type FinanceQueueItem = ApprovalQueueItem & {
   ticketId: string;
   claimKind: ClaimKind;
+  status: ClaimStatus;
   physicalReceiptRequired: boolean;
   physicalReceiptConfirmed: boolean;
   hasPendingBillingItems: boolean;
@@ -328,6 +330,7 @@ export type FraudFlagQueueItem = FraudFlag & {
 
 export type AuditQueueItem = FinanceQueueItem & {
   receiptConfirmedAt: string | null;
+  auditorVoucherReceivedAt: string | null;
   auditDecisionRequired: boolean;
 };
 

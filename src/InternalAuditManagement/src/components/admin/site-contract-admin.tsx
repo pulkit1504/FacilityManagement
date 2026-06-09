@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, CalendarPlus, Loader2, MailCheck, Pencil, Plus, PowerOff, Save, Trash2, UserPlus, X } from "lucide-react";
+import { Building2, CalendarPlus, Download, Loader2, MailCheck, Pencil, Plus, PowerOff, Save, Trash2, Upload, UserPlus, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
@@ -64,6 +64,14 @@ type NotificationItem = {
 
 const today = new Date().toISOString().slice(0, 10);
 const roles: Employee["role"][] = ["Claimant", "ClusterHead", "HOD", "MD", "Finance", "BillingTeam", "FinanceHOD", "Auditor", "Admin"];
+type BulkUploadKind = "contracts" | "employees" | "sites" | "holidays";
+
+const bulkTemplates: Record<BulkUploadKind, string> = {
+  contracts: `clientName,description,startDate,endDate\nAcme Facilities,Annual facilities contract,2026-04-01,2027-03-31`,
+  employees: `employeeId,fullName,email,role,directManagerId,isHod,approvalThresholdAmount,imprestAdvanceLimit,bankAccountHolderName,bankAccountNumber,bankIfsc,bankName,temporaryPassword\nEMP-1001,Asha Singh,asha@example.com,Claimant,EMP-2001,false,0,25000,Asha Singh,1234567890,HDFC0001234,HDFC Bank,ChangeMe123!`,
+  sites: `siteName,siteAddress,serviceType,contractClientName,clusterHeadEmployeeId\nAcme Tower,MG Road Bengaluru,Both,Acme Facilities,EMP-2001`,
+  holidays: `holidayDate,holidayName,isNational\n2026-08-15,Independence Day,true`
+};
 
 export function SiteContractAdmin() {
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -185,6 +193,46 @@ export function SiteContractAdmin() {
     } catch {
       setMessage("Could not complete the update. Check your connection and try again.");
       return false;
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function bulkUpload(kind: BulkUploadKind, file: File | undefined) {
+    if (!file) return;
+    setBusyAction(`bulk:${kind}`);
+    setMessage(`Uploading ${kind}...`);
+    try {
+      const rows = parseCsv(await file.text());
+      if (rows.length === 0) throw new Error("The selected CSV has no data rows.");
+
+      const endpoints: Record<BulkUploadKind, string> = {
+        contracts: "/api/v1/admin/contracts",
+        employees: "/api/v1/admin/employees",
+        sites: "/api/v1/admin/sites",
+        holidays: "/api/v1/admin/holidays"
+      };
+      const errors: string[] = [];
+      let imported = 0;
+
+      for (const [index, row] of rows.entries()) {
+        const payload = bulkPayload(kind, row, contracts);
+        const response = await fetch(endpoints[kind], {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (response.ok) imported += 1;
+        else errors.push(`Row ${index + 2}: ${getProblemMessage(data, "Import failed.")}`);
+      }
+
+      await load();
+      setMessage(errors.length > 0
+        ? `Imported ${imported} ${kind}. ${errors.length} row(s) failed: ${errors.slice(0, 3).join(" | ")}`
+        : `Imported ${imported} ${kind} successfully.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `Could not upload ${kind}.`);
     } finally {
       setBusyAction(null);
     }
@@ -386,6 +434,36 @@ export function SiteContractAdmin() {
         <div><strong>{sites.length}</strong><span>Active sites</span></div>
         <div><strong>{contracts.length}</strong><span>Contracts</span></div>
         <div><strong>{notifications.filter((item) => item.status === "Queued").length}</strong><span>Queued notifications</span></div>
+      </section>
+
+      <section className="panel" aria-label="Bulk master data upload">
+        <div className="section-heading">
+          <div>
+            <h2>Bulk Master Data Upload</h2>
+            <p className="muted">Upload CSV files in this order: contracts, employees, sites, then holidays. The sample files are Excel-compatible.</p>
+          </div>
+        </div>
+        <div className="grid cols-2">
+          {(Object.keys(bulkTemplates) as BulkUploadKind[]).map((kind) => (
+            <div className="audit-evidence-row" key={kind}>
+              <div>
+                <strong>{formatBulkKind(kind)}</strong>
+                <p className="muted">Use the exact column headers from the sample file.</p>
+              </div>
+              <div className="actions">
+                <a className="button secondary" download={`${kind}-bulk-upload-sample.csv`} href={`data:text/csv;charset=utf-8,${encodeURIComponent(bulkTemplates[kind])}`}>
+                  <Download size={16} />
+                  Sample CSV
+                </a>
+                <label className="button secondary">
+                  {busyAction === `bulk:${kind}` ? <Loader2 size={16} /> : <Upload size={16} />}
+                  Upload CSV
+                  <input accept=".csv,text/csv" disabled={busyAction !== null} hidden onChange={(event) => void bulkUpload(kind, event.target.files?.[0])} type="file" />
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
       {(sitesWithoutClusterHead.length > 0 || payableEmployeesWithoutBank.length > 0 || failedNotifications.length > 0) ? (
@@ -846,4 +924,92 @@ export function SiteContractAdmin() {
 function maskAccount(value: string) {
   if (value.length <= 4) return value;
   return `****${value.slice(-4)}`;
+}
+
+function formatBulkKind(kind: BulkUploadKind) {
+  return `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`;
+}
+
+function bulkPayload(kind: BulkUploadKind, row: Record<string, string>, contracts: Contract[]) {
+  if (kind === "contracts") {
+    return {
+      clientName: row.clientName,
+      description: row.description || null,
+      startDate: row.startDate,
+      endDate: row.endDate || null
+    };
+  }
+  if (kind === "sites") {
+    const contract = contracts.find((item) => item.clientName.trim().toLowerCase() === row.contractClientName?.trim().toLowerCase());
+    if (!contract) throw new Error(`Contract client "${row.contractClientName}" was not found. Upload contracts first.`);
+    return {
+      siteName: row.siteName,
+      siteAddress: row.siteAddress || null,
+      serviceType: row.serviceType,
+      contractId: contract.contractId,
+      clusterHeadEmployeeId: row.clusterHeadEmployeeId
+    };
+  }
+  if (kind === "holidays") {
+    return {
+      holidayDate: row.holidayDate,
+      holidayName: row.holidayName,
+      isNational: toBoolean(row.isNational)
+    };
+  }
+  return {
+    employeeId: row.employeeId,
+    fullName: row.fullName,
+    email: row.email,
+    role: row.role,
+    directManagerId: row.directManagerId || null,
+    isHod: toBoolean(row.isHod),
+    approvalThresholdAmount: Number(row.approvalThresholdAmount || 0),
+    imprestAdvanceLimit: Number(row.imprestAdvanceLimit || 0),
+    bankAccountHolderName: row.bankAccountHolderName || null,
+    bankAccountNumber: row.bankAccountNumber || null,
+    bankIfsc: row.bankIfsc || null,
+    bankName: row.bankName || null,
+    temporaryPassword: row.temporaryPassword || null
+  };
+}
+
+function toBoolean(value: string) {
+  return ["true", "yes", "1"].includes(value.trim().toLowerCase());
+}
+
+function parseCsv(csv: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let index = 0; index < csv.length; index += 1) {
+    const character = csv[index];
+    if (character === '"') {
+      if (quoted && csv[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (character === "," && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && csv[index + 1] === "\n") index += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+
+  const headers = (rows.shift() ?? []).map((header) => header.replace(/^\uFEFF/, ""));
+  if (headers.length === 0) throw new Error("CSV header row is missing.");
+  return rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
 }

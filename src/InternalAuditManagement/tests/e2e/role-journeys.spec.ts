@@ -227,6 +227,9 @@ test.describe("role journeys", () => {
     await expect(cleanupButton).toBeDisabled();
     await page.getByLabel("I understand these stale records will be removed").check();
     await expect(cleanupButton).toBeEnabled();
+    await expect(page.getByRole("heading", { level: 2, name: "Bulk Master Data Upload" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Sample CSV" })).toHaveCount(4);
+    await expect(page.getByText("Upload CSV", { exact: true })).toHaveCount(4);
     await expectAccessiblePage(page);
     await expectNoHorizontalOverflow(page);
   });
@@ -256,6 +259,16 @@ test.describe("role journeys", () => {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify(auditClaimDetailFixture())
+      });
+    });
+    await page.route("**/api/v1/audit/claims/claim-audit-queue-1/receive-vouchers", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          claimId: "claim-audit-queue-1",
+          receivedAt: "2026-06-08T11:00:00.000Z",
+          message: "Voucher pack marked as received."
+        })
       });
     });
 
@@ -290,9 +303,11 @@ test.describe("role journeys", () => {
     await expect(page.getByRole("button", { name: "High-risk claims" })).toBeVisible();
     await page.getByRole("button", { name: "High-risk claims" }).click();
     await expect(page.locator("tbody").getByText("Duplicate voucher", { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approve" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Pending information" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Reject" })).toBeVisible();
+    await page.getByRole("button", { name: "Mark vouchers received" }).click();
+    await expect(page.getByRole("button", { name: "Approve" })).toBeEnabled();
     await page.getByRole("button", { name: "View receipts" }).click();
     await expect(page.getByRole("heading", { level: 3, name: "Receipt Evidence" })).toBeVisible();
     await expect(page.getByText("B2C - Already Billed | Demo Vendor | Client CLI-100 | Vendor VEND-100")).toBeVisible();
@@ -436,6 +451,7 @@ function auditQueueFixture() {
     daysPending: 1,
     urgencyLevel: "Normal",
     receiptConfirmedAt: "2026-06-08T10:00:00.000Z",
+    auditorVoucherReceivedAt: null,
     pendingBillingItemCount: 1
   };
 }

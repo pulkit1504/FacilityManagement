@@ -155,6 +155,40 @@ describe("Finance payment release", () => {
     expect(notification.enqueueAndSend).toHaveBeenCalledOnce();
   });
 
+  it("does not send a partial voucher pack to Audit", async () => {
+    const claim = approvedReimbursementClaim();
+    claim.lineItems[0].financeReviewStatus = "Pending";
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      confirmPhysicalReceipt: vi.fn(),
+      createAuditorApprovalStep: vi.fn()
+    } as unknown as ClaimRepository;
+    const service = new FinanceService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService);
+
+    await expect(service.confirmPhysicalReceipt("claim-reimbursement-1", {
+      physicalReceiptDate: "2026-06-08",
+      physicalReceiptTime: "15:30",
+      receivedByName: "Finance desk"
+    }, financeUser)).rejects.toThrow("Complete Finance review before confirming the voucher pack.");
+
+    expect(claims.confirmPhysicalReceipt).not.toHaveBeenCalled();
+    expect(claims.createAuditorApprovalStep).not.toHaveBeenCalled();
+  });
+
+  it("requires Auditor approval before releasing reimbursement payment", async () => {
+    const claim = approvedReimbursementClaim();
+    claim.status = "FinanceConfirmed";
+    claim.physicalReceiptConfirmedAt = "2026-06-08T10:00:00.000Z";
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim)
+    } as unknown as ClaimRepository;
+    const service = new FinanceService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService);
+
+    await expect(service.releasePayment(claim.claimId, financeUser)).rejects.toThrow(
+      "Auditor approval is required before payment can be released."
+    );
+  });
+
   it("blocks payment when beneficiary details are incomplete", async () => {
     const service = new FinanceService(repository(false), {
       enqueueAndSend: vi.fn()

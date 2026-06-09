@@ -279,6 +279,10 @@ function slugify(value: string) {
     .slice(0, 48);
 }
 
+function normalizeVendorName(value: string | null | undefined) {
+  return (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function mapContract(row: Record<string, unknown>): ClientContract {
   return {
     contractId: String(row.contract_id),
@@ -729,21 +733,33 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return mapLineItem(data);
   }
 
-  async invoiceReferenceExists(invoiceNumber: string, excludingLineItemId?: string): Promise<boolean> {
+  async invoiceReferenceExists(
+    invoiceNumber: string,
+    options: {
+      referenceType?: "Client" | "Vendor";
+      vendorName?: string | null;
+      excludingLineItemId?: string;
+    } = {}
+  ): Promise<boolean> {
     const db = await getSupabaseAdminClient();
+    const referenceType = options.referenceType ?? "Client";
     let query = db
       .from("expense_line_items")
-      .select("line_item_id")
-      .or(`client_invoice_number.eq.${invoiceNumber},vendor_invoice_number.eq.${invoiceNumber}`)
+      .select("line_item_id,vendor_name")
+      .eq(referenceType === "Vendor" ? "vendor_invoice_number" : "client_invoice_number", invoiceNumber)
       .eq("is_deleted", false)
-      .limit(1);
+      .limit(referenceType === "Vendor" ? 100 : 1);
 
-    if (excludingLineItemId) {
-      query = query.neq("line_item_id", excludingLineItemId);
+    if (options.excludingLineItemId) {
+      query = query.neq("line_item_id", options.excludingLineItemId);
     }
 
     const { data, error } = await query;
     if (error) throw error;
+    if (referenceType === "Vendor") {
+      const vendorName = normalizeVendorName(options.vendorName);
+      return (data ?? []).some((row) => normalizeVendorName(row.vendor_name ? String(row.vendor_name) : null) === vendorName);
+    }
     return (data ?? []).length > 0;
   }
 
@@ -1481,10 +1497,17 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
   async createFinanceApprovalStep(claimId: string): Promise<void> {
     const db = await getSupabaseAdminClient();
+    const { data: existingSteps, error: stepsError } = await db
+      .from("approval_steps")
+      .select("step_order")
+      .eq("claim_id", claimId);
+
+    if (stepsError) throw stepsError;
+    const nextStepOrder = Math.max(1, ...(existingSteps ?? []).map((step) => Number(step.step_order))) + 1;
     const { error } = await db.from("approval_steps").insert({
       step_id: randomUUID(),
       claim_id: claimId,
-      step_order: 2,
+      step_order: nextStepOrder,
       required_approver_role: "Finance",
       assigned_approver_id: null,
       decision: "Pending"

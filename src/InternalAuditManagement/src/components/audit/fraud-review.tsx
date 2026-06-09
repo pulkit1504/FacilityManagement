@@ -77,6 +77,26 @@ type AuditClaimItem = {
   pendingBillingItemCount: number;
 };
 
+type AuditReceiptDetail = {
+  ticketId: string;
+  lineItems: Array<{
+    lineItemId: string;
+    description: string;
+    amount: number;
+    expenseTag: string;
+    clientInvoiceNumber: string | null;
+    vendorName: string | null;
+    vendorInvoiceNumber: string | null;
+    missingReceiptFlag: boolean;
+    attachments: Array<{
+      attachmentId: string;
+      originalFileName: string;
+      fileSizeBytes: number;
+      uploadedAt: string;
+    }>;
+  }>;
+};
+
 type PriorityFilter = "All" | "Critical" | "High" | "Medium";
 type AuditAction = "Cleared" | "Escalated" | "Clarification" | "Suspicious";
 type SummaryFilter = "All" | "HighRisk" | "Aging" | "PendingActions" | "Exposure" | "Evidence";
@@ -96,6 +116,8 @@ export function FraudReview() {
   const exceptionQueueRef = useRef<HTMLElement | null>(null);
   const [flags, setFlags] = useState<FraudFlagItem[]>([]);
   const [auditItems, setAuditItems] = useState<AuditClaimItem[]>([]);
+  const [auditReceiptDetails, setAuditReceiptDetails] = useState<Record<string, AuditReceiptDetail>>({});
+  const [expandedAuditClaimId, setExpandedAuditClaimId] = useState<string | null>(null);
   const [expandedFlagId, setExpandedFlagId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -264,6 +286,42 @@ export function FraudReview() {
     }
   }
 
+  async function toggleAuditReceipts(claimId: string) {
+    if (expandedAuditClaimId === claimId) {
+      setExpandedAuditClaimId(null);
+      return;
+    }
+
+    setExpandedAuditClaimId(claimId);
+    if (auditReceiptDetails[claimId]) return;
+
+    setBusyAction(`audit-receipts:${claimId}`);
+    try {
+      const response = await fetch(`/api/v1/claims/${claimId}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(getProblemMessage(data, "Could not load auditor receipt evidence."));
+      setAuditReceiptDetails((current) => ({ ...current, [claimId]: data }));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load auditor receipt evidence.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function openAuditReceipt(claimId: string, lineItemId: string, attachmentId: string) {
+    setBusyAction(`audit-download:${attachmentId}`);
+    try {
+      const response = await fetch(`/api/v1/claims/${claimId}/line-items/${lineItemId}/attachments/${attachmentId}/download`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(getProblemMessage(data, "Could not open receipt."));
+      window.open(data.downloadUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not open receipt.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   useEffect(() => {
     void load();
   }, []);
@@ -423,46 +481,64 @@ export function FraudReview() {
           </thead>
           <tbody>
             {auditItems.map((item) => (
-              <tr key={item.claimId}>
-                <td>
-                  <strong>{item.ticketId}</strong>
-                  <br />
-                  <span className="muted">{item.claimKind} | {item.daysPending} days pending</span>
-                </td>
-                <td>
-                  {item.submittedBy}
-                  <br />
-                  <span className="muted">{item.siteName ?? "No site linked"}</span>
-                </td>
-                <td>
-                  <span className={`badge ${item.missingReceiptCount > 0 ? "warning" : "success"}`}>
-                    {item.missingReceiptCount > 0 ? `${item.missingReceiptCount} missing` : "Receipts present"}
-                  </span>
-                  <br />
-                  <span className="muted">{item.lineItemCount} lines | receipt {item.receiptConfirmedAt ? "confirmed" : "not confirmed"}</span>
-                </td>
-                <td>
-                  <strong>{formatCurrency(item.finalPayableAmount)}</strong>
-                  <br />
-                  <span className="muted">{item.pendingBillingItemCount} B2C - Pending Billing</span>
-                </td>
-                <td>
-                  <div className="actions">
-                    <button className="button" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "approve")} type="button">
-                      {busyAction === `approve:${item.claimId}` ? <Loader2 size={16} /> : <CheckCircle2 size={16} />}
-                      Approve
-                    </button>
-                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "request-information")} type="button">
-                      {busyAction === `request-information:${item.claimId}` ? <Loader2 size={16} /> : <FileText size={16} />}
-                      Pending information
-                    </button>
-                    <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "reject")} type="button">
-                      {busyAction === `reject:${item.claimId}` ? <Loader2 size={16} /> : <AlertTriangle size={16} />}
-                      Reject
-                    </button>
-                  </div>
-                </td>
-              </tr>
+              <Fragment key={item.claimId}>
+                <tr>
+                  <td>
+                    <strong>{item.ticketId}</strong>
+                    <br />
+                    <span className="muted">{item.claimKind} | {item.daysPending} days pending</span>
+                  </td>
+                  <td>
+                    {item.submittedBy}
+                    <br />
+                    <span className="muted">{item.siteName ?? "No site linked"}</span>
+                  </td>
+                  <td>
+                    <span className={`badge ${item.missingReceiptCount > 0 ? "warning" : "success"}`}>
+                      {item.missingReceiptCount > 0 ? `${item.missingReceiptCount} missing` : "Receipts present"}
+                    </span>
+                    <br />
+                    <span className="muted">{item.lineItemCount} lines | receipt {item.receiptConfirmedAt ? "confirmed" : "not confirmed"}</span>
+                  </td>
+                  <td>
+                    <strong>{formatCurrency(item.finalPayableAmount)}</strong>
+                    <br />
+                    <span className="muted">{item.pendingBillingItemCount} B2C - Pending Billing</span>
+                  </td>
+                  <td>
+                    <div className="actions">
+                      <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void toggleAuditReceipts(item.claimId)} type="button">
+                        {busyAction === `audit-receipts:${item.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
+                        {expandedAuditClaimId === item.claimId ? "Hide receipts" : "View receipts"}
+                      </button>
+                      <button className="button" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "approve")} type="button">
+                        {busyAction === `approve:${item.claimId}` ? <Loader2 size={16} /> : <CheckCircle2 size={16} />}
+                        Approve
+                      </button>
+                      <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "request-information")} type="button">
+                        {busyAction === `request-information:${item.claimId}` ? <Loader2 size={16} /> : <FileText size={16} />}
+                        Pending information
+                      </button>
+                      <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "reject")} type="button">
+                        {busyAction === `reject:${item.claimId}` ? <Loader2 size={16} /> : <AlertTriangle size={16} />}
+                        Reject
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                {expandedAuditClaimId === item.claimId ? (
+                  <tr>
+                    <td colSpan={5}>
+                      <AuditReceiptPanel
+                        claimId={item.claimId}
+                        detail={auditReceiptDetails[item.claimId]}
+                        isLoading={busyAction === `audit-receipts:${item.claimId}`}
+                        onOpenReceipt={openAuditReceipt}
+                      />
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
             ))}
             {isLoading ? (
               <tr><td colSpan={5}><span className="loading-inline"><Loader2 size={16} />Loading audit queue...</span></td></tr>
@@ -782,6 +858,54 @@ function EvidencePanel({ flag, owner }: { flag: ReturnType<typeof enrichFlag>; o
           {(flag.approvalTrail ?? []).length === 0 ? <span className="muted">No approval trail available for this claim yet.</span> : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function AuditReceiptPanel({
+  claimId,
+  detail,
+  isLoading,
+  onOpenReceipt
+}: {
+  claimId: string;
+  detail: AuditReceiptDetail | undefined;
+  isLoading: boolean;
+  onOpenReceipt: (claimId: string, lineItemId: string, attachmentId: string) => Promise<void>;
+}) {
+  if (isLoading || !detail) {
+    return <span className="loading-inline"><Loader2 size={16} />Loading receipt evidence...</span>;
+  }
+
+  return (
+    <div className="grid" style={{ gap: 12 }}>
+      <h3>Receipt Evidence</h3>
+      {detail.lineItems.map((line) => (
+        <div className="audit-evidence-row" key={line.lineItemId}>
+          <div>
+            <strong>{line.description}</strong>
+            <p className="muted">
+              {expenseTagLabel(line.expenseTag)} | {line.vendorName ?? "No vendor"} | {invoiceReferenceLabel(line.clientInvoiceNumber, line.vendorInvoiceNumber)}
+            </p>
+          </div>
+          <div>
+            <strong>{formatCurrency(line.amount)}</strong>
+            <p className="muted">{line.attachments.length} receipt attachment(s)</p>
+          </div>
+          <div className="actions">
+            <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
+              {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
+            </span>
+            {line.attachments.map((attachment) => (
+              <button className="button secondary" key={attachment.attachmentId} onClick={() => void onOpenReceipt(claimId, line.lineItemId, attachment.attachmentId)} type="button">
+                <Download size={16} />
+                {attachment.originalFileName}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {detail.lineItems.length === 0 ? <span className="muted">No line items are available for this audit claim.</span> : null}
     </div>
   );
 }

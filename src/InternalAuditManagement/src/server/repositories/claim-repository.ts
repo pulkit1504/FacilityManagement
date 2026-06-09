@@ -94,7 +94,14 @@ export interface ClaimRepository {
   updateLineItem(claimId: string, lineItemId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
   reviewLineItem(claimId: string, lineItemId: string, decision: "Accepted" | "Rejected", remarks?: string | null): Promise<ExpenseLineItem>;
   deleteLineItem(claimId: string, lineItemId: string): Promise<void>;
-  invoiceReferenceExists(invoiceNumber: string, excludingLineItemId?: string): Promise<boolean>;
+  invoiceReferenceExists(
+    invoiceNumber: string,
+    options?: {
+      referenceType?: "Client" | "Vendor";
+      vendorName?: string | null;
+      excludingLineItemId?: string;
+    }
+  ): Promise<boolean>;
   submitClaim(claimId: string, nextStatus: ClaimStatus): Promise<ExpenseClaim>;
   updateClaimTotal(claimId: string): Promise<void>;
   updateSettlementAdjustment(claimId: string, advanceClaimId: string, totalAmount: number, openAdvanceBalance: number, adjustmentAmount: number): Promise<ExpenseClaim>;

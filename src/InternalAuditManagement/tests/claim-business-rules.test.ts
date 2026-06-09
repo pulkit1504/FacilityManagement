@@ -141,11 +141,13 @@ describe("claim business rules", () => {
     expect(result.lineItemId).toBe("line-1");
   });
 
-  it("checks both client and vendor invoice numbers for duplicates", async () => {
+  it("checks client invoice globally and vendor invoice within the same vendor", async () => {
     const draft = claim();
     const claims = {
       getClaimDetail: vi.fn().mockResolvedValue(draft),
-      invoiceReferenceExists: vi.fn(async (invoiceNumber: string) => invoiceNumber === "VENDOR-DUPLICATE")
+      invoiceReferenceExists: vi.fn(async (invoiceNumber: string, options?: { referenceType?: "Client" | "Vendor"; vendorName?: string | null }) =>
+        invoiceNumber === "VENDOR-DUPLICATE" && options?.referenceType === "Vendor" && options.vendorName === "Demo Vendor"
+      )
     } as unknown as ClaimRepository;
 
     await expect(
@@ -155,13 +157,41 @@ describe("claim business rules", () => {
           expenseTag: "AlreadyBilled",
           transactionDate: "2026-06-03",
           clientInvoiceNumber: "CLIENT-UNIQUE",
+          vendorName: "Demo Vendor",
           vendorInvoiceNumber: "VENDOR-DUPLICATE"
         })),
         user
       )
     ).rejects.toMatchObject({ message: "Duplicate invoice number detected." });
-    expect(claims.invoiceReferenceExists).toHaveBeenCalledWith("CLIENT-UNIQUE", undefined);
-    expect(claims.invoiceReferenceExists).toHaveBeenCalledWith("VENDOR-DUPLICATE", undefined);
+    expect(claims.invoiceReferenceExists).toHaveBeenCalledWith("CLIENT-UNIQUE", { referenceType: "Client", excludingLineItemId: undefined });
+    expect(claims.invoiceReferenceExists).toHaveBeenCalledWith("VENDOR-DUPLICATE", {
+      referenceType: "Vendor",
+      vendorName: "Demo Vendor",
+      excludingLineItemId: undefined
+    });
+  });
+
+  it("allows the same vendor invoice number for a different vendor", async () => {
+    const draft = claim();
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(draft),
+      invoiceReferenceExists: vi.fn(async () => false),
+      addLineItem: vi.fn().mockResolvedValue({ lineItemId: "line-1" })
+    } as unknown as ClaimRepository;
+
+    await new ClaimService(claims, notifications).addLineItem(
+      draft.claimId,
+      createLineItemSchema.parse(line({
+        expenseTag: "AlreadyBilled",
+        transactionDate: "2026-06-03",
+        clientInvoiceNumber: "CLIENT-UNIQUE-2",
+        vendorName: "Different Vendor",
+        vendorInvoiceNumber: "VENDOR-DUPLICATE"
+      })),
+      user
+    );
+
+    expect(claims.addLineItem).toHaveBeenCalledOnce();
   });
 
   it("blocks single voucher dates more than 20 days old", async () => {

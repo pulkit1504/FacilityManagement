@@ -66,7 +66,12 @@ export class ReceiptService {
     const claim = await this.claims.getClaimDetail(input.claimId);
     if (!claim) throw notFound("Claim was not found.");
 
-    if (claim.submitterEmployeeId !== user.userId && !["ClusterHead", "HOD", "MD", "Finance", "FinanceHOD"].includes(user.role)) {
+    const auditorCanReviewClaim = user.role === "Auditor" && claim.approvalSteps.some(
+      (step) => step.requiredApproverRole === "Auditor"
+        && step.decision === "Pending"
+        && (!step.assignedApproverId || step.assignedApproverId === user.userId)
+    );
+    if (claim.submitterEmployeeId !== user.userId && !["ClusterHead", "HOD", "MD", "Finance", "FinanceHOD"].includes(user.role) && !auditorCanReviewClaim) {
       throw forbidden("You do not have access to this receipt.");
     }
 

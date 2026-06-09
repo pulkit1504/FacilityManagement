@@ -609,6 +609,15 @@ export class ClaimService {
       return;
     }
 
+    const auditorCanReviewClaim = user.role === "Auditor" && claim.approvalSteps.some(
+      (step) => step.requiredApproverRole === "Auditor"
+        && step.decision === "Pending"
+        && (!step.assignedApproverId || step.assignedApproverId === user.userId)
+    );
+    if (auditorCanReviewClaim) {
+      return;
+    }
+
     throw forbidden("You can only view claims you are allowed to access.");
   }
 
@@ -733,15 +742,24 @@ export class ClaimService {
   }
 
   private async assertInvoiceReferenceIsUnique(input: CreateLineItemInput, excludingLineItemId?: string) {
-    const invoiceNumbers = [
-      input.clientInvoiceNumber?.trim(),
-      input.vendorInvoiceNumber?.trim()
-    ].filter((invoiceNumber): invoiceNumber is string => Boolean(invoiceNumber));
-
-    for (const invoiceNumber of invoiceNumbers) {
-      if (await this.claims.invoiceReferenceExists(invoiceNumber, excludingLineItemId)) {
+    const clientInvoiceNumber = input.clientInvoiceNumber?.trim();
+    if (clientInvoiceNumber) {
+      if (await this.claims.invoiceReferenceExists(clientInvoiceNumber, { referenceType: "Client", excludingLineItemId })) {
         throw conflict("Duplicate invoice number detected.", {
-          errors: [`Invoice number ${invoiceNumber} is already used on another claim line.`]
+          errors: [`Client invoice number ${clientInvoiceNumber} is already used on another claim line.`]
+        });
+      }
+    }
+
+    const vendorInvoiceNumber = input.vendorInvoiceNumber?.trim();
+    if (vendorInvoiceNumber) {
+      if (await this.claims.invoiceReferenceExists(vendorInvoiceNumber, {
+        referenceType: "Vendor",
+        vendorName: input.vendorName?.trim() || null,
+        excludingLineItemId
+      })) {
+        throw conflict("Duplicate invoice number detected.", {
+          errors: [`Vendor invoice number ${vendorInvoiceNumber} is already used for this vendor.`]
         });
       }
     }

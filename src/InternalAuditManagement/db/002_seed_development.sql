@@ -12,7 +12,6 @@ insert into employees (
   ('emp-cluster-001', 'Cluster Head', 'clusterhead@example.com', 'ClusterHead', 'emp-hod-001', false, 0),
   ('emp-hod-001', 'Operations HOD', 'hod@example.com', 'HOD', 'emp-md-001', true, 5000),
   ('emp-claimant-001', 'Site Supervisor', 'claimant@example.com', 'Claimant', 'emp-hod-001', false, 0),
-  ('emp-finance-hod-001', 'Finance HOD', 'finance.hod@example.com', 'FinanceHOD', 'emp-md-001', false, 0),
   ('emp-finance-001', 'Finance User', 'finance@example.com', 'Finance', 'emp-md-001', false, 0),
   ('emp-billing-001', 'Billing User', 'billing@example.com', 'BillingTeam', 'emp-finance-001', false, 0)
 on conflict (employee_id) do nothing;

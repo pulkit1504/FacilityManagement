@@ -46,6 +46,12 @@ export class ApprovalService {
     const nextOperationalStep = claim.approvalSteps
       .filter((item) => item.decision === "Pending" && item.stepId !== step.stepId)
       .sort((a, b) => a.stepOrder - b.stepOrder)[0];
+    const approvalScope = step.lineItemId
+      ? claim.lineItems.find((item) => item.lineItemId === step.lineItemId)
+      : null;
+    const scopeText = approvalScope
+      ? ` Cash line "${approvalScope.description}" for Rs ${approvalScope.amount.toLocaleString("en-IN")} was approved by MD.`
+      : "";
 
     if (nextOperationalStep) {
       await Promise.all([
@@ -56,7 +62,7 @@ export class ApprovalService {
           actionType: approvalActionType(user.role),
           preActionStatus: claim.status,
           postActionStatus: claim.status,
-          auditRemarks: input.remarks ?? `Approved and routed to ${nextOperationalStep.requiredApproverRole}.`,
+          auditRemarks: input.remarks ?? `Approved and routed to ${nextOperationalStep.requiredApproverRole}.${scopeText}`,
           correlationId: user.correlationId
         })
       ]);
@@ -68,7 +74,7 @@ export class ApprovalService {
             recipientEmployeeId: nextApprover.employeeId,
             recipientEmail: nextApprover.email,
             subject: `Claim ${claim.ticketId} is pending your approval`,
-            body: `Claim ${claim.ticketId} for Rs ${claim.totalAmount.toLocaleString("en-IN")} has been routed to you.`,
+            body: `Claim ${claim.ticketId} for Rs ${claim.totalAmount.toLocaleString("en-IN")} has been routed to you.${nextOperationalStep.lineItemId ? " The MD approval is limited to a cash line item above Rs 10,000." : ""}`,
             relatedClaimId: claimId
           });
         }
@@ -96,13 +102,13 @@ export class ApprovalService {
         actionType: approvalActionType(user.role),
         preActionStatus: claim.status,
         postActionStatus: updated.status,
-        auditRemarks: input.remarks ?? null,
+        auditRemarks: input.remarks ?? (scopeText.trim() || null),
         correlationId: user.correlationId
       })
     ]);
 
     const employees = await this.claims.listEmployees();
-    const financeRecipients = employees.filter((employee) => ["Finance", "FinanceHOD"].includes(employee.role));
+    const financeRecipients = employees.filter((employee) => employee.role === "Finance");
     await Promise.all(
       financeRecipients.map((employee) =>
         this.notifications.enqueueAndSend({
@@ -131,7 +137,7 @@ export class ApprovalService {
     const step = claim.approvalSteps.find((item) => item.decision === "Pending");
     if (!step) throw conflict("This claim has no pending approval step.");
 
-    const isFinanceStep = step.requiredApproverRole === "Finance" && ["Finance", "FinanceHOD"].includes(user.role);
+    const isFinanceStep = step.requiredApproverRole === "Finance" && user.role === "Finance";
     const isAssignedOperationalApprover = step.requiredApproverRole === user.role && step.assignedApproverId === user.userId;
 
     if (!isFinanceStep && !isAssignedOperationalApprover) {

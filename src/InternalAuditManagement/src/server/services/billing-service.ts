@@ -43,7 +43,7 @@ export class BillingService {
   }
 
   private assertBillingAccess(user: UserContext) {
-    if (!["BillingTeam", "Finance", "FinanceHOD"].includes(user.role)) {
+    if (!["BillingTeam", "Finance"].includes(user.role)) {
       throw forbidden("Only Billing or Finance users can access billing alerts.");
     }
   }

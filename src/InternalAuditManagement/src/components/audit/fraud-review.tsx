@@ -103,7 +103,7 @@ type PriorityFilter = "All" | "Critical" | "High" | "Medium";
 type AuditAction = "Cleared" | "Escalated" | "Clarification" | "Suspicious";
 type SummaryFilter = "All" | "HighRisk" | "Aging" | "PendingActions" | "Exposure" | "Evidence";
 
-const ownerOptions = ["Unassigned", "Finance HOD", "Internal Audit", "MD Office"];
+const ownerOptions = ["Unassigned", "Finance", "Internal Audit", "MD Office"];
 const summaryLabels: Record<SummaryFilter, string> = {
   All: "Total open flags",
   HighRisk: "High-risk claims",

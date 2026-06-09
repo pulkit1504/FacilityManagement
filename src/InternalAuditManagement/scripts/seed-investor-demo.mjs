@@ -133,17 +133,6 @@ async function seedReferenceData(db) {
         is_active: true
       },
       {
-        employee_id: "emp-finance-hod-001",
-        full_name: "Finance HOD",
-        email: "financehod@example.com",
-        role: "FinanceHOD",
-        direct_manager_id: "emp-md-001",
-        is_hod: false,
-        approval_threshold_amount: 0,
-        imprest_advance_limit: 0,
-        is_active: true
-      },
-      {
         employee_id: "emp-auditor-001",
         full_name: "Internal Auditor",
         email: "auditor@example.com",

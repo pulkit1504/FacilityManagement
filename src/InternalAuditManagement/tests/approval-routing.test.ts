@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ClaimDetail, Employee, Site, UserContext } from "../src/server/domain/types";
 import type { ClaimRepository } from "../src/server/repositories/claim-repository";
 import { ClaimService } from "../src/server/services/claim-service";
+import { ApprovalService } from "../src/server/services/approval-service";
 import type { NotificationService } from "../src/server/services/notification-service";
 
 const claimantUser: UserContext = { userId: "claimant-1", role: "Claimant", correlationId: "routing-test" };
@@ -127,7 +128,7 @@ describe("approval routing rules", () => {
     ]);
   });
 
-  it("routes cash reimbursement above Rs 10,000 directly to MD", async () => {
+  it("adds line-specific MD approval after Cluster Head and HOD for a cash line above Rs 10,000", async () => {
     const claim = draft();
     const claims = repository(claim, [
       employee("claimant-1", "Claimant", "cluster-1"),
@@ -139,8 +140,61 @@ describe("approval routing rules", () => {
     await new ClaimService(claims, notifications).submitClaim(claim.claimId, claimantUser, true);
 
     expect(claims.createApprovalSteps).toHaveBeenCalledWith([
-      expect.objectContaining({ stepOrder: 1, requiredApproverRole: "MD", assignedApproverId: "md-1" })
+      expect.objectContaining({ stepOrder: 1, requiredApproverRole: "ClusterHead", assignedApproverId: "cluster-1", lineItemId: null }),
+      expect.objectContaining({ stepOrder: 2, requiredApproverRole: "HOD", assignedApproverId: "hod-1", lineItemId: null }),
+      expect.objectContaining({ stepOrder: 3, requiredApproverRole: "MD", assignedApproverId: "md-1", lineItemId: "line-1" })
     ]);
+  });
+
+  it("does not add MD approval when total cash exceeds Rs 10,000 but no individual line does", async () => {
+    const firstLine = { ...draft().lineItems[0], lineItemId: "line-1", amount: 6_000 };
+    const secondLine = { ...firstLine, lineItemId: "line-2", amount: 6_000 };
+    const claim = draft({ lineItems: [firstLine, secondLine] });
+    const claims = repository(claim, [
+      employee("claimant-1", "Claimant", "cluster-1"),
+      employee("cluster-1", "ClusterHead", "hod-1"),
+      employee("hod-1", "HOD", "md-1", true),
+      employee("md-1", "MD")
+    ]);
+
+    await new ClaimService(claims, notifications).submitClaim(claim.claimId, claimantUser, true);
+
+    expect(claims.createApprovalSteps).toHaveBeenCalledWith([
+      expect.objectContaining({ requiredApproverRole: "ClusterHead" }),
+      expect.objectContaining({ requiredApproverRole: "HOD" })
+    ]);
+  });
+
+  it("routes final MD approval to Finance instead of payment processing", async () => {
+    const claim = draft({
+      status: "Submitted",
+      approvalSteps: [{
+        stepId: "md-step",
+        claimId: "claim-1",
+        lineItemId: "line-1",
+        stepOrder: 3,
+        requiredApproverRole: "MD",
+        assignedApproverId: "md-1",
+        decision: "Pending",
+        decisionAt: null,
+        remarks: null
+      }]
+    });
+    const mdUser: UserContext = { userId: "md-1", role: "MD", correlationId: "md-routing-test" };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      decideApprovalStep: vi.fn(),
+      submitClaim: vi.fn().mockResolvedValue({ ...claim, status: "MdApproved" }),
+      createFinanceApprovalStep: vi.fn(),
+      appendAuditLog: vi.fn(),
+      listEmployees: vi.fn().mockResolvedValue([employee("finance-1", "Finance")])
+    } as unknown as ClaimRepository;
+
+    const result = await new ApprovalService(claims, notifications).approveClaim(claim.claimId, {}, mdUser);
+
+    expect(claims.submitClaim).toHaveBeenCalledWith(claim.claimId, "MdApproved");
+    expect(claims.createFinanceApprovalStep).toHaveBeenCalledWith(claim.claimId);
+    expect(result.nextAction).toBe("Routed to Finance team");
   });
 
   it("routes an HOD advance below Rs 4 lakh directly to Finance", async () => {

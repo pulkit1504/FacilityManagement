@@ -914,6 +914,10 @@ export function ClaimWizard({
                 <input value={lineItem.vendorName} onChange={(event) => setLineItem({ ...lineItem, vendorName: event.target.value })} />
               </label>
               <label>
+                <span className="muted">Vendor invoice number</span>
+                <input value={lineItem.vendorInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, vendorInvoiceNumber: event.target.value })} />
+              </label>
+              <label>
                 <span className="muted">Expense tag</span>
                 <select
                   value={lineItem.expenseTag}
@@ -941,10 +945,6 @@ export function ClaimWizard({
                   <input value={lineItem.clientInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, clientInvoiceNumber: event.target.value })} />
                 </label>
               ) : null}
-              <label>
-                <span className="muted">Vendor invoice number</span>
-                <input value={lineItem.vendorInvoiceNumber} onChange={(event) => setLineItem({ ...lineItem, vendorInvoiceNumber: event.target.value })} />
-              </label>
               {requiresBillableAmount ? (
                 <label>
                   <span className="muted">Billable amount</span>

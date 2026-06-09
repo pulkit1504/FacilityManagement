@@ -90,6 +90,13 @@ export class FinanceService {
       throw conflict("Physical receipt can only be confirmed after operational approval.");
     }
 
+    const unaccepted = claim.lineItems.filter((item) => item.financeReviewStatus !== "Accepted");
+    if (unaccepted.length > 0) {
+      throw conflict("Complete Finance review before confirming the voucher pack.", {
+        errors: [`${unaccepted.length} line item(s) still need Finance acceptance.`]
+      });
+    }
+
     const confirmedAt = new Date(`${input.physicalReceiptDate}T${input.physicalReceiptTime}:00+05:30`).toISOString();
     const [updated, pendingStep] = await Promise.all([
       this.claims.confirmPhysicalReceipt(claimId, confirmedAt, user.userId),
@@ -168,6 +175,13 @@ export class FinanceService {
     }
 
     if (claim.claimKind !== "Advance") {
+      const auditorApproved = claim.approvalSteps.some(
+        (step) => step.requiredApproverRole === "Auditor" && step.decision === "Approved"
+      );
+      if (!auditorApproved) {
+        throw conflict("Auditor approval is required before payment can be released.");
+      }
+
       const unaccepted = claim.lineItems.filter((item) => item.financeReviewStatus !== "Accepted");
       if (unaccepted.length > 0) {
         throw conflict("All line items must be accepted by Finance before payment release.", {

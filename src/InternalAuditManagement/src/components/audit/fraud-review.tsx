@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   BarChart3,
   CheckCircle2,
+  ClipboardCheck,
   Clock3,
   Download,
   Eye,
@@ -74,6 +75,7 @@ type AuditClaimItem = {
   daysPending: number;
   urgencyLevel: string;
   receiptConfirmedAt: string | null;
+  auditorVoucherReceivedAt: string | null;
   pendingBillingItemCount: number;
 };
 
@@ -281,6 +283,24 @@ export function FraudReview() {
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Audit action failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function receiveAuditVouchers(claimId: string) {
+    setBusyAction(`receive-vouchers:${claimId}`);
+    setMessage("Marking voucher pack as received...");
+    try {
+      const response = await fetch(`/api/v1/audit/claims/${claimId}/receive-vouchers`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getProblemMessage(data, "Could not mark voucher pack as received."));
+      setAuditItems((current) => current.map((item) => (
+        item.claimId === claimId ? { ...item, auditorVoucherReceivedAt: data.receivedAt } : item
+      )));
+      setMessage(data.message ?? "Voucher pack marked as received.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not mark voucher pack as received.");
     } finally {
       setBusyAction(null);
     }
@@ -499,6 +519,7 @@ export function FraudReview() {
                     </span>
                     <br />
                     <span className="muted">{item.lineItemCount} lines | receipt {item.receiptConfirmedAt ? "confirmed" : "not confirmed"}</span>
+                    {item.receiptConfirmedAt ? <><br /><span className="muted">Finance: {formatTimestamp(item.receiptConfirmedAt)}</span></> : null}
                   </td>
                   <td>
                     <strong>{formatCurrency(item.finalPayableAmount)}</strong>
@@ -511,15 +532,21 @@ export function FraudReview() {
                         {busyAction === `audit-receipts:${item.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
                         {expandedAuditClaimId === item.claimId ? "Hide receipts" : "View receipts"}
                       </button>
-                      <button className="button" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "approve")} type="button">
+                      {item.claimKind !== "Advance" ? (
+                        <button className="button secondary" disabled={Boolean(busyAction) || Boolean(item.auditorVoucherReceivedAt)} onClick={() => void receiveAuditVouchers(item.claimId)} type="button">
+                          {busyAction === `receive-vouchers:${item.claimId}` ? <Loader2 size={16} /> : <ClipboardCheck size={16} />}
+                          {item.auditorVoucherReceivedAt ? `Received ${formatTimestamp(item.auditorVoucherReceivedAt)}` : "Mark vouchers received"}
+                        </button>
+                      ) : null}
+                      <button className="button" disabled={Boolean(busyAction) || (item.claimKind !== "Advance" && !item.auditorVoucherReceivedAt)} onClick={() => void auditClaim(item.claimId, "approve")} type="button">
                         {busyAction === `approve:${item.claimId}` ? <Loader2 size={16} /> : <CheckCircle2 size={16} />}
                         Approve
                       </button>
-                      <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "request-information")} type="button">
+                      <button className="button secondary" disabled={Boolean(busyAction) || (item.claimKind !== "Advance" && !item.auditorVoucherReceivedAt)} onClick={() => void auditClaim(item.claimId, "request-information")} type="button">
                         {busyAction === `request-information:${item.claimId}` ? <Loader2 size={16} /> : <FileText size={16} />}
                         Pending information
                       </button>
-                      <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void auditClaim(item.claimId, "reject")} type="button">
+                      <button className="button danger" disabled={Boolean(busyAction) || (item.claimKind !== "Advance" && !item.auditorVoucherReceivedAt)} onClick={() => void auditClaim(item.claimId, "reject")} type="button">
                         {busyAction === `reject:${item.claimId}` ? <Loader2 size={16} /> : <AlertTriangle size={16} />}
                         Reject
                       </button>
@@ -846,7 +873,7 @@ function EvidencePanel({ flag, owner }: { flag: ReturnType<typeof enrichFlag>; o
             <div className="audit-evidence-row" key={`${step.role}-${index}`}>
               <div>
                 <strong>{step.role}</strong>
-                <p className="muted">{step.decision} {step.decidedAt ? `on ${step.decidedAt}` : ""}</p>
+                <p className="muted">{step.decision} {step.decidedAt ? `on ${formatTimestamp(step.decidedAt)}` : ""}</p>
               </div>
               <div>
                 <strong>Remarks</strong>
@@ -1150,6 +1177,14 @@ function formatOption(value: string) {
 
 function formatCurrency(value: number) {
   return `Rs ${value.toLocaleString("en-IN")}`;
+}
+
+function formatTimestamp(value: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Kolkata"
+  }).format(new Date(value));
 }
 
 function csvCell(value: string) {

@@ -9,6 +9,7 @@ type FinanceItem = {
   claimId: string;
   ticketId: string;
   claimKind: "Advance" | "Reimbursement";
+  status: "HodApproved" | "MdApproved" | "FinanceConfirmed";
   submittedBy: string;
   siteName: string | null;
   totalAmount: number;
@@ -340,6 +341,10 @@ export function FinanceQueue() {
     );
   }
 
+  function auditApproved(item: FinanceItem) {
+    return item.claimKind === "Advance" || item.status === "FinanceConfirmed";
+  }
+
   const reportQuery = reportMonth ? `?month=${encodeURIComponent(reportMonth)}` : "";
 
   return (
@@ -422,17 +427,19 @@ export function FinanceQueue() {
                     </button>
                     <button
                       className="button secondary"
-                      disabled={!item.physicalReceiptRequired || item.physicalReceiptConfirmed || busyAction === `confirm:${item.claimId}`}
+                      disabled={!item.physicalReceiptRequired || item.physicalReceiptConfirmed || !allLinesAccepted(item) || busyAction === `confirm:${item.claimId}`}
                       onClick={() => void confirmReceipt(item.claimId)}
                       type="button"
+                      title={!allLinesAccepted(item) ? "Accept every voucher line before confirming the complete pack" : "Confirm the complete voucher pack and send it to Audit"}
                     >
                       {busyAction === `confirm:${item.claimId}` ? <Loader2 size={16} /> : <ClipboardCheck size={16} />}
-                      {!item.physicalReceiptRequired ? "No receipt gate" : item.physicalReceiptConfirmed ? "Receipt confirmed" : "Confirm receipt"}
+                      {!item.physicalReceiptRequired ? "No receipt gate" : item.physicalReceiptConfirmed ? "Sent to Audit" : !allLinesAccepted(item) ? "Review all vouchers" : "Confirm pack and send to Audit"}
                     </button>
                     <button
                       className="button"
                       disabled={
                         (item.physicalReceiptRequired && !item.physicalReceiptConfirmed) ||
+                        !auditApproved(item) ||
                         !allLinesAccepted(item) ||
                         !beneficiaryReady(item) ||
                         busyAction === `release:${item.claimId}`
@@ -442,13 +449,13 @@ export function FinanceQueue() {
                       title={
                         !beneficiaryReady(item)
                           ? "Complete beneficiary bank details before releasing payment"
-                          : !item.physicalReceiptRequired || item.physicalReceiptConfirmed
-                            ? "Release payment"
-                            : "Confirm receipt before releasing payment"
+                          : !auditApproved(item)
+                            ? "Payment release is available only after Auditor approval"
+                            : "Release payment"
                       }
                     >
                       {busyAction === `release:${item.claimId}` ? <Loader2 size={16} /> : <Banknote size={16} />}
-                      {!beneficiaryReady(item) ? "Bank details required" : !allLinesAccepted(item) ? "Review lines" : !item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release" : "Receipt pending"}
+                      {!beneficiaryReady(item) ? "Bank details required" : !allLinesAccepted(item) ? "Review lines" : !auditApproved(item) ? "Awaiting Audit" : !item.physicalReceiptRequired || item.physicalReceiptConfirmed ? "Release" : "Receipt pending"}
                     </button>
                     <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => openDecision({ kind: "return-claim", claimId: item.claimId, title: item.ticketId })} type="button">
                       {busyAction === `return:${item.claimId}` ? <Loader2 size={16} /> : null}

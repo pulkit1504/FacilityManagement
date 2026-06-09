@@ -19,6 +19,38 @@ export class AuditService {
     };
   }
 
+  async receiveVouchers(claimId: string, user: UserContext) {
+    const claim = await this.loadAuditClaim(claimId, user, false);
+    const auditEntries = await this.claims.listAuditLogForClaim(claimId);
+    const existingReceipt = auditEntries
+      .filter((entry) => entry.actionType === "AUDITOR_VOUCHERS_RECEIVED")
+      .at(-1);
+
+    if (existingReceipt) {
+      return {
+        claimId,
+        receivedAt: existingReceipt.actionTimestamp,
+        message: "Voucher pack was already marked as received by Audit."
+      };
+    }
+
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: "AUDITOR_VOUCHERS_RECEIVED",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks: "Physical voucher pack received by Auditor for pre-payment review.",
+      correlationId: user.correlationId
+    });
+
+    return {
+      claimId,
+      receivedAt: new Date().toISOString(),
+      message: "Voucher pack marked as received. Auditor decision actions are now available."
+    };
+  }
+
   async approveClaim(claimId: string, input: AuditClaimDecisionInput, user: UserContext) {
     const claim = await this.loadAuditClaim(claimId, user);
     const pendingStep = this.pendingAuditorStep(claim);
@@ -102,7 +134,7 @@ export class AuditService {
     };
   }
 
-  private async loadAuditClaim(claimId: string, user: UserContext) {
+  private async loadAuditClaim(claimId: string, user: UserContext, requireVoucherReceipt = true) {
     this.assertAuditor(user);
     const claim = await this.claims.getClaimDetail(claimId);
     if (!claim) throw notFound("Claim was not found.");
@@ -111,6 +143,12 @@ export class AuditService {
     }
     if (claim.claimKind !== "Advance" && !claim.physicalReceiptConfirmedAt) {
       throw conflict("Finance must confirm physical receipt before Auditor review.");
+    }
+    if (requireVoucherReceipt && claim.claimKind !== "Advance") {
+      const auditEntries = await this.claims.listAuditLogForClaim(claimId);
+      if (!auditEntries.some((entry) => entry.actionType === "AUDITOR_VOUCHERS_RECEIVED")) {
+        throw conflict("Auditor must mark the voucher pack as received before making an audit decision.");
+      }
     }
     return claim;
   }

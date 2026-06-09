@@ -1161,7 +1161,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const [{ data, error }, siteNames, employees] = await Promise.all([
       db
         .from("expense_claims")
-        .select("claim_id,ticket_id,claim_kind,advance_claim_id,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
+        .select("claim_id,ticket_id,claim_kind,status,advance_claim_id,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
         .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed"])
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
@@ -1209,6 +1209,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         claimId,
         ticketId: claim.ticket_id ? String(claim.ticket_id) : `EXP-${claimId.slice(0, 8).toUpperCase()}`,
         claimKind: (claim.claim_kind ?? "Reimbursement") as FinanceQueueItem["claimKind"],
+        status: String(claim.status) as FinanceQueueItem["status"],
         submittedBy: String(claim.submitter_employee_id),
         submittedByRole: "Claimant" as const,
         siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
@@ -1240,7 +1241,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const [{ data, error }, siteNames, employees] = await Promise.all([
       db
         .from("expense_claims")
-        .select("claim_id,ticket_id,claim_kind,advance_claim_id,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
+        .select("claim_id,ticket_id,claim_kind,status,advance_claim_id,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
         .eq("status", "AuditPending")
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
@@ -1251,6 +1252,19 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     if (error) throw error;
     const claims = data ?? [];
+    const claimIds = claims.map((claim) => String(claim.claim_id));
+    const { data: voucherReceiptLogs, error: voucherReceiptLogsError } = claimIds.length
+      ? await db
+          .from("audit_log")
+          .select("claim_id,action_timestamp")
+          .in("claim_id", claimIds)
+          .eq("action_type", "AUDITOR_VOUCHERS_RECEIVED")
+          .order("action_timestamp", { ascending: true })
+      : { data: [], error: null };
+    if (voucherReceiptLogsError) throw voucherReceiptLogsError;
+    const auditorVoucherReceivedAtByClaim = new Map(
+      (voucherReceiptLogs ?? []).map((entry) => [String(entry.claim_id), String(entry.action_timestamp)])
+    );
     const lineStats = await this.getQueueLineStats(claims.map((row) => String(row.claim_id)));
     const employeesById = new Map(employees.map((employee) => [employee.employeeId, employee]));
     const advanceClaimIds = claims
@@ -1289,6 +1303,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         claimId,
         ticketId: claim.ticket_id ? String(claim.ticket_id) : `EXP-${claimId.slice(0, 8).toUpperCase()}`,
         claimKind: (claim.claim_kind ?? "Reimbursement") as AuditQueueItem["claimKind"],
+        status: String(claim.status) as AuditQueueItem["status"],
         submittedBy: submitter?.fullName ?? String(claim.submitter_employee_id),
         submittedByRole: submitter?.role ?? "Claimant",
         siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
@@ -1310,6 +1325,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         bankIfsc: submitter?.bankIfsc ?? null,
         bankName: submitter?.bankName ?? null,
         receiptConfirmedAt: claim.physical_receipt_confirmed_at ? String(claim.physical_receipt_confirmed_at) : null,
+        auditorVoucherReceivedAt: auditorVoucherReceivedAtByClaim.get(claimId) ?? null,
         auditDecisionRequired: true
       };
     });

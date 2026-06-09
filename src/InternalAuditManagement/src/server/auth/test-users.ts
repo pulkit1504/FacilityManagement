@@ -47,12 +47,6 @@ export const testUsers = [
     email: "finance@example.com"
   },
   {
-    userId: "emp-finance-hod-001",
-    role: "FinanceHOD",
-    name: "Finance HOD",
-    email: "financehod@example.com"
-  },
-  {
     userId: "emp-auditor-001",
     role: "Auditor",
     name: "Internal Auditor",

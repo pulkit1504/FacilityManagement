@@ -34,7 +34,6 @@ export const userRoles = [
   "MD",
   "Finance",
   "BillingTeam",
-  "FinanceHOD",
   "Auditor",
   "Admin"
 ] as const;
@@ -182,6 +181,7 @@ export type ExpenseAttachment = {
 export type ApprovalStep = {
   stepId: string;
   claimId: string;
+  lineItemId?: string | null;
   stepOrder: number;
   requiredApproverRole: "ClusterHead" | "HOD" | "MD" | "Finance" | "Auditor";
   assignedApproverId: string | null;

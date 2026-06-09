@@ -186,7 +186,7 @@ export class AuditService {
   }
 
   private async notifyFinance(claim: ClaimDetail, body: string) {
-    const financeRecipients = (await this.claims.listEmployees()).filter((employee) => ["Finance", "FinanceHOD"].includes(employee.role));
+    const financeRecipients = (await this.claims.listEmployees()).filter((employee) => employee.role === "Finance");
     await Promise.all(
       financeRecipients.map((employee) =>
         this.notifications.enqueueAndSend({

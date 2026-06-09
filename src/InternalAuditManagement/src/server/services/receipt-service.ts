@@ -18,7 +18,7 @@ export class ReceiptService {
     const claim = await this.claims.getClaimDetail(input.claimId);
     if (!claim) throw notFound("Claim was not found.");
 
-    if (claim.submitterEmployeeId !== user.userId && !["Finance", "FinanceHOD"].includes(user.role)) {
+    if (claim.submitterEmployeeId !== user.userId && user.role !== "Finance") {
       throw forbidden("Only the claimant or Finance can upload receipts for this claim.");
     }
 
@@ -71,7 +71,7 @@ export class ReceiptService {
         && step.decision === "Pending"
         && (!step.assignedApproverId || step.assignedApproverId === user.userId)
     );
-    if (claim.submitterEmployeeId !== user.userId && !["ClusterHead", "HOD", "MD", "Finance", "FinanceHOD"].includes(user.role) && !auditorCanReviewClaim) {
+    if (claim.submitterEmployeeId !== user.userId && !["ClusterHead", "HOD", "MD", "Finance"].includes(user.role) && !auditorCanReviewClaim) {
       throw forbidden("You do not have access to this receipt.");
     }
 

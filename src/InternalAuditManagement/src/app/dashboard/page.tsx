@@ -3,7 +3,7 @@ import { MisDashboard } from "@/components/dashboard/mis-dashboard";
 import { getUserContext, requireRole } from "@/server/auth/user-context";
 
 export default async function DashboardPage() {
-  requireRole(await getUserContext(), ["MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"]);
+  requireRole(await getUserContext(), ["MD", "Finance", "BillingTeam", "Admin"]);
   return (
     <AppShell>
       <div className="topbar">

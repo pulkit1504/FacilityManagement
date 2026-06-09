@@ -240,7 +240,7 @@ export class FinanceService {
   }
 
   private assertFinance(user: UserContext) {
-    if (!["Finance", "FinanceHOD"].includes(user.role)) {
+    if (user.role !== "Finance") {
       throw forbidden("Only Finance users can perform this action.");
     }
   }

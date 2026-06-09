@@ -5,7 +5,7 @@ alter table employees
 
 alter table employees
   add constraint employees_role_check
-  check (role in ('Claimant', 'HOD', 'MD', 'Finance', 'BillingTeam', 'FinanceHOD', 'Admin'));
+  check (role in ('Claimant', 'HOD', 'MD', 'Finance', 'BillingTeam', 'Admin'));
 
 insert into employees (
   employee_id,

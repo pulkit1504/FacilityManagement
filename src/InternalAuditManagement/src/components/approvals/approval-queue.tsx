@@ -26,6 +26,7 @@ type ApprovalClaimDetail = {
     description: string;
     amount: number;
     transactionDate: string;
+    paymentMode: "Cash" | "UPI" | null;
     expenseTag: string;
     clientInvoiceNumber: string | null;
     siteId: string | null;
@@ -313,6 +314,9 @@ export function ApprovalQueue() {
                           <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
                             {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
                           </span>
+                          {line.paymentMode === "Cash" && line.amount > 10_000 ? (
+                            <span className="badge warning">MD cash exception</span>
+                          ) : null}
                           <div className="actions">
                             {line.attachments.map((attachment) => (
                               <button

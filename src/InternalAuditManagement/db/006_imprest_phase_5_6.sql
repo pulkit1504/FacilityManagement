@@ -3,7 +3,7 @@ alter table employees
 
 alter table employees
   add constraint employees_role_check
-  check (role in ('Claimant', 'ClusterHead', 'HOD', 'MD', 'Finance', 'BillingTeam', 'FinanceHOD', 'Admin'));
+  check (role in ('Claimant', 'ClusterHead', 'HOD', 'MD', 'Finance', 'BillingTeam', 'Admin'));
 
 alter table approval_steps
   drop constraint if exists approval_steps_required_approver_role_check;

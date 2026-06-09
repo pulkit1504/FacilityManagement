@@ -35,7 +35,7 @@ create table if not exists employees (
   employee_id text primary key,
   full_name text not null,
   email text not null unique,
-  role text not null check (role in ('Claimant', 'ClusterHead', 'HOD', 'MD', 'Finance', 'BillingTeam', 'FinanceHOD', 'Admin')),
+  role text not null check (role in ('Claimant', 'ClusterHead', 'HOD', 'MD', 'Finance', 'BillingTeam', 'Auditor', 'Admin')),
   password_hash text,
   direct_manager_id text references employees(employee_id),
   is_hod boolean not null default false,
@@ -147,6 +147,7 @@ create table if not exists expense_attachments (
 create table if not exists approval_steps (
   step_id uuid primary key default gen_random_uuid(),
   claim_id uuid not null references expense_claims(claim_id),
+  line_item_id uuid references expense_line_items(line_item_id),
   step_order integer not null,
   required_approver_role text not null check (required_approver_role in ('ClusterHead', 'HOD', 'MD', 'Finance')),
   assigned_approver_id text references employees(employee_id),

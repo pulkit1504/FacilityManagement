@@ -15,14 +15,14 @@ type NavLink = {
 
 const links: NavLink[] = [
   { href: "/", label: "Overview", icon: "BarChart3" },
-  { href: "/dashboard", label: "MIS Dashboard", icon: "ClipboardCheck", allowedRoles: ["MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"] satisfies UserRole[] },
+  { href: "/dashboard", label: "MIS Dashboard", icon: "ClipboardCheck", allowedRoles: ["MD", "Finance", "BillingTeam", "Admin"] satisfies UserRole[] },
   { href: "/claims", label: "My Claims", icon: "FileText", exact: true, allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
   { href: "/claims/new", label: "New Claim", icon: "ReceiptText", allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
   { href: "/imprest", label: "Imprest", icon: "ReceiptText", allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
   { href: "/profile", label: "My Profile", icon: "UserRound", allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
   { href: "/approvals", label: "Approvals", icon: "ClipboardCheck", allowedRoles: ["ClusterHead", "HOD", "MD"] satisfies UserRole[] },
-  { href: "/finance", label: "Finance Queue", icon: "FileText", allowedRoles: ["Finance", "FinanceHOD"] satisfies UserRole[] },
-  { href: "/billing", label: "Billing Alerts", icon: "Link2", allowedRoles: ["BillingTeam", "Finance", "FinanceHOD"] satisfies UserRole[] },
+  { href: "/finance", label: "Finance Queue", icon: "FileText", allowedRoles: ["Finance"] satisfies UserRole[] },
+  { href: "/billing", label: "Billing Alerts", icon: "Link2", allowedRoles: ["BillingTeam", "Finance"] satisfies UserRole[] },
   { href: "/audit", label: "Audit Review", icon: "ShieldCheck", allowedRoles: ["Auditor", "MD"] satisfies UserRole[] },
   { href: "/admin", label: "Admin", icon: "Settings", allowedRoles: ["Admin"] satisfies UserRole[] }
 ];

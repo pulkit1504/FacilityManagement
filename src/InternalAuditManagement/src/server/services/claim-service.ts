@@ -97,7 +97,7 @@ export class ClaimService {
   }
 
   async listPendingAdvances(user: UserContext) {
-    if (!["Claimant", "ClusterHead", "HOD", "Finance", "FinanceHOD"].includes(user.role)) {
+    if (!["Claimant", "ClusterHead", "HOD", "Finance"].includes(user.role)) {
       throw forbidden("You do not have access to imprest advances.");
     }
 
@@ -305,6 +305,7 @@ export class ClaimService {
       this.claims.createApprovalSteps(
         approvalSteps.map((step, index) => ({
           claimId,
+          lineItemId: step.lineItemId ?? null,
           stepOrder: index + 1,
           requiredApproverRole: step.role,
           assignedApproverId: step.approver.employeeId
@@ -340,26 +341,16 @@ export class ClaimService {
       throw conflict("Submitter employee record is missing or inactive.");
     }
 
-    const steps: Array<{ role: "ClusterHead" | "HOD" | "MD"; approver: NonNullable<typeof submitter> }> = [];
-    const addStep = (role: "ClusterHead" | "HOD" | "MD", approver: NonNullable<typeof submitter>) => {
+    const steps: Array<{ role: "ClusterHead" | "HOD" | "MD"; approver: NonNullable<typeof submitter>; lineItemId?: string | null }> = [];
+    const addStep = (role: "ClusterHead" | "HOD" | "MD", approver: NonNullable<typeof submitter>, lineItemId?: string | null) => {
       if (approver.employeeId === user.userId) {
         return;
       }
 
-      if (!steps.some((step) => step.approver.employeeId === approver.employeeId && step.role === role)) {
-        steps.push({ role, approver });
+      if (!steps.some((step) => step.approver.employeeId === approver.employeeId && step.role === role && step.lineItemId === lineItemId)) {
+        steps.push({ role, approver, lineItemId });
       }
     };
-
-    const cashTotal = claim.lineItems
-      .filter((item) => item.paymentMode === "Cash")
-      .reduce((sum, item) => sum + item.amount, 0);
-    if (claim.claimKind === "Reimbursement" && cashTotal > 10_000) {
-      const md = await this.claims.findManagingDirector();
-      if (!md) throw conflict("No Managing Director is configured for high-value cash approval.");
-      addStep("MD", md);
-      return steps;
-    }
 
     const sites = await this.claims.listActiveSites();
     const site = claim.siteId ? sites.find((item) => item.siteId === claim.siteId) : null;
@@ -393,6 +384,15 @@ export class ClaimService {
       if (md) addStep("MD", md);
     }
 
+    const highValueCashLines = claim.lineItems.filter((item) => item.paymentMode === "Cash" && item.amount > 10_000);
+    if (claim.claimKind === "Reimbursement" && highValueCashLines.length > 0 && !steps.some((step) => step.role === "MD" && !step.lineItemId)) {
+      const md = await this.claims.findManagingDirector();
+      if (!md) throw conflict("No Managing Director is configured for cash line-item approval above Rs 10,000.");
+      for (const line of highValueCashLines) {
+        addStep("MD", md, line.lineItemId);
+      }
+    }
+
     if (claim.claimKind === "Advance" && claim.totalAmount > 400_000 && !steps.some((step) => step.role === "MD")) {
       const md = await this.claims.findManagingDirector();
       if (md) addStep("MD", md);
@@ -405,7 +405,7 @@ export class ClaimService {
     const employees = await this.claims.listEmployees();
     await Promise.all(
       employees
-        .filter((employee) => ["Finance", "FinanceHOD"].includes(employee.role))
+        .filter((employee) => employee.role === "Finance")
         .map((employee) =>
           this.notifyEmployee(
             employee,
@@ -597,7 +597,7 @@ export class ClaimService {
   }
 
   private async assertCanView(claim: ClaimDetail, user: UserContext) {
-    if (["Finance", "FinanceHOD", "MD"].includes(user.role)) {
+    if (["Finance", "MD"].includes(user.role)) {
       return;
     }
 

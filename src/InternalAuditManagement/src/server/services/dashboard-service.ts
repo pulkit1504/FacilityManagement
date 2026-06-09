@@ -7,7 +7,7 @@ export class DashboardService {
 
   async getOverview(user: UserContext) {
     const metrics = await this.claims.getOverviewMetrics(user.userId, user.role);
-    const canViewBillingMetrics = ["MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"].includes(user.role);
+    const canViewBillingMetrics = ["MD", "Finance", "BillingTeam", "Admin"].includes(user.role);
     const canViewFraudFlags = ["MD", "Auditor"].includes(user.role);
 
     return {
@@ -24,7 +24,7 @@ export class DashboardService {
   }
 
   async getMisDashboard(user: UserContext) {
-    if (!["MD", "Finance", "FinanceHOD", "BillingTeam", "Admin"].includes(user.role)) {
+    if (!["MD", "Finance", "BillingTeam", "Admin"].includes(user.role)) {
       throw forbidden("You do not have access to billing recovery metrics.");
     }
 

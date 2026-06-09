@@ -584,6 +584,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         {
           stepId: String(step.step_id),
           claimId: String(step.claim_id),
+          lineItemId: step.line_item_id ? String(step.line_item_id) : null,
           stepOrder: Number(step.step_order),
           requiredApproverRole: step.required_approver_role as ApprovalStep["requiredApproverRole"],
           assignedApproverId: step.assigned_approver_id ? String(step.assigned_approver_id) : null,
@@ -896,6 +897,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       steps.map((step) => ({
         step_id: randomUUID(),
         claim_id: step.claimId,
+        line_item_id: step.lineItemId ?? null,
         step_order: step.stepOrder,
         required_approver_role: step.requiredApproverRole,
         assigned_approver_id: step.assignedApproverId,
@@ -1422,6 +1424,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return {
       stepId: String(data.step_id),
       claimId: String(data.claim_id),
+      lineItemId: data.line_item_id ? String(data.line_item_id) : null,
       stepOrder: Number(data.step_order),
       requiredApproverRole: data.required_approver_role as ApprovalStep["requiredApproverRole"],
       assignedApproverId: data.assigned_approver_id ? String(data.assigned_approver_id) : null,
@@ -1722,7 +1725,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         siteName: claim?.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,
         daysOpen,
         urgencyLabel:
-          daysOpen >= 7 ? "Escalate to Finance HOD" : daysOpen >= 2 ? "Needs billing follow-up" : "Within 48-hour window"
+          daysOpen >= 7 ? "Escalate to Finance" : daysOpen >= 2 ? "Needs billing follow-up" : "Within 48-hour window"
       };
     });
 
@@ -1926,7 +1929,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
   async getOverviewMetrics(userId: string, role: string): Promise<OverviewMetrics> {
     const db = await getSupabaseAdminClient();
     const approvalQueue = await this.listApprovalQueue(userId, role);
-    const financeQueue = ["Finance", "FinanceHOD"].includes(role) ? await this.listFinanceQueue() : [];
+    const financeQueue = role === "Finance" ? await this.listFinanceQueue() : [];
 
     const [
       { count: activeBillingAlerts, error: billingAlertError },

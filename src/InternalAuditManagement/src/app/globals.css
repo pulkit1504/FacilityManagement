@@ -76,11 +76,48 @@ label {
   margin-bottom: 18px;
 }
 
-.brand strong {
+.company-logo {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 72px minmax(0, 1fr);
+  margin-bottom: 18px;
+}
+
+.company-logo.compact {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.company-logo img {
+  background: #ffffff;
+  border-radius: 6px;
+  display: block;
+  height: 72px;
+  object-fit: contain;
+  padding: 3px;
+  width: 72px;
+}
+
+.company-logo.compact img {
+  height: auto;
+  max-height: 130px;
+  max-width: 220px;
+  width: auto;
+}
+
+.company-logo div {
+  display: grid;
+  gap: 4px;
+}
+
+.company-logo strong {
+  color: #ffffff;
   font-size: 18px;
 }
 
-.brand span {
+.company-logo span {
   color: #b9c3cf;
   font-size: 13px;
 }
@@ -643,6 +680,70 @@ h1 {
   min-width: 0;
 }
 
+.tutorial-player video {
+  aspect-ratio: 16 / 9;
+  background: #17202a;
+  border-radius: 8px;
+  display: block;
+  max-height: 680px;
+  width: 100%;
+}
+
+.tutorial-steps {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tutorial-step {
+  align-items: flex-start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto auto minmax(0, 1fr);
+}
+
+.tutorial-step h3,
+.tutorial-step p {
+  margin: 0;
+}
+
+.tutorial-step p {
+  margin-top: 5px;
+}
+
+.tutorial-step-number {
+  align-items: center;
+  background: var(--accent);
+  border-radius: 999px;
+  color: #ffffff;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 800;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
+.instruction-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.instruction-list li {
+  align-items: flex-start;
+  display: flex;
+  gap: 8px;
+}
+
+.instruction-list svg {
+  color: var(--success);
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
 @media (max-width: 860px) {
   .shell {
     grid-template-columns: 1fr;
@@ -702,6 +803,10 @@ h1 {
 
   .admin-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tutorial-steps {
+    grid-template-columns: 1fr;
   }
 }
 

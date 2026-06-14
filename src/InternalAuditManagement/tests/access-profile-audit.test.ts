@@ -154,4 +154,47 @@ describe("profile and audit trail", () => {
     expect(csv).toContain("HOD,Rejected");
     expect(csv).toContain("Correct receipt.");
   });
+
+  it("exports an Excel-ready claim summary with claim and line-item details", async () => {
+    const summaryClaim: ClaimDetail = {
+      ...claim,
+      status: "Submitted",
+      totalAmount: 1_250,
+      lineItems: [{
+        lineItemId: "line-1",
+        claimId: claim.claimId,
+        expenseHead: "Repairs and Maintenance",
+        description: "Replace lobby light",
+        amount: 1_250,
+        transactionDate: "2026-06-02",
+        paymentMode: "UPI",
+        expenseTag: "AlreadyBilled",
+        clientInvoiceNumber: "CLIENT-100",
+        vendorName: "Demo Vendor",
+        vendorInvoiceNumber: "VENDOR-100",
+        billableAmount: null,
+        siteOrDepartment: null,
+        lineTicketId: null,
+        invoiceValidationStatus: "PendingErpValidation",
+        siteId: null,
+        billingAlertCreated: false,
+        missingReceiptFlag: false,
+        financeReviewStatus: "Pending",
+        financeReviewRemarks: null,
+        sortOrder: 0,
+        attachments: []
+      }]
+    };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(summaryClaim)
+    } as unknown as ClaimRepository;
+
+    const result = await new ClaimService(claims, {} as NotificationService).exportClaimSummary(summaryClaim.claimId, claimant);
+
+    expect(result.ticketId).toBe("EXP-000001");
+    expect(result.csv).toContain("Ticket,Status,Claim Type");
+    expect(result.csv).toContain("Replace lobby light");
+    expect(result.csv).toContain("Demo Vendor,VENDOR-100,CLIENT-100");
+    expect(result.csv).toContain("1250,Attached");
+  });
 });

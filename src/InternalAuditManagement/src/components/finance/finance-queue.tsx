@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Banknote, ClipboardCheck, Download, Eye, Loader2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
+import { ClaimSummaryActions } from "@/components/claims/claim-summary-actions";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
 type FinanceItem = {
@@ -465,6 +466,7 @@ export function FinanceQueue() {
                       {busyAction === `audit:${item.claimId}` ? <Loader2 size={16} /> : <Download size={16} />}
                       Audit CSV
                     </button>
+                    <ClaimSummaryActions claimId={item.claimId} onError={setMessage} ticketId={item.ticketId} />
                   </div>
                 </td>
               </tr>

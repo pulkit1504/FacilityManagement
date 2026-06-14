@@ -19,6 +19,7 @@ import {
   UserCheck
 } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
+import { ClaimSummaryActions } from "@/components/claims/claim-summary-actions";
 import { expenseTagLabel } from "@/shared/expense-tags";
 import { MetricCard } from "@/components/ui/metric-card";
 import { getProblemMessage } from "@/components/ui/problem-message";
@@ -550,6 +551,7 @@ export function FraudReview() {
                         {busyAction === `reject:${item.claimId}` ? <Loader2 size={16} /> : <AlertTriangle size={16} />}
                         Reject
                       </button>
+                      <ClaimSummaryActions claimId={item.claimId} onError={setMessage} ticketId={item.ticketId} />
                     </div>
                   </td>
                 </tr>
@@ -780,6 +782,7 @@ export function FraudReview() {
                         {busyAction === `Assign:${flag.flagId}` ? <Loader2 size={16} /> : <UserCheck size={16} />}
                         Assign owner
                       </button>
+                      <ClaimSummaryActions claimId={flag.primaryClaimId} onError={setMessage} ticketId={flag.ticketId} />
                     </div>
                   </td>
                 </tr>

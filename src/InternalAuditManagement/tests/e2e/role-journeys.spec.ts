@@ -305,6 +305,57 @@ test.describe("role journeys", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("Finance can view and download a claim summary report", async ({ page }) => {
+    await signInAs(page, "Finance");
+    await page.route("**/api/v1/finance/queue", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [{
+            ...auditQueueFixture(),
+            status: "FinanceConfirmed",
+            physicalReceiptRequired: true,
+            physicalReceiptConfirmed: true,
+            advanceAdjustmentAmount: 0,
+            netAdvanceLeftAmount: 0,
+            bankAccountHolderName: "Riya Sharma",
+            bankAccountNumber: "1234567890",
+            bankIfsc: "HDFC0001234",
+            bankName: "HDFC"
+          }]
+        })
+      });
+    });
+    await page.route("**/api/v1/finance/advances", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+    });
+    await page.route("**/api/v1/claims/claim-audit-queue-1", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify(auditClaimDetailFixture()) });
+    });
+    await page.route("**/api/v1/claims/claim-audit-queue-1/summary/export", async (route) => {
+      await route.fulfill({
+        body: "Ticket,Status\nEXP-AUD-QUEUE,Audit review pending",
+        contentType: "text/csv",
+        headers: { "Content-Disposition": 'attachment; filename="EXP-AUD-QUEUE-summary.csv"' }
+      });
+    });
+
+    await page.goto("/finance");
+
+    await page.getByRole("button", { name: "View summary" }).click();
+    const dialog = page.getByRole("dialog", { name: "EXP-AUD-QUEUE" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("Claim summary report")).toBeVisible();
+    await expect(dialog.getByText("Material purchase")).toBeVisible();
+    const downloadPromise = page.waitForEvent("download");
+    await dialog.getByRole("button", { name: "Download summary CSV" }).click();
+    expect((await downloadPromise).suggestedFilename()).toBe("EXP-AUD-QUEUE-summary.csv");
+    await dialog.getByRole("button", { name: "Close claim summary" }).click();
+    await expect(dialog).toBeHidden();
+    await expectAccessiblePage(page);
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("Finance correction dialog traps focus and announces validation errors", async ({ page }) => {
     await signInAs(page, "Finance");
     await page.goto("/finance");
@@ -380,6 +431,13 @@ test.describe("role journeys", () => {
         body: JSON.stringify(auditClaimDetailFixture())
       });
     });
+    await page.route("**/api/v1/claims/claim-audit-queue-1/summary/export", async (route) => {
+      await route.fulfill({
+        body: "Ticket,Status\nEXP-AUD-QUEUE,Audit review pending",
+        contentType: "text/csv",
+        headers: { "Content-Disposition": 'attachment; filename="EXP-AUD-QUEUE-summary.csv"' }
+      });
+    });
     await page.route("**/api/v1/audit/claims/claim-audit-queue-1/receive-vouchers", async (route) => {
       await route.fulfill({
         contentType: "application/json",
@@ -425,6 +483,12 @@ test.describe("role journeys", () => {
     await expect(page.getByRole("button", { name: "Approve" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Pending information" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Reject" })).toBeVisible();
+    const auditQueue = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: "Auditor Receipt Review Queue" }) });
+    await auditQueue.getByRole("button", { name: "View summary" }).click();
+    const summaryDialog = page.getByRole("dialog", { name: "EXP-AUD-QUEUE" });
+    await expect(summaryDialog).toBeVisible();
+    await expect(summaryDialog.getByText("Material purchase")).toBeVisible();
+    await summaryDialog.getByRole("button", { name: "Close claim summary" }).click();
     await page.getByRole("button", { name: "Mark vouchers received" }).click();
     await expect(page.getByRole("button", { name: "Approve" })).toBeEnabled();
     await page.getByRole("button", { name: "View receipts" }).click();

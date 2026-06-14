@@ -650,7 +650,7 @@ export class ClaimService {
   }
 
   private async assertCanView(claim: ClaimDetail, user: UserContext) {
-    if (["Finance", "MD"].includes(user.role)) {
+    if (["Finance", "Auditor", "MD"].includes(user.role)) {
       return;
     }
 

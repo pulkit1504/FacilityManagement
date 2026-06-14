@@ -162,6 +162,89 @@ test.describe("role journeys", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("Claimant can add multiple line items before submitting one claim", async ({ page }) => {
+    await signInAs(page, "Claimant");
+    const savedLines: Array<{ lineItemId: string; description: string; amount: number }> = [];
+    let submittedLineCount = 0;
+
+    await page.route("**/api/v1/sites", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [{
+            siteId: "site-1",
+            siteName: "Investor Demo Site",
+            clientName: "Demo Client",
+            serviceType: "SoftServices"
+          }]
+        })
+      });
+    });
+    await page.route("**/api/v1/claims/advances", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+    });
+    await page.route("**/api/v1/claims", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      await route.fulfill({
+        contentType: "application/json",
+        status: 201,
+        body: JSON.stringify({ claimId: "claim-multi-line", status: "Draft" })
+      });
+    });
+    await page.route("**/api/v1/claims/claim-multi-line/line-items", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      const body = route.request().postDataJSON() as { description: string; amount: number };
+      const lineItemId = `line-${savedLines.length + 1}`;
+      savedLines.push({ lineItemId, description: body.description, amount: body.amount });
+      await route.fulfill({
+        contentType: "application/json",
+        status: 201,
+        body: JSON.stringify({ lineItemId, missingReceiptFlag: true, message: "Line item added." })
+      });
+    });
+    await page.route("**/api/v1/claims/claim-multi-line/submit", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      submittedLineCount = savedLines.length;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "Submitted",
+          assignedTo: "Cluster Head",
+          message: "Claim submitted with multiple line items."
+        })
+      });
+    });
+
+    await page.goto("/claims/new");
+    await page.getByRole("button", { name: "Create draft" }).click();
+    await expect(page.getByRole("heading", { level: 2, name: "Add Line Item" })).toBeVisible();
+
+    await page.getByLabel("Expense head").selectOption("Repairs and Maintenance");
+    await page.getByLabel("Description").fill("Replace lobby light");
+    await page.getByLabel("Amount", { exact: true }).fill("1250");
+    await page.getByLabel("Billable amount").fill("1250");
+    await page.getByRole("button", { name: "Save line item" }).click();
+
+    await expect(page.getByRole("button", { name: "Add another line item" })).toBeVisible();
+    await expect(page.getByRole("row", { name: /Replace lobby light/ })).toBeVisible();
+    await page.getByRole("button", { name: "Add another line item" }).click();
+    await expect(page.getByRole("region", { name: "Line item editor" })).toBeFocused();
+
+    await page.getByLabel("Expense head").selectOption("Printing and Stationery");
+    await page.getByLabel("Description").fill("Printer paper");
+    await page.getByLabel("Amount", { exact: true }).fill("750");
+    await page.getByLabel("Billable amount").fill("750");
+    await page.getByRole("button", { name: "Save line item" }).click();
+
+    await expect(page.getByRole("row", { name: /Replace lobby light/ })).toBeVisible();
+    await expect(page.getByRole("row", { name: /Printer paper/ })).toBeVisible();
+    await page.getByRole("button", { name: "Submit claim" }).click();
+
+    await expect(page.getByRole("heading", { level: 2, name: "Claim Submitted" })).toBeVisible();
+    expect(savedLines).toHaveLength(2);
+    expect(submittedLineCount).toBe(2);
+  });
+
   test("Approver can reach an accessible approval queue", async ({ page }) => {
     await signInAs(page, "ClusterHead");
     await page.route("**/api/v1/approvals/queue", async (route) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { expenseTagLabel } from "@/shared/expense-tags";
@@ -165,6 +165,7 @@ export function ClaimWizard({
   const [isPreparingCorrection, setIsPreparingCorrection] = useState(false);
   const [autoReopenAttemptedClaimId, setAutoReopenAttemptedClaimId] = useState<string | null>(null);
   const [correctionBlocker, setCorrectionBlocker] = useState<CorrectionBlocker | null>(null);
+  const lineItemSectionRef = useRef<HTMLElement>(null);
 
   const requiresSite = lineItem.expenseTag === "ContractPartCost";
   const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
@@ -501,6 +502,17 @@ export function ClaimWizard({
     setEditingLineItemId(null);
     setLineItem(emptyLineItem);
     setMessage("");
+  }
+
+  function prepareAnotherLineItem() {
+    setEditingLineItemId(null);
+    setLineItem({
+      ...emptyLineItem,
+      transactionDate: lineDateMax
+    });
+    setMessage("Add the next expense line, then save it before submitting the claim.");
+    lineItemSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    lineItemSectionRef.current?.focus({ preventScroll: true });
   }
 
   async function deleteLineItem(lineItemId: string) {
@@ -870,7 +882,7 @@ export function ClaimWizard({
           ) : null}
 
           {!submissionResult && isDraft ? (
-          <section className="panel">
+          <section aria-label="Line item editor" className="panel" ref={lineItemSectionRef} tabIndex={-1}>
             <h2>{editingLineItemId ? "Edit Line Item" : "Add Line Item"}</h2>
             <div className="grid cols-3">
               <label>
@@ -1003,10 +1015,18 @@ export function ClaimWizard({
               </div>
               {!submissionResult && isDraft ? (
                 <div className="grid" style={{ gap: 8, justifyItems: "end" }}>
-                  <button className="button" disabled={busy || !canSubmitClaim} onClick={requestSubmitClaim} type="button">
-                    <Send size={18} />
-                    Submit claim
-                  </button>
+                  <div className="actions">
+                    {savedLineItems.length > 0 ? (
+                      <button className="button secondary" disabled={busy} onClick={prepareAnotherLineItem} type="button">
+                        <Plus size={18} />
+                        Add another line item
+                      </button>
+                    ) : null}
+                    <button className="button" disabled={busy || !canSubmitClaim} onClick={requestSubmitClaim} type="button">
+                      <Send size={18} />
+                      Submit claim
+                    </button>
+                  </div>
                   {submitGateMessages.length > 0 ? (
                     <p className="muted" style={{ margin: 0, maxWidth: 360, textAlign: "right" }}>
                       {submitGateMessages[0]}

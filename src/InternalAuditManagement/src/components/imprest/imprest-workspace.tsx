@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, Plus, WalletCards } from "lucide-react";
+import { CheckCircle2, Loader2, Plus, ShieldAlert, WalletCards } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 
 type SiteOption = {
@@ -94,7 +94,37 @@ export function ImprestWorkspace() {
 
   return (
     <div className="grid" style={{ gap: 16 }}>
-      <section className="panel">
+      <section className="panel imprest-guidelines" aria-labelledby="imprest-guidelines-title">
+        <div className="section-heading">
+          <div>
+            <h2 id="imprest-guidelines-title">Imprest guidelines</h2>
+            <p className="muted">Complete these checks before requesting or settling an advance.</p>
+          </div>
+          <ShieldAlert aria-hidden="true" size={24} />
+        </div>
+        <div className="grid cols-2">
+          <div>
+            <h3>Requesting an advance</h3>
+            <ul className="instruction-list">
+              <li><CheckCircle2 aria-hidden="true" size={17} /> Select the site and month where the cash will be used.</li>
+              <li><CheckCircle2 aria-hidden="true" size={17} /> Describe the operational purpose clearly; avoid generic descriptions.</li>
+              <li><CheckCircle2 aria-hidden="true" size={17} /> Keep the request within your configured employee Imprest limit.</li>
+              <li><CheckCircle2 aria-hidden="true" size={17} /> A new advance is blocked when open advances plus the request exceed that limit.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Using and settling an advance</h3>
+            <ul className="instruction-list">
+              <li><CheckCircle2 aria-hidden="true" size={17} /> Retain a receipt or voucher for every expense paid from the advance.</li>
+              <li><CheckCircle2 aria-hidden="true" size={17} /> Apply only paid advances to reimbursement claims.</li>
+              <li><CheckCircle2 aria-hidden="true" size={17} /> Enter every voucher as a separate line with its actual expense date.</li>
+              <li><CheckCircle2 aria-hidden="true" size={17} /> Settle open balances promptly; only one active settlement may adjust an advance.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section aria-label="Request Imprest advance" className="panel" tabIndex={0}>
         <div className="topbar" style={{ marginBottom: 12 }}>
           <div>
             <h2>Request Advance</h2>
@@ -135,7 +165,7 @@ export function ImprestWorkspace() {
         <ActionFeedback message={message} onDismiss={() => setMessage("")} />
       </section>
 
-      <section className="panel">
+      <section aria-label="Open Imprest advances" className="panel" tabIndex={0}>
         <div className="topbar" style={{ marginBottom: 12 }}>
           <div>
             <h2>Open advances</h2>

@@ -157,6 +157,7 @@ test.describe("role journeys", () => {
     await page.goto("/claims/new");
 
     await expect(page.getByRole("heading", { level: 1, name: "Create expense claim" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "Nimbus Harbor and Striker Facility Management Services" })).toBeVisible();
     await expect(page.getByRole("link", { name: "New Claim" })).toHaveAttribute("aria-current", "page");
     await expectAccessiblePage(page);
     await expectNoHorizontalOverflow(page);
@@ -214,6 +215,13 @@ test.describe("role journeys", () => {
         })
       });
     });
+    await page.route("**/api/v1/claims/claim-multi-line/summary/export", async (route) => {
+      await route.fulfill({
+        body: "Ticket,Description,Amount\nEXP-MULTI,Replace lobby light,1250\nEXP-MULTI,Printer paper,750",
+        contentType: "text/csv",
+        headers: { "Content-Disposition": 'attachment; filename="EXP-MULTI-summary.csv"' }
+      });
+    });
 
     await page.goto("/claims/new");
     await page.getByRole("button", { name: "Create draft" }).click();
@@ -241,8 +249,36 @@ test.describe("role journeys", () => {
     await page.getByRole("button", { name: "Submit claim" }).click();
 
     await expect(page.getByRole("heading", { level: 2, name: "Claim Submitted" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download claim summary" })).toBeVisible();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Download claim summary" }).click();
+    expect((await downloadPromise).suggestedFilename()).toBe("EXP-MULTI-summary.csv");
     expect(savedLines).toHaveLength(2);
     expect(submittedLineCount).toBe(2);
+  });
+
+  test("Claimant can view embedded training and Imprest instructions", async ({ page }) => {
+    await signInAs(page, "Claimant");
+    await page.route("**/api/v1/sites", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+    });
+    await page.route("**/api/v1/claims/advances", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+    });
+
+    await page.goto("/help");
+    await expect(page.getByRole("heading", { level: 1, name: "How to use Facility Control" })).toBeVisible();
+    await expect(page.locator("video source")).toHaveAttribute("src", "/application-tutorial.webm");
+    await expect(page.getByRole("heading", { level: 2, name: "Quick start" })).toBeVisible();
+    await expectAccessiblePage(page);
+    await expectNoHorizontalOverflow(page);
+
+    await page.goto("/imprest");
+    await expect(page.getByRole("heading", { level: 2, name: "Imprest guidelines" })).toBeVisible();
+    await expect(page.getByText("Keep the request within your configured employee Imprest limit.")).toBeVisible();
+    await expect(page.getByText("Settle open balances promptly; only one active settlement may adjust an advance.")).toBeVisible();
+    await expectAccessiblePage(page);
+    await expectNoHorizontalOverflow(page);
   });
 
   test("Approver can reach an accessible approval queue", async ({ page }) => {

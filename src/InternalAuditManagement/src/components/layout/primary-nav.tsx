@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, ClipboardCheck, FileText, Link2, ReceiptText, Settings, ShieldCheck, UserRound } from "lucide-react";
+import { BarChart3, CircleHelp, ClipboardCheck, FileText, Link2, ReceiptText, Settings, ShieldCheck, UserRound } from "lucide-react";
 
 const iconMap = {
   BarChart3,
+  CircleHelp,
   ClipboardCheck,
   FileText,
   Link2,

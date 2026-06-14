@@ -142,6 +142,23 @@ export function MyClaims() {
     }
   }
 
+  async function exportClaimSummary(claimId: string, ticketId: string) {
+    setBusyAction(`summary:${claimId}`);
+    try {
+      const response = await fetch(`/api/v1/claims/${claimId}/summary/export`);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail ?? "Could not export claim summary.");
+      }
+
+      await downloadResponse(response, `${ticketId}-summary.csv`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not export claim summary.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   return (
     <div className="grid" style={{ gap: 16 }}>
       <div className="grid cols-3">
@@ -229,6 +246,7 @@ export function MyClaims() {
                         isLoading={!details[claim.claimId]}
                         onOpenReceipt={(lineItemId, attachmentId) => void openReceipt(claim.claimId, lineItemId, attachmentId)}
                         onExportAudit={() => void exportAuditTrail(claim.claimId, claim.ticketId)}
+                        onExportSummary={() => void exportClaimSummary(claim.claimId, claim.ticketId)}
                         busyAction={busyAction}
                       />
                     </td>
@@ -253,12 +271,14 @@ function ClaimDetailPanel({
   isLoading,
   onOpenReceipt,
   onExportAudit,
+  onExportSummary,
   busyAction
 }: Readonly<{
   claim?: ClaimDetail;
   isLoading: boolean;
   onOpenReceipt: (lineItemId: string, attachmentId: string) => void;
   onExportAudit: () => void;
+  onExportSummary: () => void;
   busyAction: string | null;
 }>) {
   if (isLoading || !claim) {
@@ -297,6 +317,10 @@ function ClaimDetailPanel({
         <button className="button secondary" disabled={Boolean(busyAction?.startsWith("audit:"))} onClick={onExportAudit} type="button">
           {busyAction?.startsWith("audit:") ? <Loader2 size={16} /> : <Download size={16} />}
           Export audit trail
+        </button>
+        <button className="button secondary" disabled={Boolean(busyAction?.startsWith("summary:"))} onClick={onExportSummary} type="button">
+          {busyAction?.startsWith("summary:") ? <Loader2 size={16} /> : <Download size={16} />}
+          Download claim summary
         </button>
       </div>
       {claim.lineItems.map((line) => (
@@ -391,4 +415,18 @@ function formatDate(value: string) {
     month: "short",
     year: "numeric"
   }).format(new Date(value));
+}
+
+async function downloadResponse(response: Response, fallbackFileName: string) {
+  const blob = await response.blob();
+  const contentDisposition = response.headers.get("Content-Disposition") ?? "";
+  const fileName = contentDisposition.match(/filename="([^"]+)"/)?.[1] ?? fallbackFileName;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }

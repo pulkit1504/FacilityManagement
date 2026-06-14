@@ -2,13 +2,14 @@ import type { UserRole } from "@/server/domain/types";
 import { PrimaryNav } from "./primary-nav";
 import { cookies } from "next/headers";
 import { CurrentTestUser } from "@/components/auth/current-test-user";
+import { CompanyLogo } from "@/components/layout/company-logo";
 import { authSessionCookieName, parseSessionCookie } from "@/server/auth/session";
 import { parseTestUserCookie, testUserCookieName } from "@/server/auth/test-users";
 
 type NavLink = {
   href: string;
   label: string;
-  icon: "BarChart3" | "ClipboardCheck" | "FileText" | "Link2" | "ReceiptText" | "ShieldCheck" | "Settings" | "UserRound";
+  icon: "BarChart3" | "CircleHelp" | "ClipboardCheck" | "FileText" | "Link2" | "ReceiptText" | "ShieldCheck" | "Settings" | "UserRound";
   exact?: boolean;
   allowedRoles?: UserRole[];
 };
@@ -24,7 +25,8 @@ const links: NavLink[] = [
   { href: "/finance", label: "Finance Queue", icon: "FileText", allowedRoles: ["Finance"] satisfies UserRole[] },
   { href: "/billing", label: "Billing Alerts", icon: "Link2", allowedRoles: ["BillingTeam", "Finance"] satisfies UserRole[] },
   { href: "/audit", label: "Audit Review", icon: "ShieldCheck", allowedRoles: ["Auditor", "MD"] satisfies UserRole[] },
-  { href: "/admin", label: "Admin", icon: "Settings", allowedRoles: ["Admin"] satisfies UserRole[] }
+  { href: "/admin", label: "Admin", icon: "Settings", allowedRoles: ["Admin"] satisfies UserRole[] },
+  { href: "/help", label: "Help & Tutorial", icon: "CircleHelp" }
 ];
 
 export async function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -40,10 +42,7 @@ export async function AppShell({ children }: Readonly<{ children: React.ReactNod
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">
-          <strong>Facility Control</strong>
-          <span>Expense, billing, and audit workflow</span>
-        </div>
+        <CompanyLogo />
         <CurrentTestUser name={currentName} role={currentRole} />
         <PrimaryNav links={visibleLinks} />
       </aside>

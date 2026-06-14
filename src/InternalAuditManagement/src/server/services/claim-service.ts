@@ -541,6 +541,59 @@ export class ClaimService {
     );
   }
 
+  async exportClaimSummary(claimId: string, user: UserContext) {
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) {
+      throw notFound("Claim was not found.");
+    }
+
+    await this.assertCanView(claim, user);
+
+    return {
+      ticketId: claim.ticketId,
+      csv: toCsv(
+        [
+          "Ticket",
+          "Status",
+          "Claim Type",
+          "Entry Method",
+          "Expense Month",
+          "Total Amount",
+          "Line Number",
+          "Expense Head",
+          "Description",
+          "Expense Date",
+          "Payment Mode",
+          "Expense Tag",
+          "Vendor",
+          "Vendor Invoice",
+          "Client Invoice",
+          "Line Amount",
+          "Receipt Status"
+        ],
+        claim.lineItems.map((line, index) => [
+          claim.ticketId,
+          statusLabel(claim.status),
+          claim.claimKind,
+          claim.submissionMode === "Proforma" ? "Periodic Proforma" : "Single Voucher",
+          claim.claimPeriodMonth ?? "",
+          claim.totalAmount,
+          index + 1,
+          line.expenseHead ?? "",
+          line.description,
+          line.transactionDate,
+          line.paymentMode ?? "",
+          line.expenseTag,
+          line.vendorName ?? "",
+          line.vendorInvoiceNumber ?? "",
+          line.clientInvoiceNumber ?? "",
+          line.amount,
+          line.missingReceiptFlag ? "Missing" : "Attached"
+        ])
+      )
+    };
+  }
+
   async getProfile(user: UserContext) {
     if (!["Claimant", "ClusterHead", "HOD"].includes(user.role)) {
       throw forbidden("Profile self-service is available to Claimant, Cluster Head, and HOD users.");

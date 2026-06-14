@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
+import { Check, Download, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { expenseTagLabel } from "@/shared/expense-tags";
 import { calculateSelectedSettlementAmounts } from "@/shared/settlement";
@@ -654,6 +654,27 @@ export function ClaimWizard({
     }
   }
 
+  async function downloadClaimSummary() {
+    if (!claimId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/v1/claims/${claimId}/summary/export`);
+      if (!response.ok) {
+        const data = await response.json();
+        setErrorMessages(getProblemMessages(data, "Could not download claim summary."));
+        return;
+      }
+
+      await downloadResponse(response, `claim-${claimId}-summary.csv`);
+      setMessage("Claim summary downloaded.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not download claim summary.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const reopenReturnedClaim = useCallback(async (options: { automatic?: boolean } = {}) => {
     if (!claimId) return;
     setBusy(true);
@@ -877,6 +898,10 @@ export function ClaimWizard({
                 <h2>Claim Submitted</h2>
                 <p>{submissionResult.message}</p>
                 <p className="muted">Assigned to {submissionResult.assignedTo}. This claim is locked while it is under approval.</p>
+                <button className="button secondary" disabled={busy} onClick={() => void downloadClaimSummary()} type="button">
+                  {busy ? <Loader2 size={18} /> : <Download size={18} />}
+                  Download claim summary
+                </button>
               </div>
             </section>
           ) : null}
@@ -1222,6 +1247,20 @@ function addUtcDays(dateValue: string, days: number) {
   const date = new Date(`${dateValue}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+async function downloadResponse(response: Response, fallbackFileName: string) {
+  const blob = await response.blob();
+  const contentDisposition = response.headers.get("Content-Disposition") ?? "";
+  const fileName = contentDisposition.match(/filename="([^"]+)"/)?.[1] ?? fallbackFileName;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function endOfMonth(monthValue: string) {

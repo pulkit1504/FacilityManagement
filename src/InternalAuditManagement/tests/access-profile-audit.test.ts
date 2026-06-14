@@ -197,4 +197,15 @@ describe("profile and audit trail", () => {
     expect(result.csv).toContain("Demo Vendor,VENDOR-100,CLIENT-100");
     expect(result.csv).toContain("1250,Attached");
   });
+
+  it("allows an Auditor to view and export summaries for exception claims", async () => {
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim)
+    } as unknown as ClaimRepository;
+    const auditor = { ...claimant, role: "Auditor" as const, userId: "auditor-1" };
+    const service = new ClaimService(claims, {} as NotificationService);
+
+    await expect(service.getClaimDetail(claim.claimId, auditor)).resolves.toMatchObject({ ticketId: "EXP-000001" });
+    await expect(service.exportClaimSummary(claim.claimId, auditor)).resolves.toMatchObject({ ticketId: "EXP-000001" });
+  });
 });

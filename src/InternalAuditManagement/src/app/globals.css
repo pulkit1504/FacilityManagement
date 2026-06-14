@@ -614,6 +614,46 @@ h1 {
   justify-content: flex-end;
 }
 
+.claim-summary-modal {
+  max-width: 1040px;
+}
+
+.claim-summary-metrics {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.claim-summary-metrics div {
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+}
+
+.claim-summary-metrics span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.claim-summary-metrics strong {
+  font-size: 16px;
+}
+
+.claim-summary-table-wrap {
+  overflow-x: auto;
+}
+
+.claim-summary-footer {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
 .field-error {
   align-items: flex-start;
   background: #fef2f2;
@@ -888,6 +928,15 @@ h1 {
 
   .tutorial-steps {
     grid-template-columns: 1fr;
+  }
+
+  .claim-summary-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .claim-summary-footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

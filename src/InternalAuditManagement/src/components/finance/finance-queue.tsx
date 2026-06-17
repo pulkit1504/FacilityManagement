@@ -5,7 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Banknote, ClipboardCheck, Download, Eye, Loader2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { ClaimSummaryActions } from "@/components/claims/claim-summary-actions";
+import { UniversalClaimDrawer } from "@/components/claims/universal-claim-drawer";
 import { getProblemMessage } from "@/components/ui/problem-message";
+import { SlaChip } from "@/components/ui/sla-chip";
 
 type FinanceItem = {
   claimId: string;
@@ -21,6 +23,7 @@ type FinanceItem = {
   physicalReceiptRequired: boolean;
   physicalReceiptConfirmed: boolean;
   pendingBillingItemCount: number;
+  daysPending: number;
   bankAccountHolderName: string | null;
   bankAccountNumber: string | null;
   bankIfsc: string | null;
@@ -69,6 +72,7 @@ export function FinanceQueue() {
   const [items, setItems] = useState<FinanceItem[]>([]);
   const [advances, setAdvances] = useState<PendingAdvance[]>([]);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
+  const [workspaceClaimId, setWorkspaceClaimId] = useState<string | null>(null);
   const [claimDetails, setClaimDetails] = useState<Record<string, ClaimReceiptDetail>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -105,6 +109,11 @@ export function FinanceQueue() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const claimId = searchParams.get("claim");
+    if (claimId) setWorkspaceClaimId(claimId);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!decision) return;
@@ -442,6 +451,8 @@ export function FinanceQueue() {
                   <strong>{item.ticketId ?? item.claimId.slice(0, 8)}</strong>
                   <br />
                   <span className="muted">{item.claimKind} · {item.submittedBy}</span>
+                  <br />
+                  <SlaChip days={item.daysPending} />
                 </td>
                 <td>
                   <strong>
@@ -472,6 +483,10 @@ export function FinanceQueue() {
                     <button className="button secondary" onClick={() => void toggleReceipts(item.claimId)} type="button">
                       {busyAction === `receipts:${item.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
                       {expandedClaimId === item.claimId ? "Hide receipts" : "View receipts"}
+                    </button>
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => setWorkspaceClaimId(item.claimId)} type="button">
+                      <Eye size={16} />
+                      Open workspace
                     </button>
                     <button
                       className="button secondary"
@@ -613,7 +628,7 @@ export function FinanceQueue() {
                 <td>
                   <strong>{advance.ticketId}</strong>
                   <br />
-                  <span className="muted">{advance.ageDays} days open</span>
+                  <SlaChip days={advance.ageDays} />
                 </td>
                 <td>{advance.submittedBy}</td>
                 <td>{advance.siteName ?? "No site linked"}</td>
@@ -691,6 +706,7 @@ export function FinanceQueue() {
           </div>
         </div>
       ) : null}
+      <UniversalClaimDrawer claimId={workspaceClaimId} isOpen={Boolean(workspaceClaimId)} onClose={() => setWorkspaceClaimId(null)} onError={setMessage} />
     </div>
   );
 }

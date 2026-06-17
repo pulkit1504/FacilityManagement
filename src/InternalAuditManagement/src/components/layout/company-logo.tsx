@@ -27,8 +27,8 @@ export function CompanyLogo({ compact = false }: Readonly<{ compact?: boolean }>
         />
       </div>
       <div className="company-logo-product">
-        <span>Finance operations</span>
-        <strong>Facility Control</strong>
+        <span>Imprest workflow</span>
+        <strong>Imprest Claim</strong>
       </div>
     </div>
   );

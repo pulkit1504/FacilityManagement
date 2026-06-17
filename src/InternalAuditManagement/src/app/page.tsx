@@ -11,8 +11,8 @@ export default async function Home() {
     <AppShell>
       <div className="topbar">
         <div>
-          <div className="eyebrow">MVP Control Room</div>
-          <h1>Facility expense control for residential society operations</h1>
+          <div className="eyebrow">Imprest Claim</div>
+          <h1>Imprest Claim control room</h1>
           <p className="muted">
             Submit itemized claims, route approvals, track physical vouchers, recover billable expenses, and preserve
             an immutable audit trail.

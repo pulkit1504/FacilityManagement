@@ -21,9 +21,11 @@ import {
 } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { ClaimSummaryActions } from "@/components/claims/claim-summary-actions";
+import { UniversalClaimDrawer } from "@/components/claims/universal-claim-drawer";
 import { expenseTagLabel } from "@/shared/expense-tags";
 import { MetricCard } from "@/components/ui/metric-card";
 import { getProblemMessage } from "@/components/ui/problem-message";
+import { SlaChip } from "@/components/ui/sla-chip";
 
 type FraudFlagItem = {
   flagId: string;
@@ -124,6 +126,7 @@ export function FraudReview() {
   const [auditReceiptDetails, setAuditReceiptDetails] = useState<Record<string, AuditReceiptDetail>>({});
   const [expandedAuditClaimId, setExpandedAuditClaimId] = useState<string | null>(null);
   const [expandedFlagId, setExpandedFlagId] = useState<string | null>(null);
+  const [workspaceClaimId, setWorkspaceClaimId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -143,6 +146,8 @@ export function FraudReview() {
 
   useEffect(() => {
     setQuery(searchParams.get("q") ?? "");
+    const claimId = searchParams.get("claim");
+    if (claimId) setWorkspaceClaimId(claimId);
   }, [searchParams]);
 
   const enrichedFlags = useMemo(() => flags.map((flag) => enrichFlag(flag)), [flags]);
@@ -513,7 +518,9 @@ export function FraudReview() {
                   <td>
                     <strong>{item.ticketId}</strong>
                     <br />
-                    <span className="muted">{item.claimKind} | {item.daysPending} days pending</span>
+                    <span className="muted">{item.claimKind}</span>
+                    <br />
+                    <SlaChip days={item.daysPending} />
                   </td>
                   <td>
                     {item.submittedBy}
@@ -538,6 +545,10 @@ export function FraudReview() {
                       <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void toggleAuditReceipts(item.claimId)} type="button">
                         {busyAction === `audit-receipts:${item.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
                         {expandedAuditClaimId === item.claimId ? "Hide receipts" : "View receipts"}
+                      </button>
+                      <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => setWorkspaceClaimId(item.claimId)} type="button">
+                        <Eye size={16} />
+                        Open workspace
                       </button>
                       {item.claimKind !== "Advance" ? (
                         <button className="button secondary" disabled={Boolean(busyAction) || Boolean(item.auditorVoucherReceivedAt)} onClick={() => void receiveAuditVouchers(item.claimId)} type="button">
@@ -740,7 +751,9 @@ export function FraudReview() {
                   <td>
                     {flag.employeeName}
                     <br />
-                    <span className="muted">{flag.claimKind} | {flag.daysOpen} days open</span>
+                    <span className="muted">{flag.claimKind}</span>
+                    <br />
+                    <SlaChip days={flag.daysOpen} />
                   </td>
                   <td>
                     <span className="badge warning">{flag.statusLabel}</span>
@@ -760,6 +773,10 @@ export function FraudReview() {
                       <button className="button secondary" onClick={() => setExpandedFlagId(expandedFlagId === flag.flagId ? null : flag.flagId)} type="button">
                         <Eye size={16} />
                         {expandedFlagId === flag.flagId ? "Hide" : "Evidence"}
+                      </button>
+                      <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => setWorkspaceClaimId(flag.primaryClaimId)} type="button">
+                        <Eye size={16} />
+                        Open workspace
                       </button>
                       <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void review(flag.flagId, "Cleared")} type="button">
                         {busyAction === `Cleared:${flag.flagId}` ? <Loader2 size={16} /> : <CheckCircle2 size={16} />}
@@ -826,6 +843,7 @@ export function FraudReview() {
           ))}
         </div>
       </section>
+      <UniversalClaimDrawer claimId={workspaceClaimId} isOpen={Boolean(workspaceClaimId)} onClose={() => setWorkspaceClaimId(null)} onError={setMessage} />
     </div>
   );
 }

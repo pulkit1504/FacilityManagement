@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Link2, Loader2, RefreshCw } from "lucide-react";
+import { Eye, Link2, Loader2, RefreshCw } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
+import { UniversalClaimDrawer } from "@/components/claims/universal-claim-drawer";
+import { SlaChip } from "@/components/ui/sla-chip";
 
 type BillingAlertItem = {
   alertId: string;
@@ -24,6 +26,7 @@ type BillingAlertItem = {
 export function BillingAlerts() {
   const searchParams = useSearchParams();
   const [items, setItems] = useState<BillingAlertItem[]>([]);
+  const [workspaceClaimId, setWorkspaceClaimId] = useState<string | null>(null);
   const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -48,6 +51,11 @@ export function BillingAlerts() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const claimId = searchParams.get("claim");
+    if (claimId) setWorkspaceClaimId(claimId);
+  }, [searchParams]);
 
   const recordSearch = (searchParams.get("q") ?? "").trim().toLowerCase();
   const filteredItems = items.filter((item) => matchesText(recordSearch, [
@@ -139,9 +147,9 @@ export function BillingAlerts() {
                 <span className="muted">Bill Rs {item.billableAmount.toLocaleString("en-IN")}</span>
               </td>
               <td>
-                <span className={`badge ${item.daysOpen >= 7 ? "danger" : item.daysOpen >= 2 ? "warning" : "success"}`}>
-                  {item.urgencyLabel}
-                </span>
+                <SlaChip days={item.daysOpen} />
+                <br />
+                <span className="muted">{item.urgencyLabel}</span>
               </td>
               <td>
                 <input
@@ -157,10 +165,16 @@ export function BillingAlerts() {
                 />
               </td>
               <td>
-                <button className="button" disabled={Boolean(busyAction)} onClick={() => void linkInvoice(item.alertId)} type="button">
-                  {busyAction === `link:${item.alertId}` ? <Loader2 size={16} /> : <Link2 size={16} />}
-                  {busyAction === `link:${item.alertId}` ? "Linking..." : "Link"}
-                </button>
+                <div className="actions">
+                  <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => setWorkspaceClaimId(item.claimId)} type="button">
+                    <Eye size={16} />
+                    Open workspace
+                  </button>
+                  <button className="button" disabled={Boolean(busyAction)} onClick={() => void linkInvoice(item.alertId)} type="button">
+                    {busyAction === `link:${item.alertId}` ? <Loader2 size={16} /> : <Link2 size={16} />}
+                    {busyAction === `link:${item.alertId}` ? "Linking..." : "Link"}
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -171,6 +185,7 @@ export function BillingAlerts() {
           ) : null}
         </tbody>
       </table>
+      <UniversalClaimDrawer claimId={workspaceClaimId} isOpen={Boolean(workspaceClaimId)} onClose={() => setWorkspaceClaimId(null)} onError={setMessage} />
     </section>
   );
 }

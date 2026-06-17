@@ -15,6 +15,7 @@ import type {
   FinanceQueueItem,
   ExpenseAttachment,
   ExpenseClaim,
+  ExpenseHead,
   ExpenseLineItem,
   FraudFlag,
   FraudFlagQueueItem,
@@ -40,7 +41,7 @@ import type {
 } from "./claim-repository";
 import { defaultClaimRecord } from "./claim-repository";
 import type { CreateLineItemInput } from "../validation/claim.schemas";
-import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput, UpdateBankDetailsInput } from "../validation/claim.schemas";
+import type { CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateBankDetailsInput, UpdateExpenseHeadInput } from "../validation/claim.schemas";
 import { getSupabaseAdminClient } from "./supabase-client";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { calculateSelectedSettlementAmounts } from "@/shared/settlement";
@@ -155,6 +156,8 @@ function mapEmployee(row: Record<string, unknown>): Employee {
     bankAccountNumber: row.bank_account_number ? String(row.bank_account_number) : null,
     bankIfsc: row.bank_ifsc ? String(row.bank_ifsc) : null,
     bankName: row.bank_name ? String(row.bank_name) : null,
+    passwordResetRequired: Boolean(row.password_reset_required),
+    passwordUpdatedAt: row.password_updated_at ? String(row.password_updated_at) : null,
     isActive: Boolean(row.is_active)
   };
 }
@@ -164,6 +167,17 @@ function mapHoliday(row: Record<string, unknown>): Holiday {
     holidayDate: String(row.holiday_date),
     holidayName: String(row.holiday_name),
     isNational: Boolean(row.is_national)
+  };
+}
+
+function mapExpenseHead(row: Record<string, unknown>): ExpenseHead {
+  return {
+    expenseHeadId: String(row.expense_head_id),
+    name: String(row.name),
+    description: row.description ? String(row.description) : null,
+    isActive: Boolean(row.is_active),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at)
   };
 }
 
@@ -496,6 +510,84 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const db = await getSupabaseAdminClient();
     const { error } = await db.from("holidays").delete().eq("holiday_date", holidayDate);
     if (error) throw error;
+  }
+
+  async listExpenseHeads(includeInactive = false): Promise<ExpenseHead[]> {
+    const db = await getSupabaseAdminClient();
+    let query = db.from("expense_heads").select("*").order("name", { ascending: true });
+    if (!includeInactive) {
+      query = query.eq("is_active", true);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data ?? []).map(mapExpenseHead);
+  }
+
+  async createExpenseHead(input: CreateExpenseHeadInput): Promise<ExpenseHead> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_heads")
+      .insert({
+        name: input.name,
+        description: input.description ?? null,
+        is_active: true,
+        updated_at: new Date().toISOString()
+      })
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapExpenseHead(data);
+  }
+
+  async updateExpenseHead(expenseHeadId: string, input: UpdateExpenseHeadInput): Promise<ExpenseHead> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_heads")
+      .update({
+        name: input.name,
+        description: input.description ?? null,
+        is_active: input.isActive,
+        updated_at: new Date().toISOString()
+      })
+      .eq("expense_head_id", expenseHeadId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapExpenseHead(data);
+  }
+
+  async deactivateExpenseHead(expenseHeadId: string): Promise<ExpenseHead> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_heads")
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq("expense_head_id", expenseHeadId)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapExpenseHead(data);
+  }
+
+  async resetEmployeePassword(employeeId: string, input: ResetEmployeePasswordInput): Promise<Employee> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("employees")
+      .update({
+        password_hash: await hashPassword(input.temporaryPassword),
+        password_reset_required: input.requirePasswordReset,
+        password_updated_at: new Date().toISOString()
+      })
+      .eq("employee_id", employeeId)
+      .eq("is_active", true)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapEmployee(data);
   }
 
   async listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]> {

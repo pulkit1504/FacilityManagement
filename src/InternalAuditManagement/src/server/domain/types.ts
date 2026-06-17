@@ -87,6 +87,8 @@ export type Employee = {
   bankAccountNumber: string | null;
   bankIfsc: string | null;
   bankName: string | null;
+  passwordResetRequired?: boolean;
+  passwordUpdatedAt?: string | null;
   isActive: boolean;
 };
 
@@ -94,6 +96,15 @@ export type Holiday = {
   holidayDate: string;
   holidayName: string;
   isNational: boolean;
+};
+
+export type ExpenseHead = {
+  expenseHeadId: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type Site = {

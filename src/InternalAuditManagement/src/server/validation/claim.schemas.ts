@@ -228,6 +228,20 @@ export const createHolidaySchema = z.object({
   isNational: z.boolean().default(true)
 });
 
+export const createExpenseHeadSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  description: z.string().trim().max(500).nullable().optional()
+});
+
+export const updateExpenseHeadSchema = createExpenseHeadSchema.extend({
+  isActive: z.boolean().default(true)
+});
+
+export const resetEmployeePasswordSchema = z.object({
+  temporaryPassword: z.string().min(8).max(128),
+  requirePasswordReset: z.boolean().default(true)
+});
+
 export const cleanupStaleRecordsSchema = z.object({
   olderThanDays: z.coerce.number().int().min(30).max(365).default(90)
 });
@@ -251,5 +265,8 @@ export type CreateSiteInput = z.infer<typeof createSiteSchema>;
 export type AssignSiteClusterHeadInput = z.infer<typeof assignSiteClusterHeadSchema>;
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
+export type CreateExpenseHeadInput = z.infer<typeof createExpenseHeadSchema>;
+export type UpdateExpenseHeadInput = z.infer<typeof updateExpenseHeadSchema>;
+export type ResetEmployeePasswordInput = z.infer<typeof resetEmployeePasswordSchema>;
 export type CleanupStaleRecordsInput = z.infer<typeof cleanupStaleRecordsSchema>;
 export type UpdateBankDetailsInput = z.infer<typeof updateBankDetailsSchema>;

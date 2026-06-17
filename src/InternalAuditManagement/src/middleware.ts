@@ -2,8 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const testUserCookieName = "fm_test_user";
 const authSessionCookieName = "fm_session";
+const publicFilePattern = /\.(?:avif|css|gif|ico|jpg|jpeg|js|map|png|svg|webp|woff2?)$/i;
 
 export function middleware(request: NextRequest) {
+  if (publicFilePattern.test(request.nextUrl.pathname)) {
+    return NextResponse.next();
+  }
+
   if (process.env.APP_AUTH_MODE === "development") {
     return NextResponse.next();
   }

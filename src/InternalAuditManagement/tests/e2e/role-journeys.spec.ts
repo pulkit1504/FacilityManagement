@@ -41,6 +41,23 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 test.describe("role journeys", () => {
+  test("Login page renders public logo assets", async ({ page }) => {
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { level: 1, name: /Sign In|Tester Access/ })).toBeVisible();
+
+    const logos = await page.locator(".company-logo-marks img").evaluateAll((images) =>
+      images.map((image) => ({
+        src: image.getAttribute("src"),
+        naturalWidth: (image as HTMLImageElement).naturalWidth,
+        naturalHeight: (image as HTMLImageElement).naturalHeight
+      }))
+    );
+
+    expect(logos).toHaveLength(2);
+    expect(logos.every((logo) => logo.naturalWidth > 0 && logo.naturalHeight > 0)).toBe(true);
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("Claimant can correct a returned claim without a second reopen decision", async ({ page }) => {
     await signInAs(page, "Claimant");
     let reopened = false;

@@ -1,5 +1,6 @@
 import { FilePlus2 } from "lucide-react";
 import { OverviewMetrics } from "@/components/dashboard/overview-metrics";
+import { RoleControlRoom } from "@/components/dashboard/role-control-room";
 import { AppShell } from "@/components/layout/app-shell";
 import { getUserContext } from "@/server/auth/user-context";
 
@@ -26,6 +27,7 @@ export default async function Home() {
       </div>
 
       <OverviewMetrics />
+      <RoleControlRoom role={user.role} />
     </AppShell>
   );
 }

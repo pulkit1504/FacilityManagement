@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Facility Expense Control",
-  description: "Internal audit and expense control system for facility management companies."
+  title: "Imprest Claim",
+  description: "Imprest claim, audit, and finance control system for facility management companies."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

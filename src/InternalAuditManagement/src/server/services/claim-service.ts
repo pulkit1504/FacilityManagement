@@ -693,6 +693,7 @@ export class ClaimService {
     await this.assertCanView(claim, user);
 
     const auditEntries = await this.claims.listAuditLogForClaim(claimId);
+    const lineLabels = new Map(claim.lineItems.map((line) => [line.lineItemId, line.description]));
     const approvalActors = await Promise.all(
       claim.approvalSteps.map((step) => step.assignedApproverId ? this.claims.getEmployee(step.assignedApproverId) : null)
     );
@@ -701,12 +702,12 @@ export class ClaimService {
         timestamp: entry.actionTimestamp,
         actor: entry.actorName ?? "",
         actorId: entry.actorUserId,
-        action: entry.actionType,
+        action: auditActionLabel(entry.actionType),
         approvalRole: "",
         decision: "",
-        fromStatus: entry.preActionStatus ?? "",
-        toStatus: entry.postActionStatus,
-        remarks: entry.auditRemarks ?? "",
+        fromStatus: entry.preActionStatus ? humanizeToken(entry.preActionStatus) : "",
+        toStatus: humanizeToken(entry.postActionStatus),
+        remarks: formatAuditRemarks(entry, lineLabels),
         correlationId: entry.correlationId
       })),
       ...claim.approvalSteps
@@ -714,7 +715,7 @@ export class ClaimService {
           timestamp: step.decisionAt!,
           actor: approvalActors[index]?.fullName ?? "",
           actorId: step.assignedApproverId ?? "",
-          action: "APPROVAL_DECISION",
+          action: "Approval decision",
           approvalRole: step.requiredApproverRole,
           decision: step.decision,
           fromStatus: "",
@@ -1122,6 +1123,58 @@ function countBy(values: string[]) {
     counts.set(value, (counts.get(value) ?? 0) + 1);
     return counts;
   }, new Map<string, number>());
+}
+
+function auditActionLabel(actionType: string) {
+  const labels: Record<string, string> = {
+    DRAFT_SAVED: "Draft saved",
+    RECEIPT_UPLOADED: "Receipt uploaded",
+    BILLING_ALERT_CREATED: "Billing alert created",
+    INVOICE_LINKED: "Client invoice linked",
+    SUBMIT: "Claim submitted",
+    CLUSTER_HEAD_APPROVE: "Cluster Head approved",
+    HOD_APPROVE: "HOD approved",
+    MD_APPROVE: "MD approved",
+    FINANCE_CONFIRM: "Finance confirmed",
+    FINANCE_LINE_ACCEPT: "Finance accepted line",
+    FINANCE_LINE_REJECT: "Finance rejected line",
+    PHYSICAL_RECEIPT_CONFIRM: "Physical receipts confirmed",
+    AUDITOR_VOUCHERS_RECEIVED: "Auditor received vouchers",
+    AUDIT_APPROVE: "Audit approved",
+    AUDIT_REJECT: "Audit rejected",
+    AUDIT_INFO_REQUEST: "Audit requested information",
+    PAYMENT_RELEASE: "Payment released",
+    CLAIM_COMMENT: "Claim comment",
+    REJECT: "Returned for correction",
+    BILLABLE_TAG_CHANGE: "Billing tag changed",
+    FRAUD_FLAG: "Audit flag created",
+    FRAUD_CLEAR: "Audit flag cleared",
+    FRAUD_ESCALATE: "Audit flag escalated"
+  };
+  return labels[actionType] ?? humanizeToken(actionType);
+}
+
+function formatAuditRemarks(entry: AuditLogEntry, lineLabels: Map<string, string>) {
+  const remarks = entry.auditRemarks?.trim();
+  if (remarks) return replaceLineReferences(remarks, lineLabels);
+  const fromStatus = entry.preActionStatus ? humanizeToken(entry.preActionStatus) : "New claim";
+  return `${fromStatus} -> ${humanizeToken(entry.postActionStatus)}`;
+}
+
+function replaceLineReferences(text: string, lineLabels: Map<string, string>) {
+  let nextText = text;
+  for (const [lineItemId, description] of lineLabels) {
+    nextText = nextText.replaceAll(lineItemId, `"${description}"`);
+  }
+  return nextText;
+}
+
+function humanizeToken(value: string) {
+  return value
+    .replace(/_/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function emptySearchResults() {

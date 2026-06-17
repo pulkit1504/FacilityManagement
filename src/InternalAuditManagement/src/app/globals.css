@@ -605,6 +605,24 @@ h1 {
   font-size: 13px;
 }
 
+.table-empty-state {
+  background: #f8fafc;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+}
+
+.table-empty-state strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.table-empty-state span {
+  color: var(--muted);
+}
+
 .badge {
   border-radius: 999px;
   display: inline-flex;
@@ -992,32 +1010,6 @@ h1 {
   margin-top: 4px;
 }
 
-.notification-bell {
-  position: relative;
-}
-
-.notification-bell-button {
-  position: relative;
-}
-
-.notification-count {
-  align-items: center;
-  background: var(--danger);
-  border-radius: 999px;
-  color: #ffffff;
-  display: inline-flex;
-  font-size: 11px;
-  font-weight: 800;
-  height: 18px;
-  justify-content: center;
-  min-width: 18px;
-  padding: 0 5px;
-  position: absolute;
-  right: -6px;
-  top: -6px;
-}
-
-.notification-popover,
 .smart-search-popover {
   background: #ffffff;
   border: 1px solid var(--border);
@@ -1029,12 +1021,6 @@ h1 {
   right: 0;
   top: calc(100% + 8px);
   z-index: 40;
-}
-
-.notification-popover {
-  left: 0;
-  min-width: 320px;
-  right: auto;
 }
 
 .smart-search-wrap {

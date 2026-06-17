@@ -591,7 +591,12 @@ export function FinanceQueue() {
           ))}
           {!isLoading && filteredItems.length === 0 ? (
             <tr>
-              <td colSpan={6}>{recordSearch ? "No finance items match the current search." : "No finance items pending."}</td>
+              <td colSpan={6}>
+                <div className="table-empty-state">
+                  <strong>{recordSearch ? "No finance items match this search" : "No voucher packs pending"}</strong>
+                  <span>{recordSearch ? "Clear the search or try ticket, claimant, site, amount, or bank reference." : "Finance has no claims waiting for voucher review, Audit handoff, or payment release."}</span>
+                </div>
+              </td>
             </tr>
           ) : null}
         </tbody>
@@ -646,7 +651,12 @@ export function FinanceQueue() {
             ))}
             {!isLoading && filteredAdvances.length === 0 ? (
               <tr>
-                <td colSpan={7}>{recordSearch ? "No advances match the current search." : "No paid advances with an open balance."}</td>
+                <td colSpan={7}>
+                  <div className="table-empty-state">
+                    <strong>{recordSearch ? "No advances match this search" : "No open advance balances"}</strong>
+                    <span>{recordSearch ? "Try searching by ticket, claimant, site, amount, or settlement status." : "All paid advances are fully settled or no paid advances are currently open."}</span>
+                  </div>
+                </td>
               </tr>
             ) : null}
           </tbody>

@@ -273,9 +273,9 @@ test.describe("role journeys", () => {
     });
 
     await page.goto("/help");
-    await expect(page.getByRole("heading", { level: 1, name: "How to use Facility Control" })).toBeVisible();
-    await expect(page.locator("video source")).toHaveAttribute("src", "/application-tutorial.webm");
-    await expect(page.getByRole("heading", { level: 2, name: "Quick start" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "How to use Imprest Claim" })).toBeVisible();
+    await expect(page.locator("video")).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 2, name: "Imprest Claim quick start" })).toBeVisible();
     await expectAccessiblePage(page);
     await expectNoHorizontalOverflow(page);
 
@@ -285,6 +285,34 @@ test.describe("role journeys", () => {
     await expect(page.getByText("Settle open balances promptly; only one active settlement may adjust an advance.")).toBeVisible();
     await expectAccessiblePage(page);
     await expectNoHorizontalOverflow(page);
+  });
+
+  test("Smart Search closes when clicking outside the search surface", async ({ page }) => {
+    await signInAs(page, "Claimant");
+    await page.route("**/api/v1/claims", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+    });
+    await page.route("**/api/v1/search**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          groups: [
+            { key: "claims", label: "Claims", items: [] },
+            { key: "billing", label: "Billing Alerts", items: [] },
+            { key: "audit", label: "Audit Flags", items: [] },
+            { key: "employees", label: "Employees", items: [] }
+          ]
+        })
+      });
+    });
+
+    await page.goto("/claims");
+    await page.keyboard.press("/");
+    await page.getByLabel("Search records on this page").fill("demo");
+    const smartSearch = page.locator(".smart-search-popover");
+    await expect(smartSearch.getByText("Claims", { exact: true })).toBeVisible();
+    await page.getByRole("heading", { level: 1, name: "Claim history and status" }).click();
+    await expect(smartSearch).toBeHidden();
   });
 
   test("Claimant can open a claim workspace with timeline and evidence exports", async ({ page }) => {

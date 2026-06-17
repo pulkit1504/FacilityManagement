@@ -595,7 +595,14 @@ export function FraudReview() {
               <tr><td colSpan={5}><span className="loading-inline"><Loader2 size={16} />Loading audit queue...</span></td></tr>
             ) : null}
             {!isLoading && filteredAuditItems.length === 0 ? (
-              <tr><td colSpan={5}>{recordSearch ? "No audit receipt claims match the current search." : "No finance-confirmed receipts are waiting for Auditor review."}</td></tr>
+              <tr>
+                <td colSpan={5}>
+                  <div className="table-empty-state">
+                    <strong>{recordSearch ? "No audit receipt claims match this search" : "No voucher packs waiting for Audit"}</strong>
+                    <span>{recordSearch ? "Try searching by ticket, claimant, site, amount, urgency, or claim type." : "Finance has not sent any receipt-confirmed packs for Auditor decision."}</span>
+                  </div>
+                </td>
+              </tr>
             ) : null}
           </tbody>
         </table>
@@ -828,7 +835,12 @@ export function FraudReview() {
             ) : null}
             {!isLoading && filteredFlags.length === 0 ? (
               <tr>
-                <td colSpan={6}>No audit exceptions match the current filters.</td>
+                <td colSpan={6}>
+                  <div className="table-empty-state">
+                    <strong>No audit exceptions match the current filters</strong>
+                    <span>Clear filters or run a sweep to refresh duplicate, split, receipt, vendor, and date-risk checks.</span>
+                  </div>
+                </td>
               </tr>
             ) : null}
           </tbody>

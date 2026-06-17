@@ -287,6 +287,48 @@ test.describe("role journeys", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("Claimant can open a claim workspace with timeline and evidence exports", async ({ page }) => {
+    await signInAs(page, "Claimant");
+    const returned = returnedClaimFixture("Rejected");
+
+    await page.route("**/api/v1/claims", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [{
+            claimId: returned.claimId,
+            ticketId: returned.ticketId,
+            claimKind: returned.claimKind,
+            submissionMode: returned.submissionMode,
+            status: returned.status,
+            statusLabel: returned.statusLabel,
+            totalAmount: returned.totalAmount,
+            siteId: returned.siteId,
+            siteName: "Investor Demo Site",
+            createdAt: returned.createdAt,
+            updatedAt: returned.updatedAt
+          }]
+        })
+      });
+    });
+    await page.route("**/api/v1/claims/claim-returned-1", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify(returned) });
+    });
+
+    await page.goto("/claims");
+
+    await page.getByRole("button", { name: "Open workspace" }).click();
+    const drawer = page.getByRole("dialog", { name: "EXP-RETURNED" });
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByRole("list", { name: "Claim status timeline" })).toBeVisible();
+    await expect(drawer.getByText("Finance voucher review")).toBeVisible();
+    await expect(drawer.getByText("Return reason")).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Export audit trail" })).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Download claim summary" })).toBeVisible();
+    await expectAccessiblePage(page);
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("Approver can reach an accessible approval queue", async ({ page }) => {
     await signInAs(page, "ClusterHead");
     await page.route("**/api/v1/approvals/queue", async (route) => {
@@ -307,6 +349,59 @@ test.describe("role journeys", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Operational approvals" })).toBeVisible();
     await expect(page.getByText("Loading approval queue...")).toBeHidden();
     await expect(page.getByRole("heading", { level: 2, name: "Pending Approval Queue" })).toBeVisible();
+    await expectAccessiblePage(page);
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test("Finance sees a role control room with notifications and exports", async ({ page }) => {
+    await signInAs(page, "Finance");
+    await page.route("**/api/v1/dashboard/overview", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          metrics: {
+            pendingApprovals: 0,
+            financeQueueCount: 1,
+            activeBillingAlerts: 0,
+            openFraudFlags: 0,
+            billingRecoveryPct: 100,
+            canViewBillingMetrics: true,
+            canViewFraudFlags: false
+          }
+        })
+      });
+    });
+    await page.route("**/api/v1/finance/queue", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [{
+            ...auditQueueFixture(),
+            status: "HodApproved",
+            physicalReceiptRequired: true,
+            physicalReceiptConfirmed: false,
+            advanceAdjustmentAmount: 0,
+            netAdvanceLeftAmount: 0,
+            bankAccountHolderName: "Riya Sharma",
+            bankAccountNumber: "1234567890",
+            bankIfsc: "HDFC0001234",
+            bankName: "HDFC"
+          }]
+        })
+      });
+    });
+    await page.route("**/api/v1/finance/advances", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+    });
+
+    await page.goto("/");
+
+    await expect(page.getByRole("heading", { level: 2, name: "Finance control desk" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Today's Work" })).toBeVisible();
+    await expect(page.getByText("Review vouchers")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Notification Center" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Export Center" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Imprest ledger CSV Open advances, settlements, and balances." })).toBeVisible();
     await expectAccessiblePage(page);
     await expectNoHorizontalOverflow(page);
   });

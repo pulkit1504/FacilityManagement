@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { expenseTagLabel } from "@/shared/expense-tags";
+import { ClaimTimeline } from "@/components/claims/claim-timeline";
+import { ClaimWorkspaceDrawer } from "@/components/claims/claim-workspace-drawer";
 
 type ClaimSummary = {
   claimId: string;
@@ -250,25 +252,11 @@ export function MyClaims() {
                       ) : null}
                       <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void toggleDetails(claim.claimId)} type="button">
                         {busyAction === `details:${claim.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
-                        {expandedClaimId === claim.claimId ? "Hide details" : "View details"}
+                        {expandedClaimId === claim.claimId ? "Close workspace" : "Open workspace"}
                       </button>
                     </div>
                   </td>
                 </tr>
-                {expandedClaimId === claim.claimId ? (
-                  <tr>
-                    <td colSpan={6}>
-                      <ClaimDetailPanel
-                        claim={details[claim.claimId]}
-                        isLoading={!details[claim.claimId]}
-                        onOpenReceipt={(lineItemId, attachmentId) => void openReceipt(claim.claimId, lineItemId, attachmentId)}
-                        onExportAudit={() => void exportAuditTrail(claim.claimId, claim.ticketId)}
-                        onExportSummary={() => void exportClaimSummary(claim.claimId, claim.ticketId)}
-                        busyAction={busyAction}
-                      />
-                    </td>
-                  </tr>
-                ) : null}
               </Fragment>
             ))}
             {!isLoading && filteredClaims.length === 0 ? (
@@ -279,6 +267,29 @@ export function MyClaims() {
           </tbody>
         </table>
       </section>
+      <ClaimWorkspaceDrawer
+        isOpen={Boolean(expandedClaimId)}
+        onClose={() => setExpandedClaimId(null)}
+        subtitle={expandedClaimId ? details[expandedClaimId]?.statusLabel ?? "Loading claim evidence..." : undefined}
+        title={expandedClaimId ? details[expandedClaimId]?.ticketId ?? "Claim workspace" : "Claim workspace"}
+      >
+        {expandedClaimId ? (
+          <ClaimDetailPanel
+            busyAction={busyAction}
+            claim={details[expandedClaimId]}
+            isLoading={!details[expandedClaimId]}
+            onExportAudit={() => {
+              const claim = claims.find((item) => item.claimId === expandedClaimId);
+              if (claim) void exportAuditTrail(claim.claimId, claim.ticketId);
+            }}
+            onExportSummary={() => {
+              const claim = claims.find((item) => item.claimId === expandedClaimId);
+              if (claim) void exportClaimSummary(claim.claimId, claim.ticketId);
+            }}
+            onOpenReceipt={(lineItemId, attachmentId) => void openReceipt(expandedClaimId, lineItemId, attachmentId)}
+          />
+        ) : null}
+      </ClaimWorkspaceDrawer>
     </div>
   );
 }
@@ -309,6 +320,7 @@ function ClaimDetailPanel({
 
   return (
     <div className="receipt-review">
+      <ClaimTimeline approvalSteps={claim.approvalSteps} physicalReceiptConfirmedAt={claim.physicalReceiptConfirmedAt} status={claim.status} />
       {claim.rejectionReason ? (
         <div className="audit-evidence-row">
           <strong>Return reason</strong>

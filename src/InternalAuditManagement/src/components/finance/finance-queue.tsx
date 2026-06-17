@@ -62,6 +62,8 @@ type FinanceDecision =
   | { kind: "reject-line"; claimId: string; lineItemId: string; title: string }
   | { kind: "return-claim"; claimId: string; title: string };
 
+type FinanceBucket = "All" | "ReviewVouchers" | "ReadyForAudit" | "SentToAudit" | "PaymentReady";
+
 export function FinanceQueue() {
   const searchParams = useSearchParams();
   const [items, setItems] = useState<FinanceItem[]>([]);
@@ -75,6 +77,7 @@ export function FinanceQueue() {
   const [decision, setDecision] = useState<FinanceDecision | null>(null);
   const [decisionRemarks, setDecisionRemarks] = useState("");
   const [decisionError, setDecisionError] = useState("");
+  const [bucket, setBucket] = useState<FinanceBucket>("All");
   const decisionDialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
@@ -364,7 +367,10 @@ export function FinanceQueue() {
 
   const reportQuery = reportMonth ? `?month=${encodeURIComponent(reportMonth)}` : "";
   const recordSearch = (searchParams.get("q") ?? "").trim().toLowerCase();
-  const filteredItems = items.filter((item) => matchesFinanceSearch(item, recordSearch, claimDetails[item.claimId]));
+  const filteredItems = items.filter((item) => (
+    matchesFinanceBucket(item, bucket, claimDetails[item.claimId]) &&
+    matchesFinanceSearch(item, recordSearch, claimDetails[item.claimId])
+  ));
   const filteredAdvances = advances.filter((advance) => matchesText(recordSearch, [
     advance.ticketId,
     advance.submittedBy,
@@ -391,6 +397,20 @@ export function FinanceQueue() {
               Billable CSV
             </a>
           </div>
+        </div>
+        <div aria-label="Finance action buckets" className="queue-tabs">
+          {financeBuckets(items, claimDetails).map((item) => (
+            <button
+              aria-pressed={bucket === item.bucket}
+              className={`queue-tab ${bucket === item.bucket ? "active" : ""}`}
+              key={item.bucket}
+              onClick={() => setBucket(item.bucket)}
+              type="button"
+            >
+              <strong>{item.count}</strong>
+              <span>{item.label}</span>
+            </button>
+          ))}
         </div>
         <ActionFeedback message={message} onDismiss={() => setMessage("")} />
         <table className="table">
@@ -702,6 +722,30 @@ function matchesFinanceSearch(item: FinanceItem, query: string, detail?: ClaimRe
       ...line.attachments.map((attachment) => attachment.originalFileName)
     ]) ?? [])
   ]);
+}
+
+function financeBuckets(items: FinanceItem[], details: Record<string, ClaimReceiptDetail>) {
+  return [
+    { bucket: "All" as const, label: "All finance work", count: items.length },
+    { bucket: "ReviewVouchers" as const, label: "Voucher review", count: items.filter((item) => matchesFinanceBucket(item, "ReviewVouchers", details[item.claimId])).length },
+    { bucket: "ReadyForAudit" as const, label: "Audit-ready packs", count: items.filter((item) => matchesFinanceBucket(item, "ReadyForAudit", details[item.claimId])).length },
+    { bucket: "SentToAudit" as const, label: "Audit-sent packs", count: items.filter((item) => matchesFinanceBucket(item, "SentToAudit", details[item.claimId])).length },
+    { bucket: "PaymentReady" as const, label: "Payment ready", count: items.filter((item) => matchesFinanceBucket(item, "PaymentReady", details[item.claimId])).length }
+  ];
+}
+
+function matchesFinanceBucket(item: FinanceItem, bucket: FinanceBucket, detail?: ClaimReceiptDetail) {
+  if (bucket === "All") return true;
+  if (bucket === "PaymentReady") return item.status === "FinanceConfirmed";
+  if (bucket === "SentToAudit") return item.physicalReceiptConfirmed && item.status !== "FinanceConfirmed";
+  if (bucket === "ReadyForAudit") {
+    return item.physicalReceiptRequired &&
+      !item.physicalReceiptConfirmed &&
+      Boolean(detail?.lineItems.length) &&
+      Boolean(detail?.lineItems.every((line) => line.financeReviewStatus === "Accepted"));
+  }
+  if (bucket === "ReviewVouchers") return item.physicalReceiptRequired && !item.physicalReceiptConfirmed;
+  return true;
 }
 
 function matchesText(query: string, values: Array<string | number | null | undefined>) {

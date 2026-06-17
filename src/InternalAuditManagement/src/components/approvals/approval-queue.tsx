@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Check, Eye, Loader2, RotateCcw, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { expenseTagLabel } from "@/shared/expense-tags";
@@ -44,6 +45,7 @@ type SiteOption = {
 };
 
 export function ApprovalQueue() {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<ApprovalItem[]>([]);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
   const [claimDetails, setClaimDetails] = useState<Record<string, ApprovalClaimDetail>>({});
@@ -219,9 +221,30 @@ export function ApprovalQueue() {
     return sites.find((site) => site.siteId === siteId)?.siteName ?? siteId;
   }
 
+  const recordSearch = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const filteredItems = items.filter((item) => matchesText(recordSearch, [
+    item.claimId,
+    item.submittedBy,
+    item.siteName,
+    item.urgencyLevel,
+    String(item.totalAmount),
+    String(item.finalPayableAmount),
+    String(item.netAdvanceLeftAmount),
+    claimDetails[item.claimId]?.lineItems.map((line) => [
+      line.description,
+      line.expenseTag,
+      line.clientInvoiceNumber,
+      siteLabel(line.siteId),
+      String(line.amount)
+    ].join(" ")).join(" ")
+  ]));
+
   return (
     <section aria-label="Pending approval queue table" className="panel" tabIndex={0}>
-      <h2>Pending Approval Queue</h2>
+      <div className="topbar" style={{ marginBottom: 12 }}>
+        <h2>Pending Approval Queue</h2>
+        {recordSearch ? <span className="badge success">Search: {recordSearch}</span> : null}
+      </div>
       <ActionFeedback message={message} onDismiss={() => setMessage("")} />
       <table className="table">
         <thead>
@@ -245,7 +268,7 @@ export function ApprovalQueue() {
               </td>
             </tr>
           ) : null}
-          {!isLoading && items.map((item) => (
+          {!isLoading && filteredItems.map((item) => (
             <Fragment key={item.claimId}>
               <tr>
                 <td>
@@ -340,9 +363,9 @@ export function ApprovalQueue() {
               ) : null}
             </Fragment>
           ))}
-          {!isLoading && items.length === 0 ? (
+          {!isLoading && filteredItems.length === 0 ? (
             <tr>
-              <td colSpan={6}>No pending approvals.</td>
+              <td colSpan={6}>{recordSearch ? "No approvals match the current search." : "No pending approvals."}</td>
             </tr>
           ) : null}
         </tbody>
@@ -402,4 +425,11 @@ export function ApprovalQueue() {
       ) : null}
     </section>
   );
+}
+
+function matchesText(query: string, values: Array<string | number | null | undefined>) {
+  if (!query) return true;
+  return values
+    .filter((value): value is string | number => value !== null && value !== undefined)
+    .some((value) => String(value).toLowerCase().includes(query));
 }

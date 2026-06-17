@@ -170,7 +170,7 @@ export function ClaimWizard({
   const requiresSite = lineItem.expenseTag === "ContractPartCost";
   const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
   const requiresBillableAmount = lineItem.expenseTag === "PendingBilling";
-  const requiresSiteOrDepartment = lineItem.expenseTag === "ContractPartCost" || lineItem.expenseTag === "BackendCTC";
+  const requiresSiteOrDepartment = lineItem.expenseTag === "BackendCTC";
   const requiresProformaPeriod = submissionMode === "Proforma";
   const today = new Date().toISOString().slice(0, 10);
   const claimMonthStart = `${claimPeriodMonth}-01`;

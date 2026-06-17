@@ -194,6 +194,36 @@ describe("claim business rules", () => {
     expect(claims.addLineItem).toHaveBeenCalledOnce();
   });
 
+  it("requires only line site for Contract Part Cost items", () => {
+    expect(() =>
+      createLineItemSchema.parse(line({
+        expenseTag: "ContractPartCost",
+        siteId: "site-1",
+        siteOrDepartment: null,
+        transactionDate: "2026-06-03"
+      }))
+    ).not.toThrow();
+
+    expect(() =>
+      createLineItemSchema.parse(line({
+        expenseTag: "ContractPartCost",
+        siteId: null,
+        siteOrDepartment: null,
+        transactionDate: "2026-06-03"
+      }))
+    ).toThrow("Contract Part Cost items must be linked to a site.");
+  });
+
+  it("requires site or department only for Backend CTC items", () => {
+    expect(() =>
+      createLineItemSchema.parse(line({
+        expenseTag: "BackendCTC",
+        siteOrDepartment: null,
+        transactionDate: "2026-06-03"
+      }))
+    ).toThrow("Backend CTC items require a site or department reference.");
+  });
+
   it("blocks single voucher dates more than 20 days old", async () => {
     const draft = claim({ claimPeriodMonth: "2026-05-01" });
     const claims = {

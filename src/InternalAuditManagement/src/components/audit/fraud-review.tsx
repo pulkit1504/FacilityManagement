@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   BarChart3,
@@ -115,6 +116,7 @@ const summaryLabels: Record<SummaryFilter, string> = {
 };
 
 export function FraudReview() {
+  const searchParams = useSearchParams();
   const auditorQueueRef = useRef<HTMLElement | null>(null);
   const exceptionQueueRef = useRef<HTMLElement | null>(null);
   const [flags, setFlags] = useState<FraudFlagItem[]>([]);
@@ -138,6 +140,10 @@ export function FraudReview() {
   const [vendorFilter, setVendorFilter] = useState("All");
   const [query, setQuery] = useState("");
   const [summaryFilter, setSummaryFilter] = useState<SummaryFilter>("All");
+
+  useEffect(() => {
+    setQuery(searchParams.get("q") ?? "");
+  }, [searchParams]);
 
   const enrichedFlags = useMemo(() => flags.map((flag) => enrichFlag(flag)), [flags]);
   const filteredFlags = useMemo(

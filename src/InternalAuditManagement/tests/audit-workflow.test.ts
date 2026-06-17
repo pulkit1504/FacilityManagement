@@ -129,6 +129,52 @@ describe("Auditor receipt workflow", () => {
     expect(notifications.enqueueAndSend).toHaveBeenCalledOnce();
   });
 
+  it("creates billing alerts only for B2C - Pending Billing items after audit approval", async () => {
+    const claim = auditPendingClaim();
+    const pendingBillingLine = claim.lineItems[0];
+    claim.lineItems = [
+      pendingBillingLine,
+      {
+        ...pendingBillingLine,
+        lineItemId: "line-contract-cost",
+        expenseTag: "ContractPartCost",
+        description: "Contract manpower cost",
+        billableAmount: null,
+        siteId: "site-1"
+      },
+      {
+        ...pendingBillingLine,
+        lineItemId: "line-backend-ctc",
+        expenseTag: "BackendCTC",
+        description: "Backend CTC payout",
+        billableAmount: null,
+        siteOrDepartment: "Operations",
+        siteId: null
+      }
+    ];
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      decideApprovalStep: vi.fn(),
+      submitClaim: vi.fn().mockResolvedValue({ ...claim, status: "FinanceConfirmed" }),
+      createFinanceApprovalStep: vi.fn(),
+      createBillingAlert: vi.fn().mockResolvedValue({ alertId: "alert-1" }),
+      appendAuditLog: vi.fn(),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog]),
+      listEmployees: vi.fn().mockResolvedValue([employee("emp-finance-001", "Finance")])
+    } as unknown as ClaimRepository;
+    const notifications = { enqueueAndSend: vi.fn().mockResolvedValue({ status: "Sent" }) } as unknown as NotificationService;
+
+    await new AuditService(claims, notifications).approveClaim("claim-1", {
+      remarks: "Evidence reviewed."
+    }, auditor);
+
+    expect(claims.createBillingAlert).toHaveBeenCalledOnce();
+    expect(claims.createBillingAlert).toHaveBeenCalledWith(expect.objectContaining({
+      claimId: "claim-1",
+      lineItemId: "line-1"
+    }));
+  });
+
   it("returns pending information requests to the claimant with the auditor reason", async () => {
     const claim = auditPendingClaim();
     const claims = {

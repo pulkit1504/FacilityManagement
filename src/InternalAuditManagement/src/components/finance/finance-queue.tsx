@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Banknote, ClipboardCheck, Download, Eye, Loader2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { ClaimSummaryActions } from "@/components/claims/claim-summary-actions";
@@ -62,6 +63,7 @@ type FinanceDecision =
   | { kind: "return-claim"; claimId: string; title: string };
 
 export function FinanceQueue() {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<FinanceItem[]>([]);
   const [advances, setAdvances] = useState<PendingAdvance[]>([]);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
@@ -203,6 +205,16 @@ export function FinanceQueue() {
     }
   }
 
+  async function handleReceiptGate(item: FinanceItem) {
+    if (!claimDetails[item.claimId]) {
+      await toggleReceipts(item.claimId);
+      setMessage("Review and accept every voucher line, then send the pack to Audit.");
+      return;
+    }
+
+    await confirmReceipt(item.claimId);
+  }
+
   async function releasePayment(claimId: string) {
     setBusyAction(`release:${claimId}`);
     setMessage("Releasing payment...");
@@ -336,6 +348,10 @@ export function FinanceQueue() {
     return details.lineItems.length > 0 && details.lineItems.every((line) => line.financeReviewStatus === "Accepted");
   }
 
+  function hasLoadedReceiptLines(item: FinanceItem) {
+    return Boolean(claimDetails[item.claimId]);
+  }
+
   function beneficiaryReady(item: FinanceItem) {
     return item.finalPayableAmount <= 0 || Boolean(
       item.bankAccountHolderName && item.bankAccountNumber && item.bankIfsc && item.bankName
@@ -347,6 +363,16 @@ export function FinanceQueue() {
   }
 
   const reportQuery = reportMonth ? `?month=${encodeURIComponent(reportMonth)}` : "";
+  const recordSearch = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const filteredItems = items.filter((item) => matchesFinanceSearch(item, recordSearch, claimDetails[item.claimId]));
+  const filteredAdvances = advances.filter((advance) => matchesText(recordSearch, [
+    advance.ticketId,
+    advance.submittedBy,
+    advance.siteName,
+    advance.settlementStatusLabel,
+    String(advance.advanceAmount),
+    String(advance.advanceBalance)
+  ]));
 
   return (
     <div className="grid" style={{ gap: 16 }}>
@@ -354,6 +380,7 @@ export function FinanceQueue() {
         <div className="topbar" style={{ marginBottom: 12 }}>
           <h2>Finance Queue</h2>
           <div className="actions">
+            {recordSearch ? <span className="badge success">Search: {recordSearch}</span> : null}
             <input aria-label="Report month" type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} />
             <a className="button secondary" href={`/api/v1/finance/reports/imprest${reportQuery}`}>
               <Download size={16} />
@@ -388,8 +415,8 @@ export function FinanceQueue() {
               </td>
             </tr>
           ) : null}
-          {!isLoading && items.map((item) => (
-            <>
+          {!isLoading && filteredItems.map((item) => (
+            <Fragment key={item.claimId}>
               <tr key={item.claimId}>
                 <td>
                   <strong>{item.ticketId ?? item.claimId.slice(0, 8)}</strong>
@@ -428,13 +455,19 @@ export function FinanceQueue() {
                     </button>
                     <button
                       className="button secondary"
-                      disabled={!item.physicalReceiptRequired || item.physicalReceiptConfirmed || !allLinesAccepted(item) || busyAction === `confirm:${item.claimId}`}
-                      onClick={() => void confirmReceipt(item.claimId)}
+                      disabled={
+                        !item.physicalReceiptRequired ||
+                        item.physicalReceiptConfirmed ||
+                        (hasLoadedReceiptLines(item) && !allLinesAccepted(item)) ||
+                        busyAction === `confirm:${item.claimId}` ||
+                        busyAction === `receipts:${item.claimId}`
+                      }
+                      onClick={() => void handleReceiptGate(item)}
                       type="button"
-                      title={!allLinesAccepted(item) ? "Accept every voucher line before confirming the complete pack" : "Confirm the complete voucher pack and send it to Audit"}
+                      title={!hasLoadedReceiptLines(item) ? "Open voucher review first" : !allLinesAccepted(item) ? "Accept every voucher line before sending to Audit" : "Confirm the complete voucher pack and send it to Audit"}
                     >
-                      {busyAction === `confirm:${item.claimId}` ? <Loader2 size={16} /> : <ClipboardCheck size={16} />}
-                      {!item.physicalReceiptRequired ? "No receipt gate" : item.physicalReceiptConfirmed ? "Sent to Audit" : !allLinesAccepted(item) ? "Review all vouchers" : "Confirm pack and send to Audit"}
+                      {busyAction === `confirm:${item.claimId}` || busyAction === `receipts:${item.claimId}` ? <Loader2 size={16} /> : <ClipboardCheck size={16} />}
+                      {!item.physicalReceiptRequired ? "No receipt gate" : item.physicalReceiptConfirmed ? "Sent to Audit" : !hasLoadedReceiptLines(item) ? "Review vouchers" : !allLinesAccepted(item) ? "Accept all lines" : "Send to Audit"}
                     </button>
                     <button
                       className="button"
@@ -488,8 +521,14 @@ export function FinanceQueue() {
                             {line.financeReviewStatus}
                           </span>
                           <div className="actions">
-                            <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void reviewLine(item.claimId, line.lineItemId, "Accepted")} type="button">
-                              Accept
+                            <button
+                              className={line.financeReviewStatus === "Accepted" ? "button accepted" : "button secondary"}
+                              disabled={Boolean(busyAction) || line.financeReviewStatus === "Accepted"}
+                              onClick={() => void reviewLine(item.claimId, line.lineItemId, "Accepted")}
+                              type="button"
+                            >
+                              {line.financeReviewStatus === "Accepted" ? <ClipboardCheck size={16} /> : null}
+                              {line.financeReviewStatus === "Accepted" ? "Accepted" : "Accept"}
                             </button>
                             <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => openDecision({ kind: "reject-line", claimId: item.claimId, lineItemId: line.lineItemId, title: line.description })} type="button">
                               Reject
@@ -513,11 +552,11 @@ export function FinanceQueue() {
                   </td>
                 </tr>
               ) : null}
-            </>
+            </Fragment>
           ))}
-          {!isLoading && items.length === 0 ? (
+          {!isLoading && filteredItems.length === 0 ? (
             <tr>
-              <td colSpan={6}>No finance items pending.</td>
+              <td colSpan={6}>{recordSearch ? "No finance items match the current search." : "No finance items pending."}</td>
             </tr>
           ) : null}
         </tbody>
@@ -549,7 +588,7 @@ export function FinanceQueue() {
                 </td>
               </tr>
             ) : null}
-            {!isLoading && advances.map((advance) => (
+            {!isLoading && filteredAdvances.map((advance) => (
               <tr key={advance.claimId}>
                 <td>
                   <strong>{advance.ticketId}</strong>
@@ -570,9 +609,9 @@ export function FinanceQueue() {
                 </td>
               </tr>
             ))}
-            {!isLoading && advances.length === 0 ? (
+            {!isLoading && filteredAdvances.length === 0 ? (
               <tr>
-                <td colSpan={7}>No paid advances with an open balance.</td>
+                <td colSpan={7}>{recordSearch ? "No advances match the current search." : "No paid advances with an open balance."}</td>
               </tr>
             ) : null}
           </tbody>
@@ -639,4 +678,35 @@ export function FinanceQueue() {
 function maskAccount(value: string) {
   if (value.length <= 4) return value;
   return `****${value.slice(-4)}`;
+}
+
+function matchesFinanceSearch(item: FinanceItem, query: string, detail?: ClaimReceiptDetail) {
+  return matchesText(query, [
+    item.claimId,
+    item.ticketId,
+    item.claimKind,
+    item.status,
+    item.submittedBy,
+    item.siteName,
+    item.bankAccountHolderName,
+    item.bankAccountNumber,
+    item.bankIfsc,
+    item.bankName,
+    String(item.totalAmount),
+    String(item.finalPayableAmount),
+    ...(detail?.lineItems.flatMap((line) => [
+      line.description,
+      String(line.amount),
+      line.financeReviewStatus,
+      line.financeReviewRemarks,
+      ...line.attachments.map((attachment) => attachment.originalFileName)
+    ]) ?? [])
+  ]);
+}
+
+function matchesText(query: string, values: Array<string | number | null | undefined>) {
+  if (!query) return true;
+  return values
+    .filter((value): value is string | number => value !== null && value !== undefined)
+    .some((value) => String(value).toLowerCase().includes(query));
 }

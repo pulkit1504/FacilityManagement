@@ -91,11 +91,11 @@ export const createLineItemSchema = z
       });
     }
 
-    if (["ContractPartCost", "BackendCTC"].includes(value.expenseTag) && !value.siteOrDepartment) {
+    if (value.expenseTag === "BackendCTC" && !value.siteOrDepartment) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["siteOrDepartment"],
-        message: "This expense tag requires a site or department reference."
+        message: "Backend CTC items require a site or department reference."
       });
     }
 

@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Download, Eye, FileText, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { expenseTagLabel } from "@/shared/expense-tags";
 
@@ -46,6 +47,7 @@ type ClaimDetail = ClaimSummary & {
 };
 
 export function MyClaims() {
+  const searchParams = useSearchParams();
   const [claims, setClaims] = useState<ClaimSummary[]>([]);
   const [details, setDetails] = useState<Record<string, ClaimDetail>>({});
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
@@ -61,6 +63,20 @@ export function MyClaims() {
       returned: claims.filter((claim) => claim.status === "Rejected").length
     }),
     [claims]
+  );
+  const recordSearch = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const filteredClaims = useMemo(
+    () => claims.filter((claim) => matchesText(recordSearch, [
+      claim.claimId,
+      claim.ticketId,
+      claim.claimKind,
+      claim.submissionMode,
+      claim.status,
+      claim.statusLabel,
+      claim.siteName,
+      String(claim.totalAmount)
+    ])),
+    [claims, recordSearch]
   );
 
   async function load() {
@@ -184,6 +200,7 @@ export function MyClaims() {
             <h2>Claim History</h2>
             <p className="muted">Track drafts, approvals, finance checks, returns, and payments.</p>
           </div>
+          {recordSearch ? <span className="badge success">Search: {recordSearch}</span> : null}
         </div>
         <ActionFeedback message={message} onDismiss={() => setMessage("")} />
         <table className="table">
@@ -208,7 +225,7 @@ export function MyClaims() {
                 </td>
               </tr>
             ) : null}
-            {!isLoading && claims.map((claim) => (
+            {!isLoading && filteredClaims.map((claim) => (
               <Fragment key={claim.claimId}>
                 <tr>
                   <td>
@@ -254,9 +271,9 @@ export function MyClaims() {
                 ) : null}
               </Fragment>
             ))}
-            {!isLoading && claims.length === 0 ? (
+            {!isLoading && filteredClaims.length === 0 ? (
               <tr>
-                <td colSpan={6}>No claims found.</td>
+                <td colSpan={6}>{recordSearch ? "No claims match the current search." : "No claims found."}</td>
               </tr>
             ) : null}
           </tbody>
@@ -429,4 +446,11 @@ async function downloadResponse(response: Response, fallbackFileName: string) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function matchesText(query: string, values: Array<string | number | null | undefined>) {
+  if (!query) return true;
+  return values
+    .filter((value): value is string | number => value !== null && value !== undefined)
+    .some((value) => String(value).toLowerCase().includes(query));
 }

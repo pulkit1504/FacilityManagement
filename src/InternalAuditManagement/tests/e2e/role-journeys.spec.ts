@@ -227,6 +227,12 @@ test.describe("role journeys", () => {
     await page.getByRole("button", { name: "Create draft" }).click();
     await expect(page.getByRole("heading", { level: 2, name: "Add Line Item" })).toBeVisible();
 
+    await page.getByLabel("Expense tag").selectOption("ContractPartCost");
+    await expect(page.getByLabel("Line site")).toBeVisible();
+    await expect(page.getByLabel("Site / department")).toHaveCount(0);
+    await page.getByLabel("Line site").selectOption("site-1");
+    await page.getByLabel("Expense tag").selectOption("PendingBilling");
+
     await page.getByLabel("Expense head").selectOption("Repairs and Maintenance");
     await page.getByLabel("Description").fill("Replace lobby light");
     await page.getByLabel("Amount", { exact: true }).fill("1250");
@@ -342,6 +348,12 @@ test.describe("role journeys", () => {
 
     await page.goto("/finance");
 
+    await expect(page.getByLabel("Search records on this page")).toBeVisible();
+    await page.getByLabel("Search records on this page").fill("EXP-AUD-QUEUE");
+    await page.getByLabel("Search records on this page").press("Enter");
+    await expect(page).toHaveURL(/q=EXP-AUD-QUEUE/);
+    await expect(page.getByText("Search: exp-aud-queue")).toBeVisible();
+    await expect(page.getByRole("row", { name: /EXP-AUD-QUEUE/ })).toBeVisible();
     await page.getByRole("button", { name: "View summary" }).click();
     const dialog = page.getByRole("dialog", { name: "EXP-AUD-QUEUE" });
     await expect(dialog).toBeVisible();
@@ -352,6 +364,84 @@ test.describe("role journeys", () => {
     expect((await downloadPromise).suggestedFilename()).toBe("EXP-AUD-QUEUE-summary.csv");
     await dialog.getByRole("button", { name: "Close claim summary" }).click();
     await expect(dialog).toBeHidden();
+    await expectAccessiblePage(page);
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test("Finance can review vouchers, accept a line, and send the pack to Audit", async ({ page }) => {
+    await signInAs(page, "Finance");
+    let financeReviewStatus: "Pending" | "Accepted" = "Pending";
+    let physicalReceiptConfirmed = false;
+
+    await page.route("**/api/v1/finance/queue", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [{
+            ...auditQueueFixture(),
+            status: "HodApproved",
+            physicalReceiptRequired: true,
+            physicalReceiptConfirmed,
+            advanceAdjustmentAmount: 0,
+            netAdvanceLeftAmount: 0,
+            bankAccountHolderName: "Riya Sharma",
+            bankAccountNumber: "1234567890",
+            bankIfsc: "HDFC0001234",
+            bankName: "HDFC"
+          }]
+        })
+      });
+    });
+    await page.route("**/api/v1/finance/advances", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+    });
+    await page.route("**/api/v1/claims/claim-audit-queue-1", async (route) => {
+      const detail = auditClaimDetailFixture();
+      detail.status = "HodApproved";
+      (detail as { physicalReceiptConfirmedAt: string | null }).physicalReceiptConfirmedAt = physicalReceiptConfirmed ? "2026-06-08T10:00:00.000Z" : null;
+      detail.lineItems[0].financeReviewStatus = financeReviewStatus;
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify(detail) });
+    });
+    await page.route("**/api/v1/finance/claim-audit-queue-1/line-items/line-audit-queue-1/review", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      financeReviewStatus = "Accepted";
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          lineItemId: "line-audit-queue-1",
+          financeReviewStatus: "Accepted",
+          financeReviewRemarks: null,
+          message: "Line item accepted."
+        })
+      });
+    });
+    await page.route("**/api/v1/finance/claim-audit-queue-1/confirm-physical-receipt", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      physicalReceiptConfirmed = true;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          physicalReceiptConfirmedAt: "2026-06-08T10:00:00.000Z",
+          message: "Physical receipt confirmed. Claim routed to Auditor for pre-payment review."
+        })
+      });
+    });
+
+    await page.goto("/finance");
+
+    await expect(page.getByRole("button", { name: "Review vouchers" })).toBeEnabled();
+    await page.getByRole("button", { name: "Review vouchers" }).click();
+    await expect(page.getByText("Material purchase")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Accept all lines" })).toBeDisabled();
+
+    await page.getByRole("button", { name: "Accept", exact: true }).click();
+    const acceptedButton = page.getByRole("button", { name: "Accepted" });
+    await expect(acceptedButton).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Send to Audit" })).toBeEnabled();
+
+    await page.getByRole("button", { name: "Send to Audit" }).click();
+    await expect(page.getByText("Physical receipt confirmed. Claim routed to Auditor for pre-payment review.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sent to Audit" })).toBeDisabled();
     await expectAccessiblePage(page);
     await expectNoHorizontalOverflow(page);
   });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Link2, Loader2, RefreshCw } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
@@ -21,6 +22,7 @@ type BillingAlertItem = {
 };
 
 export function BillingAlerts() {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<BillingAlertItem[]>([]);
   const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -46,6 +48,18 @@ export function BillingAlerts() {
   useEffect(() => {
     void load();
   }, []);
+
+  const recordSearch = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const filteredItems = items.filter((item) => matchesText(recordSearch, [
+    item.alertId,
+    item.claimId,
+    item.lineItemDescription,
+    item.claimantName,
+    item.siteName,
+    item.urgencyLabel,
+    String(item.amount),
+    String(item.billableAmount)
+  ]));
 
   async function linkInvoice(alertId: string) {
     const clientInvoiceNumber = invoiceNumbers[alertId]?.trim();
@@ -82,6 +96,7 @@ export function BillingAlerts() {
           <h2>B2C - Pending Billing Alerts</h2>
           <p className="muted">Link client invoices to stop revenue leakage reminders.</p>
         </div>
+        {recordSearch ? <span className="badge success">Search: {recordSearch}</span> : null}
         <button className="button secondary" disabled={isLoading} onClick={() => void load()} type="button">
           {isLoading ? <Loader2 size={16} /> : <RefreshCw size={16} />}
           {isLoading ? "Loading..." : "Refresh"}
@@ -110,7 +125,7 @@ export function BillingAlerts() {
               </td>
             </tr>
           ) : null}
-          {!isLoading && items.map((item) => (
+          {!isLoading && filteredItems.map((item) => (
             <tr key={item.alertId}>
               <td>
                 <strong>{item.claimId.slice(0, 8)}</strong>
@@ -149,13 +164,20 @@ export function BillingAlerts() {
               </td>
             </tr>
           ))}
-          {!isLoading && items.length === 0 ? (
+          {!isLoading && filteredItems.length === 0 ? (
             <tr>
-              <td colSpan={6}>No active billing alerts.</td>
+              <td colSpan={6}>{recordSearch ? "No billing alerts match the current search." : "No active billing alerts."}</td>
             </tr>
           ) : null}
         </tbody>
       </table>
     </section>
   );
+}
+
+function matchesText(query: string, values: Array<string | number | null | undefined>) {
+  if (!query) return true;
+  return values
+    .filter((value): value is string | number => value !== null && value !== undefined)
+    .some((value) => String(value).toLowerCase().includes(query));
 }

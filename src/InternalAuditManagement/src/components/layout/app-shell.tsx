@@ -1,8 +1,10 @@
 import type { UserRole } from "@/server/domain/types";
 import { PrimaryNav } from "./primary-nav";
+import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { CurrentTestUser } from "@/components/auth/current-test-user";
 import { CompanyLogo } from "@/components/layout/company-logo";
+import { GlobalRecordSearch } from "@/components/layout/global-record-search";
 import { authSessionCookieName, parseSessionCookie } from "@/server/auth/session";
 import { parseTestUserCookie, testUserCookieName } from "@/server/auth/test-users";
 
@@ -43,8 +45,14 @@ export async function AppShell({ children }: Readonly<{ children: React.ReactNod
     <div className="shell">
       <aside className="sidebar">
         <CompanyLogo />
+        <Suspense fallback={null}>
+          <GlobalRecordSearch />
+        </Suspense>
         <CurrentTestUser name={currentName} role={currentRole} />
         <PrimaryNav links={visibleLinks} />
+        <a className="designer-credit" href="https://ai.dhanvistar.in" rel="noopener noreferrer" target="_blank">
+          Designed by DVC
+        </a>
       </aside>
       <main className="main">{children}</main>
     </div>

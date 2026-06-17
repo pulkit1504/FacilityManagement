@@ -325,6 +325,10 @@ test.describe("role journeys", () => {
     await expect(drawer.getByText("Claim summary")).toBeVisible();
     await expect(drawer.getByText("Line items and receipt evidence")).toBeVisible();
     await expect(drawer.getByText("Comments and remarks")).toBeVisible();
+    await expect(drawer.getByText("Receipt uploaded", { exact: true })).toBeVisible();
+    await expect(drawer.getByText('Receipt uploaded for line item "Already billed material"')).toBeVisible();
+    await expect(drawer.getByText("RECEIPT_UPLOADED")).toBeHidden();
+    await expect(drawer.getByText("line-1")).toBeHidden();
     await expect(drawer.getByText("Duplicate hash: 0")).toBeVisible();
     await expect(drawer.getByRole("button", { name: "Export audit trail" })).toBeVisible();
     await expect(drawer.getByRole("button", { name: "Download summary" })).toBeVisible();
@@ -443,15 +447,50 @@ test.describe("role journeys", () => {
         headers: { "Content-Disposition": 'attachment; filename="EXP-AUD-QUEUE-summary.csv"' }
       });
     });
+    await page.route("**/api/v1/claims/claim-audit-queue-1/workspace", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(workspaceFixture({
+          ...returnedClaimFixture("Draft"),
+          claimId: "claim-audit-queue-1",
+          ticketId: "EXP-AUD-QUEUE"
+        }))
+      });
+    });
+    await page.route("**/api/v1/search**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          groups: [
+            {
+              key: "claims",
+              label: "Claims",
+              items: [{
+                id: "claim-audit-queue-1",
+                title: "EXP-AUD-QUEUE",
+                subtitle: "Riya Sharma | Investor Demo Site | Finance",
+                href: "/finance",
+                claimId: "claim-audit-queue-1"
+              }]
+            },
+            { key: "billing", label: "Billing Alerts", items: [] },
+            { key: "audit", label: "Audit Flags", items: [] },
+            { key: "employees", label: "Employees", items: [] }
+          ]
+        })
+      });
+    });
 
     await page.goto("/finance");
 
     await expect(page.getByLabel("Search records on this page")).toBeVisible();
     await page.getByLabel("Search records on this page").fill("EXP-AUD-QUEUE");
-    await page.getByLabel("Search records on this page").press("Enter");
+    await page.getByRole("link", { name: /EXP-AUD-QUEUE/ }).click();
     await expect(page).toHaveURL(/q=EXP-AUD-QUEUE/);
+    await expect(page).toHaveURL(/claim=claim-audit-queue-1/);
     await expect(page.getByText("Search: exp-aud-queue")).toBeVisible();
     await expect(page.getByRole("row", { name: /EXP-AUD-QUEUE/ })).toBeVisible();
+    await page.getByRole("dialog", { name: "EXP-AUD-QUEUE" }).getByLabel("Close claim workspace").click();
     await page.getByRole("button", { name: "View summary" }).click();
     const dialog = page.getByRole("dialog", { name: "EXP-AUD-QUEUE" });
     await expect(dialog).toBeVisible();
@@ -780,18 +819,32 @@ function workspaceFixture(claim: ReturnType<typeof returnedClaimFixture>) {
         }))
       }))
     },
-    auditTrail: [{
-      auditId: "audit-1",
-      claimId: claim.claimId,
-      actorUserId: "emp-hod-001",
-      actorName: "HOD User",
-      actionType: "REJECT",
-      preActionStatus: "Submitted",
-      postActionStatus: "Rejected",
-      auditRemarks: "Correct the invoice date.",
-      correlationId: "corr-1",
-      actionTimestamp: "2026-06-04T00:00:00.000Z"
-    }],
+    auditTrail: [
+      {
+        auditId: "audit-0",
+        claimId: claim.claimId,
+        actorUserId: "emp-claimant-001",
+        actorName: "Claimant User",
+        actionType: "RECEIPT_UPLOADED",
+        preActionStatus: "Draft",
+        postActionStatus: "Draft",
+        auditRemarks: "Receipt uploaded for line item line-1",
+        correlationId: "corr-0",
+        actionTimestamp: "2026-06-03T00:00:00.000Z"
+      },
+      {
+        auditId: "audit-1",
+        claimId: claim.claimId,
+        actorUserId: "emp-hod-001",
+        actorName: "HOD User",
+        actionType: "REJECT",
+        preActionStatus: "Submitted",
+        postActionStatus: "Rejected",
+        auditRemarks: "Correct the invoice date.",
+        correlationId: "corr-1",
+        actionTimestamp: "2026-06-04T00:00:00.000Z"
+      }
+    ],
     comments: [{
       id: "approval:step-1",
       author: "HOD",

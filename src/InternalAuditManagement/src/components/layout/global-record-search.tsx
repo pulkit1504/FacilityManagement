@@ -118,6 +118,7 @@ export function GlobalRecordSearch() {
   }
 
   const resultCount = groups.reduce((sum, group) => sum + group.items.length, 0);
+  const normalizedQuery = query.trim();
 
   return (
     <div className="smart-search-wrap">
@@ -146,9 +147,9 @@ export function GlobalRecordSearch() {
       {isOpen ? (
         <div className="smart-search-popover">
           <div className="smart-search-meta">
-            <span>{isLoading ? "Searching..." : query.trim().length >= 2 ? `${resultCount} result(s)` : "Type 2+ characters or press / anytime"}</span>
+            <span>{isLoading ? "Searching..." : normalizedQuery.length >= 2 ? `${resultCount} result(s)` : "Type 2+ characters or press / anytime"}</span>
           </div>
-          {query.trim().length < 2 && recentSearches.length > 0 ? (
+          {normalizedQuery.length < 2 && recentSearches.length > 0 ? (
             <div className="smart-search-group">
               <strong>Recent searches</strong>
               <div className="recent-searches">
@@ -162,18 +163,26 @@ export function GlobalRecordSearch() {
             <div className="smart-search-group" key={group.key}>
               <strong>{group.label}</strong>
               {group.items.map((item) => (
-                <Link className="smart-search-result" href={item.claimId ? `${item.href}?claim=${encodeURIComponent(item.claimId)}` : item.href} key={`${group.key}:${item.id}`} onClick={() => setIsOpen(false)}>
+                <Link className="smart-search-result" href={resultHref(item, normalizedQuery)} key={`${group.key}:${item.id}`} onClick={() => setIsOpen(false)}>
                   <span>{item.title}</span>
                   <small>{item.subtitle}</small>
                 </Link>
               ))}
-              {query.trim().length >= 2 && group.items.length === 0 ? <span className="muted">No matches</span> : null}
+              {normalizedQuery.length >= 2 && group.items.length === 0 ? <span className="muted">No matches</span> : null}
             </div>
           ))}
         </div>
       ) : null}
     </div>
   );
+}
+
+function resultHref(item: SearchResult, query: string) {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (item.claimId) params.set("claim", item.claimId);
+  const suffix = params.toString();
+  return suffix ? `${item.href}?${suffix}` : item.href;
 }
 
 function readRecentSearches() {

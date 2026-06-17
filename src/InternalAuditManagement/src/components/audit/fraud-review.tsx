@@ -227,6 +227,8 @@ export function FraudReview() {
   const totalExposure = enrichedFlags.reduce((sum, flag) => sum + flag.totalAmount, 0);
   const correctionFlags = enrichedFlags.filter((flag) => flag.claimStatus === "Rejected");
   const repeatCorrections = correctionFlags.filter((flag) => (flag.approvalTrail ?? []).filter((step) => step.decision === "Rejected").length > 1);
+  const recordSearch = query.trim().toLowerCase();
+  const filteredAuditItems = auditItems.filter((item) => matchesAuditQueueSearch(item, recordSearch));
   const agingBuckets = [
     { label: "0-2 days", count: enrichedFlags.filter((flag) => flag.daysOpen <= 2).length, priority: "Normal" },
     { label: "3-7 days", count: enrichedFlags.filter((flag) => flag.daysOpen >= 3 && flag.daysOpen <= 7).length, priority: "Escalate if unowned" },
@@ -499,7 +501,10 @@ export function FraudReview() {
             <h2>Auditor Receipt Review Queue</h2>
             <p className="muted">Finance-confirmed receipts waiting for audit approval, rejection, or pending-information return.</p>
           </div>
-          <span className="badge warning">{auditItems.length} pending</span>
+          <div className="actions">
+            {recordSearch ? <span className="badge success">Search: {recordSearch}</span> : null}
+            <span className="badge warning">{filteredAuditItems.length} pending</span>
+          </div>
         </div>
         <table className="table">
           <thead>
@@ -512,7 +517,7 @@ export function FraudReview() {
             </tr>
           </thead>
           <tbody>
-            {auditItems.map((item) => (
+            {filteredAuditItems.map((item) => (
               <Fragment key={item.claimId}>
                 <tr>
                   <td>
@@ -589,8 +594,8 @@ export function FraudReview() {
             {isLoading ? (
               <tr><td colSpan={5}><span className="loading-inline"><Loader2 size={16} />Loading audit queue...</span></td></tr>
             ) : null}
-            {!isLoading && auditItems.length === 0 ? (
-              <tr><td colSpan={5}>No finance-confirmed receipts are waiting for Auditor review.</td></tr>
+            {!isLoading && filteredAuditItems.length === 0 ? (
+              <tr><td colSpan={5}>{recordSearch ? "No audit receipt claims match the current search." : "No finance-confirmed receipts are waiting for Auditor review."}</td></tr>
             ) : null}
           </tbody>
         </table>
@@ -1013,6 +1018,25 @@ function matchesSummaryFilter(flag: ReturnType<typeof enrichFlag>, filter: Summa
   if (filter === "Exposure") return flag.totalAmount > 0;
   if (filter === "Evidence") return flag.flaggedLineItems.length > 0;
   return true;
+}
+
+function matchesAuditQueueSearch(item: AuditClaimItem, query: string) {
+  if (!query) return true;
+  return [
+    item.claimId,
+    item.ticketId,
+    item.claimKind,
+    item.submittedBy,
+    item.siteName,
+    item.urgencyLevel,
+    String(item.totalAmount),
+    String(item.finalPayableAmount),
+    String(item.lineItemCount),
+    String(item.missingReceiptCount),
+    String(item.pendingBillingItemCount)
+  ]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => value.toLowerCase().includes(query));
 }
 
 function enrichFlag(flag: FraudFlagItem) {

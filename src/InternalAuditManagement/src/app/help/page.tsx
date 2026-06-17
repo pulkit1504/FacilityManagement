@@ -7,7 +7,7 @@ export default function HelpPage() {
       <div className="topbar">
         <div>
           <div className="eyebrow">Help and Training</div>
-          <h1>How to use Facility Control</h1>
+          <h1>How to use Imprest Claim</h1>
           <p className="muted">Watch the embedded walkthrough and review the claim submission essentials.</p>
         </div>
       </div>

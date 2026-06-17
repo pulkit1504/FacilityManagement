@@ -5,7 +5,6 @@ import { cookies } from "next/headers";
 import { CurrentTestUser } from "@/components/auth/current-test-user";
 import { CompanyLogo } from "@/components/layout/company-logo";
 import { GlobalRecordSearch } from "@/components/layout/global-record-search";
-import { NotificationBell } from "@/components/layout/notification-bell";
 import { authSessionCookieName, parseSessionCookie } from "@/server/auth/session";
 import { parseTestUserCookie, testUserCookieName } from "@/server/auth/test-users";
 
@@ -49,7 +48,6 @@ export async function AppShell({ children }: Readonly<{ children: React.ReactNod
         <Suspense fallback={null}>
           <GlobalRecordSearch />
         </Suspense>
-        <NotificationBell />
         <CurrentTestUser name={currentName} role={currentRole} />
         <PrimaryNav links={visibleLinks} />
         <a className="designer-credit" href="https://ai.dhanvistar.in" rel="noopener noreferrer" target="_blank">

@@ -29,6 +29,7 @@ export function GlobalRecordSearch() {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setQuery(searchParams.get("q") ?? "");
@@ -51,6 +52,16 @@ export function GlobalRecordSearch() {
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (!wrapperRef.current || wrapperRef.current.contains(event.target as Node)) return;
+      setIsOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
 
   useEffect(() => {
@@ -121,7 +132,7 @@ export function GlobalRecordSearch() {
   const normalizedQuery = query.trim();
 
   return (
-    <div className="smart-search-wrap">
+    <div className="smart-search-wrap" ref={wrapperRef}>
       <form className="global-search" onSubmit={submit} role="search">
         <Search aria-hidden="true" size={16} />
         <input

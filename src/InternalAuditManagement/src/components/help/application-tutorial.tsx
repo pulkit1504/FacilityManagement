@@ -26,26 +26,13 @@ const steps = [
 export function ApplicationTutorial() {
   return (
     <div className="grid" style={{ gap: 16 }}>
-      <section className="panel tutorial-player">
-        <div className="section-heading">
-          <div>
-            <h2>Application tutorial</h2>
-            <p className="muted">A short walkthrough of the claimant, approval, Finance, and Audit journey.</p>
-          </div>
-          <BookOpenCheck aria-hidden="true" size={24} />
-        </div>
-        <video controls playsInline poster="/tutorial-poster.png" preload="metadata">
-          <source src="/application-tutorial.webm" type="video/webm" />
-          Your browser does not support embedded video. Use the quick-start instructions below.
-        </video>
-      </section>
-
       <section className="panel">
         <div className="section-heading">
           <div>
-            <h2>Quick start</h2>
-            <p className="muted">The minimum steps for a complete, approval-ready claim.</p>
+            <h2>Imprest Claim quick start</h2>
+            <p className="muted">A claimant-to-audit walkthrough for a complete, approval-ready claim.</p>
           </div>
+          <BookOpenCheck aria-hidden="true" size={24} />
         </div>
         <div className="tutorial-steps">
           {steps.map(({ icon: Icon, title, text }, index) => (

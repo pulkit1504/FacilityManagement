@@ -180,7 +180,12 @@ export function BillingAlerts() {
           ))}
           {!isLoading && filteredItems.length === 0 ? (
             <tr>
-              <td colSpan={6}>{recordSearch ? "No billing alerts match the current search." : "No active billing alerts."}</td>
+              <td colSpan={6}>
+                <div className="table-empty-state">
+                  <strong>{recordSearch ? "No billing alerts match this search" : "No billing alerts open"}</strong>
+                  <span>{recordSearch ? "Try searching by claim, claimant, site, line item, amount, or billable value." : "All B2C pending billing items are linked or there are no active billable exceptions."}</span>
+                </div>
+              </td>
             </tr>
           ) : null}
         </tbody>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignSiteClusterHeadSchema, createClaimSchema, createEmployeeSchema, createSiteSchema } from "../src/server/validation/claim.schemas";
+import { assignSiteClusterHeadSchema, createClaimSchema, createEmployeeSchema, createExpenseHeadSchema, createSiteSchema, resetEmployeePasswordSchema } from "../src/server/validation/claim.schemas";
 
 describe("GA master-data validation", () => {
   it("only permits Reimbursement through the expense claim intake", () => {
@@ -19,6 +19,13 @@ describe("GA master-data validation", () => {
 
   it("requires a Cluster Head when repairing existing site routing", () => {
     expect(assignSiteClusterHeadSchema.safeParse({ clusterHeadEmployeeId: "" }).success).toBe(false);
+  });
+
+  it("validates expense head and password reset admin inputs", () => {
+    expect(createExpenseHeadSchema.safeParse({ name: "Repairs", description: null }).success).toBe(true);
+    expect(createExpenseHeadSchema.safeParse({ name: "" }).success).toBe(false);
+    expect(resetEmployeePasswordSchema.safeParse({ temporaryPassword: "ChangeMe123!", requirePasswordReset: true }).success).toBe(true);
+    expect(resetEmployeePasswordSchema.safeParse({ temporaryPassword: "short" }).success).toBe(false);
   });
 
   it("requires complete beneficiary details for payable employees", () => {

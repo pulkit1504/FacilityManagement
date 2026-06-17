@@ -32,6 +32,12 @@ type SiteOption = {
   serviceType: string;
 };
 
+type ExpenseHeadOption = {
+  expenseHeadId: string;
+  name: string;
+  isActive: boolean;
+};
+
 type SavedLineItem = {
   lineItemId: string;
   expenseHead: string | null;
@@ -117,7 +123,7 @@ const emptyLineItem: LineItemDraft = {
   siteId: ""
 };
 
-const expenseHeadOptions = [
+const fallbackExpenseHeadOptions = [
   "Housekeeping Consumables",
   "Cleaning Chemicals",
   "Pantry and Refreshments",
@@ -150,6 +156,7 @@ export function ClaimWizard({
   const [submissionMode, setSubmissionMode] = useState<"SingleVoucher" | "Proforma">("SingleVoucher");
   const [claimPeriodMonth, setClaimPeriodMonth] = useState(new Date().toISOString().slice(0, 7));
   const [sites, setSites] = useState<SiteOption[]>([]);
+  const [expenseHeadOptions, setExpenseHeadOptions] = useState<string[]>(fallbackExpenseHeadOptions);
   const [siteId, setSiteId] = useState("");
   const [proformaPeriodStart, setProformaPeriodStart] = useState("");
   const [proformaPeriodEnd, setProformaPeriodEnd] = useState("");
@@ -254,6 +261,28 @@ export function ClaimWizard({
     }
 
     void loadSites();
+  }, []);
+
+  useEffect(() => {
+    async function loadExpenseHeads() {
+      try {
+        const response = await fetch("/api/v1/expense-heads", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) return;
+
+        const loadedHeads = ((data.items ?? []) as ExpenseHeadOption[])
+          .filter((head) => head.isActive !== false)
+          .map((head) => head.name)
+          .filter(Boolean);
+        if (loadedHeads.length > 0) {
+          setExpenseHeadOptions(loadedHeads);
+        }
+      } catch {
+        setExpenseHeadOptions(fallbackExpenseHeadOptions);
+      }
+    }
+
+    void loadExpenseHeads();
   }, []);
 
   useEffect(() => {

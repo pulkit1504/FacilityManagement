@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, CalendarPlus, Download, Loader2, MailCheck, Pencil, Plus, PowerOff, Save, Trash2, Upload, UserPlus, X } from "lucide-react";
+import { Building2, CalendarPlus, Download, KeyRound, Loader2, MailCheck, Pencil, Plus, PowerOff, Save, Trash2, Upload, UserPlus, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
@@ -39,7 +39,18 @@ type Employee = {
   bankAccountNumber: string | null;
   bankIfsc: string | null;
   bankName: string | null;
+  passwordResetRequired: boolean;
+  passwordUpdatedAt: string | null;
   isActive: boolean;
+};
+
+type ExpenseHead = {
+  expenseHeadId: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type Holiday = {
@@ -78,11 +89,13 @@ export function SiteContractAdmin() {
   const [sites, setSites] = useState<Site[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [expenseHeads, setExpenseHeads] = useState<ExpenseHead[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+  const [editingExpenseHeadId, setEditingExpenseHeadId] = useState<string | null>(null);
   const [cleanupDays, setCleanupDays] = useState(90);
   const [cleanupConfirmed, setCleanupConfirmed] = useState(false);
   const [contractDraft, setContractDraft] = useState({
@@ -117,6 +130,16 @@ export function SiteContractAdmin() {
     holidayDate: today,
     holidayName: "",
     isNational: true
+  });
+  const [expenseHeadDraft, setExpenseHeadDraft] = useState({
+    name: "",
+    description: "",
+    isActive: true
+  });
+  const [passwordResetDraft, setPasswordResetDraft] = useState({
+    employeeId: "",
+    temporaryPassword: "",
+    requirePasswordReset: true
   });
 
   const managerOptions = useMemo(
@@ -158,12 +181,14 @@ export function SiteContractAdmin() {
       setSites(data.sites ?? []);
       setEmployees(data.employees ?? []);
       setHolidays(data.holidays ?? []);
+      setExpenseHeads(data.expenseHeads ?? []);
       if (notificationsResponse.ok) {
         setNotifications(notificationData.items ?? []);
       } else {
         setMessage(getProblemMessage(notificationData, "Master data loaded, but notification history could not be loaded."));
       }
       setSiteDraft((current) => ({ ...current, contractId: current.contractId || data.contracts?.[0]?.contractId || "" }));
+      setPasswordResetDraft((current) => ({ ...current, employeeId: current.employeeId || data.employees?.[0]?.employeeId || "" }));
     } catch {
       setMessage("Could not load Admin data. Check your connection and access, then try again.");
     } finally {
@@ -181,6 +206,29 @@ export function SiteContractAdmin() {
     try {
       const response = await fetch(path, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      setMessage(data.message ?? getProblemMessage(data, fallback));
+      if (response.ok) {
+        await load();
+      }
+      return response.ok;
+    } catch {
+      setMessage("Could not complete the update. Check your connection and try again.");
+      return false;
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function putJson(path: string, payload: unknown, action: string, fallback: string) {
+    setBusyAction(action);
+    setMessage("");
+    try {
+      const response = await fetch(path, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
@@ -298,6 +346,37 @@ export function SiteContractAdmin() {
     }
   }
 
+  async function saveExpenseHead() {
+    const payload = {
+      name: expenseHeadDraft.name,
+      description: expenseHeadDraft.description || null,
+      isActive: expenseHeadDraft.isActive
+    };
+    const saved = editingExpenseHeadId
+      ? await putJson(`/api/v1/admin/expense-heads/${editingExpenseHeadId}`, payload, "expense-head:update", "Expense head updated.")
+      : await postJson("/api/v1/admin/expense-heads", payload, "expense-head:create", "Expense head saved.");
+    if (saved) {
+      resetExpenseHeadDraft();
+    }
+  }
+
+  async function resetEmployeePassword() {
+    const employee = employees.find((item) => item.employeeId === passwordResetDraft.employeeId);
+    if (!employee || !window.confirm(`Set a temporary password for ${employee.fullName}?`)) return;
+    const saved = await postJson(
+      `/api/v1/admin/employees/${passwordResetDraft.employeeId}/password`,
+      {
+        temporaryPassword: passwordResetDraft.temporaryPassword,
+        requirePasswordReset: passwordResetDraft.requirePasswordReset
+      },
+      "employee:password-reset",
+      "Password reset."
+    );
+    if (saved) {
+      setPasswordResetDraft((current) => ({ ...current, temporaryPassword: "", requirePasswordReset: true }));
+    }
+  }
+
   async function mutate(path: string, method: "POST" | "DELETE", action: string, fallback: string, confirmation?: string) {
     if (confirmation && !window.confirm(confirmation)) return;
     setBusyAction(action);
@@ -395,6 +474,21 @@ export function SiteContractAdmin() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function editExpenseHead(expenseHead: ExpenseHead) {
+    setEditingExpenseHeadId(expenseHead.expenseHeadId);
+    setExpenseHeadDraft({
+      name: expenseHead.name,
+      description: expenseHead.description ?? "",
+      isActive: expenseHead.isActive
+    });
+    setMessage(`Editing expense head ${expenseHead.name}.`);
+  }
+
+  function resetExpenseHeadDraft() {
+    setEditingExpenseHeadId(null);
+    setExpenseHeadDraft({ name: "", description: "", isActive: true });
+  }
+
   function resetEmployeeDraft() {
     setEditingEmployeeId(null);
     setEmployeeDraft({
@@ -433,6 +527,7 @@ export function SiteContractAdmin() {
         <div><strong>{employees.length}</strong><span>Active people</span></div>
         <div><strong>{sites.length}</strong><span>Active sites</span></div>
         <div><strong>{contracts.length}</strong><span>Contracts</span></div>
+        <div><strong>{expenseHeads.filter((head) => head.isActive).length}</strong><span>Expense heads</span></div>
         <div><strong>{notifications.filter((item) => item.status === "Queued").length}</strong><span>Queued notifications</span></div>
       </section>
 
@@ -464,6 +559,123 @@ export function SiteContractAdmin() {
             </div>
           ))}
         </div>
+      </section>
+
+      <div className="grid cols-2">
+        <section className="panel">
+          <div className="section-heading">
+            <div>
+              <h2>{editingExpenseHeadId ? "Edit Expense Head" : "Add Expense Head"}</h2>
+              <p className="muted">Controls the expense-head dropdown used while creating claim line items.</p>
+            </div>
+            {editingExpenseHeadId ? (
+              <button className="button secondary" disabled={busyAction !== null} onClick={resetExpenseHeadDraft} type="button">
+                <X size={16} />
+                Cancel edit
+              </button>
+            ) : null}
+          </div>
+          <div className="grid">
+            <label>
+              <span className="muted">Expense head name</span>
+              <input value={expenseHeadDraft.name} onChange={(event) => setExpenseHeadDraft({ ...expenseHeadDraft, name: event.target.value })} />
+            </label>
+            <label>
+              <span className="muted">Description</span>
+              <input value={expenseHeadDraft.description} onChange={(event) => setExpenseHeadDraft({ ...expenseHeadDraft, description: event.target.value })} />
+            </label>
+            <label className="checkbox-row">
+              <input checked={expenseHeadDraft.isActive} onChange={(event) => setExpenseHeadDraft({ ...expenseHeadDraft, isActive: event.target.checked })} type="checkbox" />
+              Active for new claims
+            </label>
+            <button className="button" disabled={busyAction !== null || !expenseHeadDraft.name.trim()} onClick={() => void saveExpenseHead()} type="button">
+              {busyAction === "expense-head:create" || busyAction === "expense-head:update" ? <Loader2 size={18} /> : <Save size={18} />}
+              {editingExpenseHeadId ? "Save expense head" : "Add expense head"}
+            </button>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="section-heading">
+            <div>
+              <h2>User Login Access</h2>
+              <p className="muted">Enable email login by setting or resetting an employee&apos;s temporary password.</p>
+            </div>
+          </div>
+          <div className="grid">
+            <label>
+              <span className="muted">User</span>
+              <select value={passwordResetDraft.employeeId} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, employeeId: event.target.value })}>
+                <option value="">Select user</option>
+                {employees.map((employee) => (
+                  <option key={employee.employeeId} value={employee.employeeId}>
+                    {employee.fullName} - {employee.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="muted">Temporary password</span>
+              <input autoComplete="new-password" type="password" value={passwordResetDraft.temporaryPassword} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, temporaryPassword: event.target.value })} />
+            </label>
+            <label className="checkbox-row">
+              <input checked={passwordResetDraft.requirePasswordReset} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, requirePasswordReset: event.target.checked })} type="checkbox" />
+              Require password reset on next login
+            </label>
+            <button className="button" disabled={busyAction !== null || !passwordResetDraft.employeeId || passwordResetDraft.temporaryPassword.length < 8} onClick={() => void resetEmployeePassword()} type="button">
+              {busyAction === "employee:password-reset" ? <Loader2 size={18} /> : <KeyRound size={18} />}
+              Reset password
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <section aria-label="Expense heads table" className="panel" tabIndex={0}>
+        <h2>Expense Heads</h2>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Status</th>
+              <th>Updated</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {expenseHeads.map((expenseHead) => (
+              <tr className={editingExpenseHeadId === expenseHead.expenseHeadId ? "editing-row" : undefined} key={expenseHead.expenseHeadId}>
+                <td><strong>{expenseHead.name}</strong></td>
+                <td>{expenseHead.description ?? "No description"}</td>
+                <td>
+                  <span className={`badge ${expenseHead.isActive ? "success" : "warning"}`}>
+                    {expenseHead.isActive ? "Active" : "Inactive"}
+                  </span>
+                </td>
+                <td>{new Date(expenseHead.updatedAt).toLocaleString("en-IN")}</td>
+                <td>
+                  <div className="actions">
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => editExpenseHead(expenseHead)} type="button">
+                      <Pencil size={18} />
+                      Edit
+                    </button>
+                    {expenseHead.isActive ? (
+                      <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/expense-heads/${expenseHead.expenseHeadId}/deactivate`, "POST", `expense-head:${expenseHead.expenseHeadId}`, "Expense head deactivated.", `Deactivate ${expenseHead.name}? Existing claims keep their saved text, but new claims will not show it.`)} type="button">
+                        {busyAction === `expense-head:${expenseHead.expenseHeadId}` ? <Loader2 size={18} /> : <PowerOff size={18} />}
+                        Deactivate
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {expenseHeads.length === 0 ? (
+              <tr>
+                <td colSpan={5}>No expense heads configured.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
       </section>
 
       {(sitesWithoutClusterHead.length > 0 || payableEmployeesWithoutBank.length > 0 || failedNotifications.length > 0) ? (
@@ -699,6 +911,7 @@ export function SiteContractAdmin() {
               <th>Manager</th>
               <th>Threshold</th>
               <th>Imprest Limit</th>
+              <th>Login</th>
               <th>Bank</th>
               <th>Action</th>
             </tr>
@@ -715,6 +928,13 @@ export function SiteContractAdmin() {
                 <td>{employee.directManagerId ? employeeNames.get(employee.directManagerId) ?? employee.directManagerId : "No manager"}</td>
                 <td>{employee.approvalThresholdAmount.toLocaleString()}</td>
                 <td>{employee.imprestAdvanceLimit.toLocaleString()}</td>
+                <td>
+                  <span className={`badge ${employee.passwordResetRequired ? "warning" : employee.passwordUpdatedAt ? "success" : "warning"}`}>
+                    {employee.passwordResetRequired ? "Reset required" : employee.passwordUpdatedAt ? "Login enabled" : "No password set"}
+                  </span>
+                  <br />
+                  <span className="muted">{employee.passwordUpdatedAt ? new Date(employee.passwordUpdatedAt).toLocaleDateString("en-IN") : "Set a temporary password"}</span>
+                </td>
                 <td>
                   {employee.bankName ?? "Not captured"}
                   <br />
@@ -736,7 +956,7 @@ export function SiteContractAdmin() {
             ))}
             {employees.length === 0 ? (
               <tr>
-                <td colSpan={7}>No active employees found.</td>
+                <td colSpan={8}>No active employees found.</td>
               </tr>
             ) : null}
           </tbody>

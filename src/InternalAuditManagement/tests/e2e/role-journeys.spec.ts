@@ -653,6 +653,10 @@ test.describe("role journeys", () => {
     await page.getByLabel("I understand these stale records will be removed").check();
     await expect(cleanupButton).toBeEnabled();
     await expect(page.getByRole("heading", { level: 2, name: "Bulk Master Data Upload" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Add Expense Head" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "User Login Access" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Add expense head|Save expense head/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reset password" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Sample CSV" })).toHaveCount(4);
     await expect(page.getByText("Upload CSV", { exact: true })).toHaveCount(4);
     await expectAccessiblePage(page);

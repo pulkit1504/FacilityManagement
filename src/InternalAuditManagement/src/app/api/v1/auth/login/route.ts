@@ -34,6 +34,7 @@ export async function POST(request: Request) {
       role: employee.role,
       name: employee.fullName,
       email: employee.email,
+      passwordResetRequired: employee.passwordResetRequired,
       message: `Signed in as ${employee.fullName}.`
     });
 

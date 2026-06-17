@@ -2,7 +2,7 @@ import { forbidden } from "../errors/application-error";
 import type { UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { NotificationService } from "./notification-service";
-import type { CleanupStaleRecordsInput, CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput } from "../validation/claim.schemas";
+import type { CleanupStaleRecordsInput, CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateExpenseHeadInput } from "../validation/claim.schemas";
 
 export class AdminService {
   constructor(
@@ -17,9 +17,10 @@ export class AdminService {
       this.claims.listActiveSites()
     ]);
 
-    const [employees, holidays] = await Promise.all([
+    const [employees, holidays, expenseHeads] = await Promise.all([
       this.claims.listEmployees(),
-      this.claims.listHolidays()
+      this.claims.listHolidays(),
+      this.claims.listExpenseHeads(true)
     ]);
 
     const employeeNames = new Map(employees.map((employee) => [employee.employeeId, employee.fullName]));
@@ -28,7 +29,7 @@ export class AdminService {
       clusterHeadName: site.clusterHeadEmployeeId ? employeeNames.get(site.clusterHeadEmployeeId) ?? site.clusterHeadEmployeeId : null
     }));
 
-    return { contracts, sites: sitesWithClusterHeads, employees, holidays };
+    return { contracts, sites: sitesWithClusterHeads, employees, holidays, expenseHeads };
   }
 
   async createContract(input: CreateContractInput, user: UserContext) {
@@ -99,6 +100,45 @@ export class AdminService {
     return {
       holidayDate,
       message: "Holiday removed."
+    };
+  }
+
+  async listExpenseHeads(user: UserContext) {
+    this.assertAdmin(user);
+    return {
+      items: await this.claims.listExpenseHeads(true)
+    };
+  }
+
+  async createExpenseHead(input: CreateExpenseHeadInput, user: UserContext) {
+    this.assertAdmin(user);
+    return {
+      expenseHead: await this.claims.createExpenseHead(input),
+      message: "Expense head created."
+    };
+  }
+
+  async updateExpenseHead(expenseHeadId: string, input: UpdateExpenseHeadInput, user: UserContext) {
+    this.assertAdmin(user);
+    return {
+      expenseHead: await this.claims.updateExpenseHead(expenseHeadId, input),
+      message: "Expense head updated."
+    };
+  }
+
+  async deactivateExpenseHead(expenseHeadId: string, user: UserContext) {
+    this.assertAdmin(user);
+    return {
+      expenseHead: await this.claims.deactivateExpenseHead(expenseHeadId),
+      message: "Expense head deactivated."
+    };
+  }
+
+  async resetEmployeePassword(employeeId: string, input: ResetEmployeePasswordInput, user: UserContext) {
+    this.assertAdmin(user);
+    return {
+      employee: await this.claims.resetEmployeePassword(employeeId, input),
+      message: "Temporary password set. Ask the user to sign in and change it."
     };
   }
 

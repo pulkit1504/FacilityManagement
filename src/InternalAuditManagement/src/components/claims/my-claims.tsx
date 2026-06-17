@@ -1,13 +1,11 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Download, Eye, FileText, Loader2 } from "lucide-react";
+import { Eye, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ActionFeedback } from "@/components/ui/action-feedback";
-import { expenseTagLabel } from "@/shared/expense-tags";
-import { ClaimTimeline } from "@/components/claims/claim-timeline";
-import { ClaimWorkspaceDrawer } from "@/components/claims/claim-workspace-drawer";
+import { UniversalClaimDrawer } from "@/components/claims/universal-claim-drawer";
 
 type ClaimSummary = {
   claimId: string;
@@ -23,38 +21,11 @@ type ClaimSummary = {
   updatedAt: string;
 };
 
-type ClaimDetail = ClaimSummary & {
-  rejectionReason: string | null;
-  physicalReceiptConfirmedAt: string | null;
-  lineItems: Array<{
-    lineItemId: string;
-    description: string;
-    amount: number;
-    transactionDate: string;
-    expenseTag: string;
-    clientInvoiceNumber: string | null;
-    vendorInvoiceNumber: string | null;
-    missingReceiptFlag: boolean;
-    attachments: Array<{
-      attachmentId: string;
-      originalFileName: string;
-    }>;
-  }>;
-  approvalSteps: Array<{
-    requiredApproverRole: string;
-    decision: string;
-    decisionAt: string | null;
-    remarks: string | null;
-  }>;
-};
-
 export function MyClaims() {
   const searchParams = useSearchParams();
   const [claims, setClaims] = useState<ClaimSummary[]>([]);
-  const [details, setDetails] = useState<Record<string, ClaimDetail>>({});
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   const totals = useMemo(
@@ -99,82 +70,13 @@ export function MyClaims() {
     void load();
   }, []);
 
-  async function toggleDetails(claimId: string) {
-    if (expandedClaimId === claimId) {
-      setExpandedClaimId(null);
-      return;
-    }
+  useEffect(() => {
+    const claimId = searchParams.get("claim");
+    if (claimId) setExpandedClaimId(claimId);
+  }, [searchParams]);
 
-    setExpandedClaimId(claimId);
-    if (details[claimId]) return;
-
-    setBusyAction(`details:${claimId}`);
-    try {
-      const response = await fetch(`/api/v1/claims/${claimId}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail ?? "Could not load claim details.");
-      setDetails((current) => ({ ...current, [claimId]: data }));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not load claim details.");
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  async function openReceipt(claimId: string, lineItemId: string, attachmentId: string) {
-    setBusyAction(`download:${attachmentId}`);
-    try {
-      const response = await fetch(`/api/v1/claims/${claimId}/line-items/${lineItemId}/attachments/${attachmentId}/download`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail ?? "Could not open receipt.");
-      window.open(data.downloadUrl, "_blank", "noopener,noreferrer");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not open receipt.");
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  async function exportAuditTrail(claimId: string, ticketId: string) {
-    setBusyAction(`audit:${claimId}`);
-    try {
-      const response = await fetch(`/api/v1/claims/${claimId}/audit/export`);
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail ?? "Could not export audit trail.");
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${ticketId}-audit-trail.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not export audit trail.");
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  async function exportClaimSummary(claimId: string, ticketId: string) {
-    setBusyAction(`summary:${claimId}`);
-    try {
-      const response = await fetch(`/api/v1/claims/${claimId}/summary/export`);
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail ?? "Could not export claim summary.");
-      }
-
-      await downloadResponse(response, `${ticketId}-summary.csv`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not export claim summary.");
-    } finally {
-      setBusyAction(null);
-    }
+  function toggleDetails(claimId: string) {
+    setExpandedClaimId((current) => current === claimId ? null : claimId);
   }
 
   return (
@@ -250,8 +152,8 @@ export function MyClaims() {
                           {claim.status === "Draft" ? "Continue draft" : "Correct claim"}
                         </Link>
                       ) : null}
-                      <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void toggleDetails(claim.claimId)} type="button">
-                        {busyAction === `details:${claim.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
+                      <button className="button secondary" onClick={() => toggleDetails(claim.claimId)} type="button">
+                        <Eye size={16} />
                         {expandedClaimId === claim.claimId ? "Close workspace" : "Open workspace"}
                       </button>
                     </div>
@@ -267,125 +169,12 @@ export function MyClaims() {
           </tbody>
         </table>
       </section>
-      <ClaimWorkspaceDrawer
+      <UniversalClaimDrawer
+        claimId={expandedClaimId}
         isOpen={Boolean(expandedClaimId)}
         onClose={() => setExpandedClaimId(null)}
-        subtitle={expandedClaimId ? details[expandedClaimId]?.statusLabel ?? "Loading claim evidence..." : undefined}
-        title={expandedClaimId ? details[expandedClaimId]?.ticketId ?? "Claim workspace" : "Claim workspace"}
-      >
-        {expandedClaimId ? (
-          <ClaimDetailPanel
-            busyAction={busyAction}
-            claim={details[expandedClaimId]}
-            isLoading={!details[expandedClaimId]}
-            onExportAudit={() => {
-              const claim = claims.find((item) => item.claimId === expandedClaimId);
-              if (claim) void exportAuditTrail(claim.claimId, claim.ticketId);
-            }}
-            onExportSummary={() => {
-              const claim = claims.find((item) => item.claimId === expandedClaimId);
-              if (claim) void exportClaimSummary(claim.claimId, claim.ticketId);
-            }}
-            onOpenReceipt={(lineItemId, attachmentId) => void openReceipt(expandedClaimId, lineItemId, attachmentId)}
-          />
-        ) : null}
-      </ClaimWorkspaceDrawer>
-    </div>
-  );
-}
-
-function ClaimDetailPanel({
-  claim,
-  isLoading,
-  onOpenReceipt,
-  onExportAudit,
-  onExportSummary,
-  busyAction
-}: Readonly<{
-  claim?: ClaimDetail;
-  isLoading: boolean;
-  onOpenReceipt: (lineItemId: string, attachmentId: string) => void;
-  onExportAudit: () => void;
-  onExportSummary: () => void;
-  busyAction: string | null;
-}>) {
-  if (isLoading || !claim) {
-    return (
-      <span className="loading-inline">
-        <Loader2 size={16} />
-        Loading claim details...
-      </span>
-    );
-  }
-
-  return (
-    <div className="receipt-review">
-      <ClaimTimeline approvalSteps={claim.approvalSteps} physicalReceiptConfirmedAt={claim.physicalReceiptConfirmedAt} status={claim.status} />
-      {claim.rejectionReason ? (
-        <div className="audit-evidence-row">
-          <strong>Return reason</strong>
-          <span className="muted">{claim.rejectionReason}</span>
-          <span className="badge danger">Returned</span>
-        </div>
-      ) : null}
-      <div className="audit-evidence-row">
-        <strong>Current status</strong>
-        <span className="muted">{claimPendingLocation(claim)}</span>
-        <span className={`badge ${statusTone(claim.status)}`}>{claim.statusLabel}</span>
-      </div>
-      <div className="claim-progress">
-        {claim.approvalSteps.map((step) => (
-          <div className="approval-history-step" key={`${step.requiredApproverRole}:${step.decisionAt ?? "pending"}`}>
-            <span className={`badge ${step.decision === "Approved" ? "success" : step.decision === "Rejected" ? "danger" : "warning"}`}>
-              {step.requiredApproverRole}: {step.decision}
-            </span>
-            {step.remarks ? <p className="muted">{step.remarks}</p> : null}
-          </div>
-        ))}
-        {claim.physicalReceiptConfirmedAt ? <span className="badge success">Receipt confirmed</span> : null}
-        <button className="button secondary" disabled={Boolean(busyAction?.startsWith("audit:"))} onClick={onExportAudit} type="button">
-          {busyAction?.startsWith("audit:") ? <Loader2 size={16} /> : <Download size={16} />}
-          Export audit trail
-        </button>
-        <button className="button secondary" disabled={Boolean(busyAction?.startsWith("summary:"))} onClick={onExportSummary} type="button">
-          {busyAction?.startsWith("summary:") ? <Loader2 size={16} /> : <Download size={16} />}
-          Download claim summary
-        </button>
-      </div>
-      {claim.lineItems.map((line) => (
-        <div className="approval-line-row" key={line.lineItemId}>
-          <div>
-            <strong>{line.description}</strong>
-            <br />
-            <span className="muted">
-              {line.transactionDate} · {expenseTagLabel(line.expenseTag)}
-            </span>
-          </div>
-          <div>
-            <strong>Rs {line.amount.toLocaleString("en-IN")}</strong>
-            <br />
-            <span className="muted">{invoiceReferenceLabel(line.clientInvoiceNumber, line.vendorInvoiceNumber)}</span>
-          </div>
-          <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
-            {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
-          </span>
-          <div className="actions">
-            {line.attachments.map((attachment) => (
-              <button
-                className="button secondary"
-                disabled={busyAction === `download:${attachment.attachmentId}`}
-                key={attachment.attachmentId}
-                onClick={() => onOpenReceipt(line.lineItemId, attachment.attachmentId)}
-                type="button"
-              >
-                {busyAction === `download:${attachment.attachmentId}` ? <Loader2 size={16} /> : <FileText size={16} />}
-                {attachment.originalFileName}
-              </button>
-            ))}
-            {line.attachments.length === 0 ? <span className="muted">No upload found</span> : null}
-          </div>
-        </div>
-      ))}
+        onError={setMessage}
+      />
     </div>
   );
 }
@@ -397,12 +186,12 @@ function statusTone(status: string) {
   return "warning";
 }
 
-function claimPendingLocation(claim: Pick<ClaimDetail, "status" | "approvalSteps" | "physicalReceiptConfirmedAt"> | ClaimSummary) {
+function claimPendingLocation(claim: ClaimSummary | { status: string; approvalSteps?: Array<{ requiredApproverRole: string; decision: string }>; physicalReceiptConfirmedAt?: string | null }) {
   if (claim.status === "Draft") return "With you for drafting";
   if (claim.status === "Rejected") return "With you for correction";
   if (claim.status === "PaymentReleased") return "Payment released";
 
-  if ("approvalSteps" in claim) {
+  if ("approvalSteps" in claim && claim.approvalSteps) {
     const pendingStep = claim.approvalSteps
       .filter((step) => step.decision === "Pending")
       .sort((a, b) => roleOrder(a.requiredApproverRole) - roleOrder(b.requiredApproverRole))[0];
@@ -430,34 +219,12 @@ function roleOrder(role: string) {
   return ["ClusterHead", "HOD", "MD", "Finance"].indexOf(role);
 }
 
-function invoiceReferenceLabel(clientInvoiceNumber: string | null, vendorInvoiceNumber: string | null) {
-  const references = [
-    clientInvoiceNumber ? `Client ${clientInvoiceNumber}` : null,
-    vendorInvoiceNumber ? `Vendor ${vendorInvoiceNumber}` : null
-  ].filter(Boolean);
-  return references.length > 0 ? references.join(" · ") : "No invoice reference";
-}
-
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric"
   }).format(new Date(value));
-}
-
-async function downloadResponse(response: Response, fallbackFileName: string) {
-  const blob = await response.blob();
-  const contentDisposition = response.headers.get("Content-Disposition") ?? "";
-  const fileName = contentDisposition.match(/filename="([^"]+)"/)?.[1] ?? fallbackFileName;
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
 }
 
 function matchesText(query: string, values: Array<string | number | null | undefined>) {

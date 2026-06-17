@@ -6,6 +6,8 @@ import { AlertTriangle, Check, Eye, Loader2, RotateCcw, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { expenseTagLabel } from "@/shared/expense-tags";
 import { getProblemMessage } from "@/components/ui/problem-message";
+import { UniversalClaimDrawer } from "@/components/claims/universal-claim-drawer";
+import { SlaChip } from "@/components/ui/sla-chip";
 
 type ApprovalItem = {
   claimId: string;
@@ -48,6 +50,7 @@ export function ApprovalQueue() {
   const searchParams = useSearchParams();
   const [items, setItems] = useState<ApprovalItem[]>([]);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
+  const [workspaceClaimId, setWorkspaceClaimId] = useState<string | null>(null);
   const [claimDetails, setClaimDetails] = useState<Record<string, ApprovalClaimDetail>>({});
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,6 +92,11 @@ export function ApprovalQueue() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const claimId = searchParams.get("claim");
+    if (claimId) setWorkspaceClaimId(claimId);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!returnClaim) return;
@@ -293,15 +301,17 @@ export function ApprovalQueue() {
                   </span>
                 </td>
                 <td>
-                  <span className={`badge ${item.urgencyLevel === "Overdue" ? "danger" : item.urgencyLevel === "Attention" ? "warning" : "success"}`}>
-                    {item.daysPending} days
-                  </span>
+                  <SlaChip days={item.daysPending} />
                 </td>
                 <td>
                   <div className="actions">
                     <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void toggleDetails(item.claimId)} type="button">
                       {busyAction === `details:${item.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
                       {expandedClaimId === item.claimId ? "Hide details" : "View details"}
+                    </button>
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => setWorkspaceClaimId(item.claimId)} type="button">
+                      <Eye size={16} />
+                      Open workspace
                     </button>
                     <button className="button" disabled={Boolean(busyAction)} onClick={() => void approve(item.claimId)} type="button">
                       {busyAction === `approve:${item.claimId}` ? <Loader2 size={16} /> : <Check size={16} />}
@@ -423,6 +433,7 @@ export function ApprovalQueue() {
           </div>
         </div>
       ) : null}
+      <UniversalClaimDrawer claimId={workspaceClaimId} isOpen={Boolean(workspaceClaimId)} onClose={() => setWorkspaceClaimId(null)} onError={setMessage} />
     </section>
   );
 }

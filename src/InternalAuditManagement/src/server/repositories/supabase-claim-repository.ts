@@ -2219,6 +2219,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     return {
       claimId: claim.claimId,
+      ticketId: claim.ticketId,
       submittedBy: claim.submitterEmployeeId,
       submittedByRole: "Claimant",
       siteName: claim.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,

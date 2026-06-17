@@ -57,6 +57,7 @@ export const auditActionTypes = [
   "AUDIT_REJECT",
   "AUDIT_INFO_REQUEST",
   "PAYMENT_RELEASE",
+  "CLAIM_COMMENT",
   "REJECT",
   "BILLABLE_TAG_CHANGE",
   "FRAUD_FLAG",
@@ -197,6 +198,7 @@ export type ClaimDetail = ExpenseClaim & {
 
 export type ApprovalQueueItem = {
   claimId: string;
+  ticketId: string;
   submittedBy: string;
   submittedByRole: UserRole;
   siteName: string | null;

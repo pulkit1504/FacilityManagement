@@ -311,8 +311,8 @@ test.describe("role journeys", () => {
         })
       });
     });
-    await page.route("**/api/v1/claims/claim-returned-1", async (route) => {
-      await route.fulfill({ contentType: "application/json", body: JSON.stringify(returned) });
+    await page.route("**/api/v1/claims/claim-returned-1/workspace", async (route) => {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify(workspaceFixture(returned)) });
     });
 
     await page.goto("/claims");
@@ -322,9 +322,12 @@ test.describe("role journeys", () => {
     await expect(drawer).toBeVisible();
     await expect(drawer.getByRole("list", { name: "Claim status timeline" })).toBeVisible();
     await expect(drawer.getByText("Finance voucher review")).toBeVisible();
-    await expect(drawer.getByText("Return reason")).toBeVisible();
+    await expect(drawer.getByText("Claim summary")).toBeVisible();
+    await expect(drawer.getByText("Line items and receipt evidence")).toBeVisible();
+    await expect(drawer.getByText("Comments and remarks")).toBeVisible();
+    await expect(drawer.getByText("Duplicate hash: 0")).toBeVisible();
     await expect(drawer.getByRole("button", { name: "Export audit trail" })).toBeVisible();
-    await expect(drawer.getByRole("button", { name: "Download claim summary" })).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "Download summary" })).toBeVisible();
     await expectAccessiblePage(page);
     await expectNoHorizontalOverflow(page);
   });
@@ -761,6 +764,50 @@ function returnedClaimFixture(status: "Draft" | "Rejected") {
       decisionAt: "2026-06-04T00:00:00.000Z",
       remarks: "Correct the invoice date."
     }] : []
+  };
+}
+
+function workspaceFixture(claim: ReturnType<typeof returnedClaimFixture>) {
+  return {
+    claim: {
+      ...claim,
+      lineItems: claim.lineItems.map((line) => ({
+        ...line,
+        attachments: line.attachments.map((attachment) => ({
+          ...attachment,
+          uploadedByName: "Claimant User",
+          duplicateContentHash: false
+        }))
+      }))
+    },
+    auditTrail: [{
+      auditId: "audit-1",
+      claimId: claim.claimId,
+      actorUserId: "emp-hod-001",
+      actorName: "HOD User",
+      actionType: "REJECT",
+      preActionStatus: "Submitted",
+      postActionStatus: "Rejected",
+      auditRemarks: "Correct the invoice date.",
+      correlationId: "corr-1",
+      actionTimestamp: "2026-06-04T00:00:00.000Z"
+    }],
+    comments: [{
+      id: "approval:step-1",
+      author: "HOD",
+      body: "Correct the invoice date.",
+      source: "Approval remark",
+      timestamp: "2026-06-04T00:00:00.000Z"
+    }],
+    notifications: [],
+    receiptQuality: {
+      totalLines: claim.lineItems.length,
+      linesMissingReceipts: 0,
+      totalReceipts: 1,
+      duplicateReceiptHashes: 0
+    },
+    availableActions: ["Correct returned claim", "Download summary", "Export audit trail", "Add comment"],
+    userRole: "Claimant"
   };
 }
 

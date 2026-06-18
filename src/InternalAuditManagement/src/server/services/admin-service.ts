@@ -2,7 +2,7 @@ import { forbidden } from "../errors/application-error";
 import type { UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { NotificationService } from "./notification-service";
-import type { CleanupStaleRecordsInput, CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateExpenseHeadInput } from "../validation/claim.schemas";
+import type { CleanupStaleRecordsInput, CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateExpenseHeadInput, UpdateSiteInput } from "../validation/claim.schemas";
 
 export class AdminService {
   constructor(
@@ -14,7 +14,7 @@ export class AdminService {
     this.assertAdmin(user);
     const [contracts, sites] = await Promise.all([
       this.claims.listContracts(),
-      this.claims.listActiveSites()
+      this.claims.listSites(true)
     ]);
 
     const [employees, holidays, expenseHeads] = await Promise.all([
@@ -48,12 +48,42 @@ export class AdminService {
     };
   }
 
+  async updateSite(siteId: string, input: UpdateSiteInput, user: UserContext) {
+    this.assertAdmin(user);
+    return {
+      site: await this.claims.updateSite(siteId, input),
+      message: input.isActive ? "Site saved and active." : "Site saved and inactive."
+    };
+  }
+
   async deactivateSite(siteId: string, user: UserContext) {
     this.assertAdmin(user);
     await this.claims.deactivateSite(siteId);
     return {
       siteId,
       message: "Site marked inactive."
+    };
+  }
+
+  async reactivateSite(siteId: string, user: UserContext) {
+    this.assertAdmin(user);
+    const site = (await this.claims.listSites(true)).find((item) => item.siteId === siteId);
+    if (!site) {
+      throw forbidden("Site was not found.");
+    }
+    if (!site.contractId || !site.clusterHeadEmployeeId) {
+      throw forbidden("Add a contract and Cluster Head before reactivating this site.");
+    }
+    return {
+      site: await this.claims.updateSite(siteId, {
+        siteName: site.siteName,
+        siteAddress: site.siteAddress,
+        serviceType: site.serviceType,
+        contractId: site.contractId,
+        clusterHeadEmployeeId: site.clusterHeadEmployeeId,
+        isActive: true
+      }),
+      message: "Site marked active."
     };
   }
 

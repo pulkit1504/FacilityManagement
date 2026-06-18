@@ -31,7 +31,7 @@ import type {
   SubmissionMode
 } from "../domain/types";
 import type { CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
-import type { CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateBankDetailsInput, UpdateExpenseHeadInput } from "../validation/claim.schemas";
+import type { CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateBankDetailsInput, UpdateExpenseHeadInput, UpdateSiteInput } from "../validation/claim.schemas";
 
 export type CreateClaimRecord = CreateClaimInput & {
   submitterEmployeeId: string;
@@ -78,9 +78,11 @@ export type CleanupResult = {
 export interface ClaimRepository {
   listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]>;
   listActiveSites(): Promise<Site[]>;
+  listSites(includeInactive?: boolean): Promise<Site[]>;
   listContracts(): Promise<ClientContract[]>;
   createContract(input: CreateContractInput): Promise<ClientContract>;
   createSite(input: CreateSiteInput): Promise<Site>;
+  updateSite(siteId: string, input: UpdateSiteInput): Promise<Site>;
   assignSiteClusterHead(siteId: string, clusterHeadEmployeeId: string): Promise<Site>;
   deactivateSite(siteId: string): Promise<Site>;
   listEmployees(): Promise<Employee[]>;

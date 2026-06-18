@@ -184,6 +184,10 @@ export const createSiteSchema = z.object({
   clusterHeadEmployeeId: z.string().trim().min(1, "Select a Cluster Head.")
 });
 
+export const updateSiteSchema = createSiteSchema.extend({
+  isActive: z.boolean().default(true)
+});
+
 export const assignSiteClusterHeadSchema = z.object({
   clusterHeadEmployeeId: z.string().trim().min(1, "Select a Cluster Head.")
 });
@@ -244,6 +248,7 @@ export type ReviewFraudFlagInput = z.infer<typeof reviewFraudFlagSchema>;
 export type AuditClaimDecisionInput = z.infer<typeof auditClaimDecisionSchema>;
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 export type CreateSiteInput = z.infer<typeof createSiteSchema>;
+export type UpdateSiteInput = z.infer<typeof updateSiteSchema>;
 export type AssignSiteClusterHeadInput = z.infer<typeof assignSiteClusterHeadSchema>;
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;

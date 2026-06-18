@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Building2, CalendarPlus, Download, KeyRound, Loader2, MailCheck, Pencil, Plus, PowerOff, Save, Trash2, Upload, UserPlus, X } from "lucide-react";
+import { Building2, CalendarPlus, Download, KeyRound, Loader2, MailCheck, Pencil, Plus, PowerOff, RotateCcw, Save, Trash2, Upload, UserPlus, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
@@ -25,6 +25,7 @@ type Site = {
   contractDescription: string | null;
   clusterHeadEmployeeId: string | null;
   clusterHeadName: string | null;
+  isActive: boolean;
 };
 
 type Employee = {
@@ -74,9 +75,18 @@ type NotificationItem = {
   sentAt: string | null;
 };
 
+type DeliveryHealth = {
+  apiKeyConfigured: boolean;
+  fromEmailConfigured: boolean;
+  fromEmail: string | null;
+  status: "Ready" | "Restricted" | "NotConfigured";
+  guidance: string;
+};
+
 const today = new Date().toISOString().slice(0, 10);
 const roles: Employee["role"][] = ["Claimant", "ClusterHead", "HOD", "MD", "Finance", "BillingTeam", "Auditor", "Admin"];
 type BulkUploadKind = "contracts" | "employees" | "sites" | "holidays";
+type AdminSection = "setup" | "people" | "sites" | "notifications" | "retention";
 
 const bulkTemplates: Record<BulkUploadKind, string> = {
   contracts: `clientName,description,startDate,endDate\nAcme Facilities,Annual facilities contract,2026-04-01,2027-03-31`,
@@ -84,6 +94,14 @@ const bulkTemplates: Record<BulkUploadKind, string> = {
   sites: `siteName,siteAddress,serviceType,contractClientName,clusterHeadEmployeeId\nAcme Tower,MG Road Bengaluru,Both,Acme Facilities,EMP-2001`,
   holidays: `holidayDate,holidayName,isNational\n2026-08-15,Independence Day,true`
 };
+
+const adminSections: Array<{ id: AdminSection; label: string; description: string }> = [
+  { id: "setup", label: "Setup", description: "Bulk upload, expense heads, and holidays" },
+  { id: "people", label: "People", description: "Employees, roles, passwords, and bank data" },
+  { id: "sites", label: "Sites", description: "Contracts, site status, and Cluster Head mapping" },
+  { id: "notifications", label: "Mail Delivery", description: "Email health, retries, and history" },
+  { id: "retention", label: "Retention", description: "Controlled cleanup for stale records" }
+];
 
 export function SiteContractAdmin() {
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -95,8 +113,11 @@ export function SiteContractAdmin() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<AdminSection>("setup");
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+  const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
   const [editingExpenseHeadId, setEditingExpenseHeadId] = useState<string | null>(null);
+  const [deliveryHealth, setDeliveryHealth] = useState<DeliveryHealth | null>(null);
   const [cleanupDays, setCleanupDays] = useState(90);
   const [cleanupConfirmed, setCleanupConfirmed] = useState(false);
   const [contractDraft, setContractDraft] = useState({
@@ -110,7 +131,8 @@ export function SiteContractAdmin() {
     siteAddress: "",
     serviceType: "Both" as Site["serviceType"],
     contractId: "",
-    clusterHeadEmployeeId: ""
+    clusterHeadEmployeeId: "",
+    isActive: true
   });
   const [employeeDraft, setEmployeeDraft] = useState({
     employeeId: "",
@@ -155,7 +177,9 @@ export function SiteContractAdmin() {
     () => new Map(employees.map((employee) => [employee.employeeId, employee.fullName])),
     [employees]
   );
-  const sitesWithoutClusterHead = sites.filter((site) => !site.clusterHeadEmployeeId);
+  const activeSites = sites.filter((site) => site.isActive !== false);
+  const inactiveSites = sites.filter((site) => site.isActive === false);
+  const sitesWithoutClusterHead = activeSites.filter((site) => !site.clusterHeadEmployeeId);
   const payableEmployeesWithoutBank = employees.filter(
     (employee) =>
       ["Claimant", "ClusterHead", "HOD"].includes(employee.role) &&
@@ -181,6 +205,7 @@ export function SiteContractAdmin() {
       setExpenseHeads(data.expenseHeads ?? []);
       if (notificationsResponse.ok) {
         setNotifications(notificationData.items ?? []);
+        setDeliveryHealth(notificationData.deliveryHealth ?? null);
       } else {
         setMessage(getProblemMessage(notificationData, "Master data loaded, but notification history could not be loaded."));
       }
@@ -300,19 +325,32 @@ export function SiteContractAdmin() {
     }
   }
 
-  async function createSite() {
-    const saved = await postJson(
-      "/api/v1/admin/sites",
-      {
-        ...siteDraft,
-        clusterHeadEmployeeId: siteDraft.clusterHeadEmployeeId || null
-      },
-      "site:create",
-      "Site saved."
-    );
+  async function saveSite() {
+    const payload = {
+      ...siteDraft,
+      clusterHeadEmployeeId: siteDraft.clusterHeadEmployeeId || null
+    };
+    const saved = editingSiteId
+      ? await putJson(
+        `/api/v1/admin/sites/${editingSiteId}`,
+        payload,
+        "site:update",
+        "Site saved."
+      )
+      : await postJson(
+        "/api/v1/admin/sites",
+        payload,
+        "site:create",
+        "Site saved."
+      );
     if (saved) {
-      setSiteDraft((current) => ({ siteName: "", siteAddress: "", serviceType: "Both", contractId: current.contractId, clusterHeadEmployeeId: current.clusterHeadEmployeeId }));
+      resetSiteDraft();
     }
+  }
+
+  async function reactivateSite(site: Site) {
+    if (!window.confirm(`Mark ${site.siteName} active and make it available for new claims?`)) return;
+    await mutate(`/api/v1/admin/sites/${site.siteId}/reactivate`, "POST", `site:${site.siteId}:reactivate`, "Site marked active.");
   }
 
   async function createEmployee() {
@@ -471,6 +509,33 @@ export function SiteContractAdmin() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function editSite(site: Site) {
+    setEditingSiteId(site.siteId);
+    setSiteDraft({
+      siteName: site.siteName,
+      siteAddress: site.siteAddress ?? "",
+      serviceType: site.serviceType,
+      contractId: site.contractId ?? "",
+      clusterHeadEmployeeId: site.clusterHeadEmployeeId ?? "",
+      isActive: site.isActive !== false
+    });
+    setActiveSection("sites");
+    setMessage(`Editing ${site.siteName}. Update the site details and select Save site.`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function resetSiteDraft() {
+    setEditingSiteId(null);
+    setSiteDraft((current) => ({
+      siteName: "",
+      siteAddress: "",
+      serviceType: "Both",
+      contractId: contracts[0]?.contractId ?? current.contractId,
+      clusterHeadEmployeeId: current.clusterHeadEmployeeId,
+      isActive: true
+    }));
+  }
+
   function editExpenseHead(expenseHead: ExpenseHead) {
     setEditingExpenseHeadId(expenseHead.expenseHeadId);
     setExpenseHeadDraft({
@@ -521,13 +586,31 @@ export function SiteContractAdmin() {
       <ActionFeedback message={message} onDismiss={() => setMessage("")} />
 
       <section className="panel admin-summary" aria-label="Admin setup summary">
-        <div><strong>{employees.length}</strong><span>Active people</span></div>
-        <div><strong>{sites.length}</strong><span>Active sites</span></div>
-        <div><strong>{contracts.length}</strong><span>Contracts</span></div>
-        <div><strong>{expenseHeads.filter((head) => head.isActive).length}</strong><span>Expense heads</span></div>
-        <div><strong>{notifications.filter((item) => item.status === "Queued").length}</strong><span>Queued notifications</span></div>
+        <button onClick={() => setActiveSection("people")} type="button"><strong>{employees.length}</strong><span>Active people</span></button>
+        <button onClick={() => setActiveSection("sites")} type="button"><strong>{activeSites.length}</strong><span>Active sites</span></button>
+        <button onClick={() => setActiveSection("sites")} type="button"><strong>{inactiveSites.length}</strong><span>Inactive sites</span></button>
+        <button onClick={() => setActiveSection("sites")} type="button"><strong>{contracts.length}</strong><span>Contracts</span></button>
+        <button onClick={() => setActiveSection("setup")} type="button"><strong>{expenseHeads.filter((head) => head.isActive).length}</strong><span>Expense heads</span></button>
+        <button onClick={() => setActiveSection("notifications")} type="button"><strong>{notifications.filter((item) => item.status === "Queued").length}</strong><span>Queued notifications</span></button>
       </section>
 
+      <section className="panel admin-workspace-nav" aria-label="Admin workspaces">
+        {adminSections.map((section) => (
+          <button
+            aria-pressed={activeSection === section.id}
+            className={activeSection === section.id ? "active" : ""}
+            key={section.id}
+            onClick={() => setActiveSection(section.id)}
+            type="button"
+          >
+            <strong>{section.label}</strong>
+            <span>{section.description}</span>
+          </button>
+        ))}
+      </section>
+
+      {activeSection === "setup" ? (
+        <>
       <section className="panel" aria-label="Bulk master data upload">
         <div className="section-heading">
           <div>
@@ -588,40 +671,6 @@ export function SiteContractAdmin() {
             <button className="button" disabled={busyAction !== null || !expenseHeadDraft.name.trim()} onClick={() => void saveExpenseHead()} type="button">
               {busyAction === "expense-head:create" || busyAction === "expense-head:update" ? <Loader2 size={18} /> : <Save size={18} />}
               {editingExpenseHeadId ? "Save expense head" : "Add expense head"}
-            </button>
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <h2>User Login Access</h2>
-              <p className="muted">Enable email login by setting or resetting an employee&apos;s temporary password.</p>
-            </div>
-          </div>
-          <div className="grid">
-            <label>
-              <span className="muted">User</span>
-              <select value={passwordResetDraft.employeeId} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, employeeId: event.target.value })}>
-                <option value="">Select user</option>
-                {employees.map((employee) => (
-                  <option key={employee.employeeId} value={employee.employeeId}>
-                    {employee.fullName} - {employee.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span className="muted">Temporary password</span>
-              <input autoComplete="new-password" type="password" value={passwordResetDraft.temporaryPassword} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, temporaryPassword: event.target.value })} />
-            </label>
-            <label className="checkbox-row">
-              <input checked={passwordResetDraft.requirePasswordReset} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, requirePasswordReset: event.target.checked })} type="checkbox" />
-              Require password reset on next login
-            </label>
-            <button className="button" disabled={busyAction !== null || !passwordResetDraft.employeeId || passwordResetDraft.temporaryPassword.length < 8} onClick={() => void resetEmployeePassword()} type="button">
-              {busyAction === "employee:password-reset" ? <Loader2 size={18} /> : <KeyRound size={18} />}
-              Reset password
             </button>
           </div>
         </section>
@@ -700,7 +749,11 @@ export function SiteContractAdmin() {
           </div>
         </section>
       ) : null}
+        </>
+      ) : null}
 
+      {activeSection === "sites" ? (
+        <>
       <div className="grid cols-2">
         <section className="panel">
           <h2>Add Contract</h2>
@@ -731,7 +784,18 @@ export function SiteContractAdmin() {
         </section>
 
         <section className="panel">
-          <h2>Add Site</h2>
+          <div className="section-heading">
+            <div>
+              <h2>{editingSiteId ? "Edit Site" : "Add Site"}</h2>
+              <p className="muted">{editingSiteId ? `Updating ${siteDraft.siteName}` : "Create a site and map its operating owner."}</p>
+            </div>
+            {editingSiteId ? (
+              <button className="button secondary" disabled={busyAction !== null} onClick={resetSiteDraft} type="button">
+                <X size={16} />
+                Cancel edit
+              </button>
+            ) : null}
+          </div>
           <div className="grid">
             <label>
               <span className="muted">Site name</span>
@@ -774,13 +838,55 @@ export function SiteContractAdmin() {
                 </select>
               </label>
             </div>
-            <button className="button" disabled={busyAction !== null || !siteDraft.siteName || !siteDraft.contractId || !siteDraft.clusterHeadEmployeeId} onClick={() => void createSite()} type="button">
-              {busyAction === "site:create" ? <Loader2 size={18} /> : <Building2 size={18} />}
-              Add site
+            <label className="checkbox-row">
+              <input checked={siteDraft.isActive} onChange={(event) => setSiteDraft({ ...siteDraft, isActive: event.target.checked })} type="checkbox" />
+              Active for new claims
+            </label>
+            <button className="button" disabled={busyAction !== null || !siteDraft.siteName || !siteDraft.contractId || !siteDraft.clusterHeadEmployeeId} onClick={() => void saveSite()} type="button">
+              {busyAction === "site:create" || busyAction === "site:update" ? <Loader2 size={18} /> : editingSiteId ? <Save size={18} /> : <Building2 size={18} />}
+              {editingSiteId ? "Save site" : "Add site"}
             </button>
           </div>
         </section>
       </div>
+        </>
+      ) : null}
+
+      {activeSection === "people" ? (
+        <>
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <h2>User Login Access</h2>
+            <p className="muted">Enable email login by setting or resetting an employee&apos;s temporary password.</p>
+          </div>
+        </div>
+        <div className="grid cols-2">
+          <label>
+            <span className="muted">User</span>
+            <select value={passwordResetDraft.employeeId} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, employeeId: event.target.value })}>
+              <option value="">Select user</option>
+              {employees.map((employee) => (
+                <option key={employee.employeeId} value={employee.employeeId}>
+                  {employee.fullName} - {employee.email}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="muted">Temporary password</span>
+            <input autoComplete="new-password" type="password" value={passwordResetDraft.temporaryPassword} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, temporaryPassword: event.target.value })} />
+          </label>
+          <label className="checkbox-row">
+            <input checked={passwordResetDraft.requirePasswordReset} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, requirePasswordReset: event.target.checked })} type="checkbox" />
+            Require password reset on next login
+          </label>
+          <button className="button" disabled={busyAction !== null || !passwordResetDraft.employeeId || passwordResetDraft.temporaryPassword.length < 8} onClick={() => void resetEmployeePassword()} type="button">
+            {busyAction === "employee:password-reset" ? <Loader2 size={18} /> : <KeyRound size={18} />}
+            Reset password
+          </button>
+        </div>
+      </section>
 
       <div className="grid cols-2">
         <section className="panel">
@@ -993,7 +1099,10 @@ export function SiteContractAdmin() {
           </tbody>
         </table>
       </section>
+        </>
+      ) : null}
 
+      {activeSection === "notifications" ? (
       <section aria-label="Notification delivery table" className="panel" tabIndex={0}>
         <div className="topbar" style={{ marginBottom: 12 }}>
           <h2>Notification Delivery</h2>
@@ -1001,6 +1110,29 @@ export function SiteContractAdmin() {
             {busyAction === "notifications:deliver" ? <Loader2 size={18} /> : <MailCheck size={18} />}
             Deliver queued
           </button>
+        </div>
+        <div className="admin-health-grid">
+          <div className="admin-health-card">
+            <span className={`badge ${deliveryHealth?.apiKeyConfigured ? "success" : "danger"}`}>
+              {deliveryHealth?.apiKeyConfigured ? "API key configured" : "API key missing"}
+            </span>
+            <strong>Resend API key</strong>
+            <span className="muted">Secret: Resend-ApiKey</span>
+          </div>
+          <div className="admin-health-card">
+            <span className={`badge ${deliveryHealth?.fromEmailConfigured ? "success" : "danger"}`}>
+              {deliveryHealth?.fromEmailConfigured ? "Sender configured" : "Sender missing"}
+            </span>
+            <strong>From address</strong>
+            <span className="muted">{deliveryHealth?.fromEmail ?? "Secret: Notification-FromEmail"}</span>
+          </div>
+          <div className="admin-health-card wide">
+            <span className={`badge ${deliveryHealth?.status === "Ready" ? "success" : "danger"}`}>
+              {deliveryHealth?.status ?? "Unknown"}
+            </span>
+            <strong>Delivery guidance</strong>
+            <span className="muted">{deliveryHealth?.guidance ?? "Load notification history to inspect email delivery health."}</span>
+          </div>
         </div>
         <table className="table">
           <thead>
@@ -1044,7 +1176,9 @@ export function SiteContractAdmin() {
           </tbody>
         </table>
       </section>
+      ) : null}
 
+      {activeSection === "retention" ? (
       <section className="panel">
         <div className="section-heading">
           <div>
@@ -1076,9 +1210,11 @@ export function SiteContractAdmin() {
           </div>
         </div>
       </section>
+      ) : null}
 
-      <section aria-label="Active sites table" className="panel" tabIndex={0}>
-        <h2>Active Sites</h2>
+      {activeSection === "sites" ? (
+      <section aria-label="Sites table" className="panel" tabIndex={0}>
+        <h2>Sites</h2>
         <table className="table">
           <thead>
             <tr>
@@ -1092,7 +1228,7 @@ export function SiteContractAdmin() {
           </thead>
           <tbody>
             {sites.map((site) => (
-              <tr key={site.siteId}>
+              <tr className={editingSiteId === site.siteId ? "editing-row" : undefined} key={site.siteId}>
                 <td>
                   <strong>{site.siteName}</strong>
                   <br />
@@ -1117,23 +1253,41 @@ export function SiteContractAdmin() {
                     ))}
                   </select>
                 </td>
-                <td><span className="badge success">Active</span></td>
                 <td>
-                  <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/sites/${site.siteId}/deactivate`, "POST", `site:${site.siteId}`, "Site updated.", `Mark ${site.siteName} inactive? It will no longer be available for new claims.`)} type="button">
-                    {busyAction === `site:${site.siteId}` ? <Loader2 size={18} /> : <PowerOff size={18} />}
-                    Mark inactive
-                  </button>
+                  <span className={`badge ${site.isActive !== false ? "success" : "warning"}`}>
+                    {site.isActive !== false ? "Active" : "Inactive"}
+                  </span>
+                </td>
+                <td>
+                  <div className="actions">
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => editSite(site)} type="button">
+                      <Pencil size={18} />
+                      Edit
+                    </button>
+                    {site.isActive !== false ? (
+                      <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/sites/${site.siteId}/deactivate`, "POST", `site:${site.siteId}`, "Site updated.", `Mark ${site.siteName} inactive? It will no longer be available for new claims.`)} type="button">
+                        {busyAction === `site:${site.siteId}` ? <Loader2 size={18} /> : <PowerOff size={18} />}
+                        Mark inactive
+                      </button>
+                    ) : (
+                      <button className="button" disabled={Boolean(busyAction) || !site.contractId || !site.clusterHeadEmployeeId} onClick={() => void reactivateSite(site)} title={!site.contractId || !site.clusterHeadEmployeeId ? "Add a contract and Cluster Head before reactivating" : "Mark site active"} type="button">
+                        {busyAction === `site:${site.siteId}:reactivate` ? <Loader2 size={18} /> : <RotateCcw size={18} />}
+                        Mark active
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
             {sites.length === 0 ? (
               <tr>
-                <td colSpan={6}>No active sites found.</td>
+                <td colSpan={6}>No sites found.</td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </section>
+      ) : null}
     </div>
   );
 }

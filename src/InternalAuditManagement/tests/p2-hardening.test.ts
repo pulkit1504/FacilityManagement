@@ -77,4 +77,37 @@ describe("P2 notification delivery", () => {
     expect(claims.markNotificationSent).toHaveBeenCalledTimes(7);
     vi.unstubAllGlobals();
   });
+
+  it("reports delivery configuration health without exposing the API key", async () => {
+    const claims = {
+      listNotifications: vi.fn().mockResolvedValue([])
+    } as unknown as ClaimRepository;
+    const service = new NotificationService(claims);
+
+    const result = await service.listNotifications(adminUser);
+
+    expect(result.deliveryHealth).toEqual({
+      apiKeyConfigured: true,
+      fromEmailConfigured: true,
+      fromEmail: "finance@example.com",
+      status: "Ready",
+      guidance: expect.stringContaining("Email provider credentials are configured")
+    });
+    expect(JSON.stringify(result)).not.toContain("test-key");
+  });
+
+  it("flags the Resend testing sender as restricted", async () => {
+    const secrets = await import("../src/server/config/secrets");
+    vi.mocked(secrets.getOptionalSecret).mockImplementationOnce(async () => "test-key");
+    vi.mocked(secrets.getOptionalSecret).mockImplementationOnce(async () => "onboarding@resend.dev");
+    const claims = {
+      listNotifications: vi.fn().mockResolvedValue([])
+    } as unknown as ClaimRepository;
+    const service = new NotificationService(claims);
+
+    const result = await service.listNotifications(adminUser);
+
+    expect(result.deliveryHealth.status).toBe("Restricted");
+    expect(result.deliveryHealth.guidance).toContain("resend.dev sender is for testing");
+  });
 });

@@ -662,17 +662,120 @@ test.describe("role journeys", () => {
 
   test("Admin retention controls are labelled and require acknowledgement", async ({ page }) => {
     await signInAs(page, "Admin");
+    await page.route("**/api/v1/admin/master-data", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          contracts: [{
+            contractId: "contract-1",
+            clientName: "Nimbus Client",
+            description: "Facility contract",
+            startDate: "2026-04-01",
+            endDate: null,
+            isActive: true
+          }],
+          sites: [
+            {
+              siteId: "site-active",
+              siteName: "Nimbus Tower",
+              siteAddress: "MG Road",
+              serviceType: "Both",
+              contractId: "contract-1",
+              clientName: "Nimbus Client",
+              contractDescription: "Facility contract",
+              clusterHeadEmployeeId: "emp-cluster-001",
+              clusterHeadName: "Cluster User",
+              isActive: true
+            },
+            {
+              siteId: "site-inactive",
+              siteName: "Closed Site",
+              siteAddress: "Old Road",
+              serviceType: "Security",
+              contractId: "contract-1",
+              clientName: "Nimbus Client",
+              contractDescription: "Facility contract",
+              clusterHeadEmployeeId: "emp-cluster-001",
+              clusterHeadName: "Cluster User",
+              isActive: false
+            }
+          ],
+          employees: [
+            {
+              employeeId: "emp-admin-001",
+              fullName: "Admin User",
+              email: "admin@example.com",
+              role: "Admin",
+              directManagerId: null,
+              isHod: false,
+              approvalThresholdAmount: 0,
+              imprestAdvanceLimit: 0,
+              bankAccountHolderName: null,
+              bankAccountNumber: null,
+              bankIfsc: null,
+              bankName: null,
+              passwordResetRequired: false,
+              passwordUpdatedAt: "2026-06-01T00:00:00.000Z",
+              isActive: true
+            },
+            {
+              employeeId: "emp-cluster-001",
+              fullName: "Cluster User",
+              email: "cluster@example.com",
+              role: "ClusterHead",
+              directManagerId: null,
+              isHod: false,
+              approvalThresholdAmount: 10000,
+              imprestAdvanceLimit: 25000,
+              bankAccountHolderName: null,
+              bankAccountNumber: null,
+              bankIfsc: null,
+              bankName: null,
+              passwordResetRequired: true,
+              passwordUpdatedAt: null,
+              isActive: true
+            }
+          ],
+          holidays: [{ holidayDate: "2026-08-15", holidayName: "Independence Day", isNational: true }],
+          expenseHeads: [{
+            expenseHeadId: "head-1",
+            name: "Consumables",
+            description: "Site consumables",
+            isActive: true,
+            createdAt: "2026-06-01T00:00:00.000Z",
+            updatedAt: "2026-06-01T00:00:00.000Z"
+          }]
+        })
+      });
+    });
+    await page.route("**/api/v1/admin/notifications", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          deliveryHealth: {
+            apiKeyConfigured: true,
+            fromEmailConfigured: true,
+            fromEmail: "onboarding@resend.dev",
+            status: "Restricted",
+            guidance: "The resend.dev sender is for testing and can only send to the Resend account email."
+          }
+        })
+      });
+    });
     await page.goto("/admin");
 
     await expect(page.getByRole("heading", { level: 1, name: "Operational setup" })).toBeVisible();
-    const cleanupButton = page.getByRole("button", { name: "Remove stale records" });
-    await expect(cleanupButton).toBeDisabled();
-    await page.getByLabel("I understand these stale records will be removed").check();
-    await expect(cleanupButton).toBeEnabled();
     await expect(page.getByRole("heading", { level: 2, name: "Bulk Master Data Upload" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Add Expense Head" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /People/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Sites/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Mail Delivery/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Retention/ })).toBeVisible();
+
+    await page.getByRole("button", { name: /People/ }).click();
     await expect(page.getByRole("heading", { level: 2, name: "User Login Access" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Add expense head|Save expense head/ })).toBeVisible();
     await expect(page.getByRole("button", { name: "Reset password" })).toBeVisible();
     const employeeForm = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: /Add Employee|Edit Employee/ }) });
     await expect(employeeForm.getByText("Employee ID *")).toBeVisible();
@@ -680,6 +783,28 @@ test.describe("role journeys", () => {
     await expect(employeeForm.getByText("Full name *")).toBeVisible();
     await expect(employeeForm.getByText("Email *")).toBeVisible();
     await expect(employeeForm.getByText("Account holder", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: /Sites/ }).click();
+    await expect(page.getByRole("heading", { level: 2, name: "Add Site" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Sites" })).toBeVisible();
+    await expect(page.getByText("Closed Site")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mark active" })).toBeVisible();
+    await page.getByRole("button", { name: "Edit" }).first().click();
+    await expect(page.getByRole("heading", { level: 2, name: "Edit Site" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save site" })).toBeVisible();
+
+    await page.getByRole("button", { name: /Mail Delivery/ }).click();
+    await expect(page.getByText("API key configured")).toBeVisible();
+    await expect(page.getByText("onboarding@resend.dev")).toBeVisible();
+    await expect(page.getByText(/resend\.dev sender is for testing/)).toBeVisible();
+
+    await page.getByRole("button", { name: /Retention/ }).click();
+    const cleanupButton = page.getByRole("button", { name: "Remove stale records" });
+    await expect(cleanupButton).toBeDisabled();
+    await page.getByLabel("I understand these stale records will be removed").check();
+    await expect(cleanupButton).toBeEnabled();
+
+    await page.getByRole("button", { name: /Setup/ }).click();
     await expect(page.getByRole("link", { name: "Sample CSV" })).toHaveCount(4);
     await expect(page.getByText("Upload CSV", { exact: true })).toHaveCount(4);
     await expectAccessiblePage(page);

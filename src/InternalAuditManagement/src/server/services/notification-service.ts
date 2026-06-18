@@ -9,6 +9,14 @@ type DeliveryResult = {
   failed: number;
 };
 
+type EmailDeliveryHealth = {
+  apiKeyConfigured: boolean;
+  fromEmailConfigured: boolean;
+  fromEmail: string | null;
+  status: "Ready" | "Restricted" | "NotConfigured";
+  guidance: string;
+};
+
 export class NotificationService {
   constructor(private readonly claims: ClaimRepository) {}
 
@@ -23,10 +31,14 @@ export class NotificationService {
 
   async listNotifications(user: UserContext) {
     this.assertAdmin(user);
-    const items = await this.claims.listNotifications("All");
+    const [items, deliveryHealth] = await Promise.all([
+      this.claims.listNotifications("All"),
+      getEmailDeliveryHealth()
+    ]);
     return {
       items,
-      totalCount: items.length
+      totalCount: items.length,
+      deliveryHealth
     };
   }
 
@@ -74,6 +86,30 @@ export class NotificationService {
       throw forbidden("Only Admin users can inspect or retry notification delivery.");
     }
   }
+}
+
+async function getEmailDeliveryHealth(): Promise<EmailDeliveryHealth> {
+  const [apiKey, fromEmail] = await Promise.all([
+    getOptionalSecret("RESEND_API_KEY"),
+    getOptionalSecret("NOTIFICATION_FROM_EMAIL")
+  ]);
+  const apiKeyConfigured = Boolean(apiKey);
+  const fromEmailConfigured = Boolean(fromEmail);
+  const usesResendSandboxSender = Boolean(fromEmail?.trim().toLowerCase().endsWith("@resend.dev"));
+  const status = apiKeyConfigured && fromEmailConfigured
+    ? usesResendSandboxSender ? "Restricted" : "Ready"
+    : "NotConfigured";
+  return {
+    apiKeyConfigured,
+    fromEmailConfigured,
+    fromEmail: fromEmail ?? null,
+    status,
+    guidance: status === "Ready"
+      ? "Email provider credentials are configured with a custom sender domain. If sends still fail, check the last provider error."
+      : status === "Restricted"
+        ? "The resend.dev sender is for testing and can only send to the Resend account email. Verify a business domain in Resend and update Notification-FromEmail."
+        : "Email delivery needs Resend-ApiKey and Notification-FromEmail in Key Vault or environment variables."
+  };
 }
 
 async function sendEmail(input: { to: string; subject: string; text: string }) {

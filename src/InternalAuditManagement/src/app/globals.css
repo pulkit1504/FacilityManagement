@@ -540,12 +540,17 @@ h1 {
 .admin-summary {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
 }
 
-.admin-summary > div {
+.admin-summary > button {
+  background: #fff;
   border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  cursor: pointer;
   padding: 4px 12px;
+  text-align: left;
 }
 
 .admin-summary strong,
@@ -560,6 +565,63 @@ h1 {
 .admin-summary span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.admin-workspace-nav {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+}
+
+.admin-workspace-nav button {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  min-height: 76px;
+  padding: 12px;
+  text-align: left;
+}
+
+.admin-workspace-nav button.active,
+.admin-workspace-nav button:hover,
+.admin-summary > button:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+}
+
+.admin-workspace-nav button.active {
+  background: #f0fdfa;
+}
+
+.admin-workspace-nav strong {
+  color: var(--text);
+}
+
+.admin-workspace-nav span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-health-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  margin-bottom: 16px;
+}
+
+.admin-health-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.admin-health-card.wide {
+  grid-column: span 1;
 }
 
 .editing-row {
@@ -1357,6 +1419,11 @@ h1 {
 
   .admin-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-workspace-nav,
+  .admin-health-grid {
+    grid-template-columns: 1fr;
   }
 
   .tutorial-steps {

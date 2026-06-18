@@ -117,6 +117,7 @@ export type Site = {
   contractDescription: string | null;
   clusterHeadEmployeeId: string | null;
   clusterHeadName: string | null;
+  isActive?: boolean;
 };
 
 export type ClientContract = {

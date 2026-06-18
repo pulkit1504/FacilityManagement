@@ -41,7 +41,7 @@ import type {
 } from "./claim-repository";
 import { defaultClaimRecord } from "./claim-repository";
 import type { CreateLineItemInput } from "../validation/claim.schemas";
-import type { CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateBankDetailsInput, UpdateExpenseHeadInput } from "../validation/claim.schemas";
+import type { CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateBankDetailsInput, UpdateExpenseHeadInput, UpdateSiteInput } from "../validation/claim.schemas";
 import { getSupabaseAdminClient } from "./supabase-client";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { calculateSelectedSettlementAmounts } from "@/shared/settlement";
@@ -308,6 +308,22 @@ function mapContract(row: Record<string, unknown>): ClientContract {
   };
 }
 
+function mapSiteRow(row: Record<string, unknown>): Site {
+  const contract = Array.isArray(row.client_contracts) ? row.client_contracts[0] : row.client_contracts;
+  return {
+    siteId: String(row.site_id),
+    siteName: String(row.site_name),
+    siteAddress: row.site_address ? String(row.site_address) : null,
+    serviceType: row.service_type as Site["serviceType"],
+    contractId: row.contract_id ? String(row.contract_id) : null,
+    clientName: contract && typeof contract === "object" && "client_name" in contract && contract.client_name ? String(contract.client_name) : null,
+    contractDescription: contract && typeof contract === "object" && "description" in contract && contract.description ? String(contract.description) : null,
+    clusterHeadEmployeeId: row.cluster_head_employee_id ? String(row.cluster_head_employee_id) : null,
+    clusterHeadName: null,
+    isActive: Boolean(row.is_active)
+  };
+}
+
 export class SupabaseClaimRepository implements ClaimRepository {
   private activeSitesPromise: Promise<Site[]> | null = null;
 
@@ -351,30 +367,30 @@ export class SupabaseClaimRepository implements ClaimRepository {
     }
   }
 
+  async listSites(includeInactive = false): Promise<Site[]> {
+    if (!includeInactive) return this.listActiveSites();
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("sites")
+      .select("site_id, site_name, site_address, service_type, contract_id, cluster_head_employee_id, is_active, client_contracts(client_name, description)")
+      .order("site_name");
+
+    if (error) throw error;
+
+    return (data ?? []).map(mapSiteRow);
+  }
+
   private async fetchActiveSites(): Promise<Site[]> {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db
       .from("sites")
-      .select("site_id, site_name, site_address, service_type, contract_id, cluster_head_employee_id, client_contracts(client_name, description)")
+      .select("site_id, site_name, site_address, service_type, contract_id, cluster_head_employee_id, is_active, client_contracts(client_name, description)")
       .eq("is_active", true)
       .order("site_name");
 
     if (error) throw error;
 
-    return (data ?? []).map((row) => {
-      const contract = Array.isArray(row.client_contracts) ? row.client_contracts[0] : row.client_contracts;
-      return {
-        siteId: String(row.site_id),
-        siteName: String(row.site_name),
-        siteAddress: row.site_address ? String(row.site_address) : null,
-        serviceType: row.service_type as Site["serviceType"],
-        contractId: row.contract_id ? String(row.contract_id) : null,
-        clientName: contract?.client_name ? String(contract.client_name) : null,
-        contractDescription: contract?.description ? String(contract.description) : null,
-        clusterHeadEmployeeId: row.cluster_head_employee_id ? String(row.cluster_head_employee_id) : null,
-        clusterHeadName: null
-      };
-    });
+    return (data ?? []).map(mapSiteRow);
   }
 
   async createSite(input: CreateSiteInput): Promise<Site> {
@@ -404,7 +420,39 @@ export class SupabaseClaimRepository implements ClaimRepository {
       clientName: null,
       contractDescription: null,
       clusterHeadEmployeeId: input.clusterHeadEmployeeId ?? null,
-      clusterHeadName: null
+      clusterHeadName: null,
+      isActive: true
+    };
+  }
+
+  async updateSite(siteId: string, input: UpdateSiteInput): Promise<Site> {
+    const db = await getSupabaseAdminClient();
+    const { error } = await db
+      .from("sites")
+      .update({
+        site_name: input.siteName,
+        site_address: input.siteAddress ?? null,
+        service_type: input.serviceType,
+        contract_id: input.contractId,
+        cluster_head_employee_id: input.clusterHeadEmployeeId,
+        is_active: input.isActive
+      })
+      .eq("site_id", siteId);
+
+    if (error) throw error;
+    this.activeSitesPromise = null;
+    const sites = await this.listSites(true);
+    return sites.find((site) => site.siteId === siteId) ?? {
+      siteId,
+      siteName: input.siteName,
+      siteAddress: input.siteAddress ?? null,
+      serviceType: input.serviceType,
+      contractId: input.contractId,
+      clientName: null,
+      contractDescription: null,
+      clusterHeadEmployeeId: input.clusterHeadEmployeeId,
+      clusterHeadName: null,
+      isActive: input.isActive
     };
   }
 
@@ -423,7 +471,8 @@ export class SupabaseClaimRepository implements ClaimRepository {
       clientName: null,
       contractDescription: null,
       clusterHeadEmployeeId: null,
-      clusterHeadName: null
+      clusterHeadName: null,
+      isActive: false
     };
   }
 

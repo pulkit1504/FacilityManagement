@@ -970,6 +970,195 @@ h1 {
   width: 24px;
 }
 
+.demo-hub h2,
+.demo-hub h3,
+.demo-hub p {
+  margin: 0;
+}
+
+.demo-hub p {
+  margin-top: 6px;
+}
+
+.demo-hero {
+  align-items: stretch;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+}
+
+.demo-hero h2 {
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.05;
+  margin-top: 6px;
+  max-width: 760px;
+}
+
+.demo-hero .actions {
+  margin-top: 18px;
+}
+
+.demo-snapshot {
+  background: #0f172a;
+  border-radius: 8px;
+  color: #ffffff;
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.demo-ticket {
+  display: grid;
+  gap: 6px;
+}
+
+.demo-ticket strong {
+  font-size: 26px;
+}
+
+.demo-snapshot .muted,
+.demo-snapshot span {
+  color: #dbeafe;
+}
+
+.demo-metrics {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.demo-metrics div {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+}
+
+.demo-metrics strong,
+.demo-metrics span {
+  display: block;
+}
+
+.demo-metrics strong {
+  font-size: 19px;
+}
+
+.demo-mini-trail {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.demo-mini-trail span {
+  border-top: 3px solid var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  padding-top: 8px;
+}
+
+.demo-workflow {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.demo-workflow-step {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.demo-workflow-step h3 {
+  font-size: 16px;
+}
+
+.demo-role-layout {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.demo-role-tabs {
+  display: grid;
+  gap: 8px;
+}
+
+.demo-role-tabs button {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 12px;
+  text-align: left;
+}
+
+.demo-role-tabs button.active,
+.demo-role-tabs button:hover {
+  background: #f0fdfa;
+  border-color: var(--accent);
+}
+
+.demo-role-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.demo-action-list,
+.demo-checklist {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.demo-action-list li,
+.demo-checklist li {
+  align-items: flex-start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.demo-action-list svg,
+.demo-checklist svg {
+  color: var(--success);
+  margin-top: 2px;
+}
+
+.demo-script {
+  display: grid;
+  gap: 12px;
+}
+
+.demo-script article {
+  align-items: flex-start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.demo-script article > span {
+  align-items: center;
+  background: #eff6ff;
+  border-radius: 8px;
+  color: var(--accent-strong);
+  display: inline-flex;
+  font-weight: 900;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
 .instruction-list {
   display: grid;
   gap: 10px;
@@ -1423,6 +1612,14 @@ h1 {
 
   .admin-workspace-nav,
   .admin-health-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-hero,
+  .demo-workflow,
+  .demo-role-layout,
+  .demo-metrics,
+  .demo-mini-trail {
     grid-template-columns: 1fr;
   }
 

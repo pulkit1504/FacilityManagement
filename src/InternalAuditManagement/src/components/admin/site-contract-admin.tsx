@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { Building2, CalendarPlus, Download, KeyRound, Loader2, MailCheck, Pencil, Plus, PowerOff, Save, Trash2, Upload, UserPlus, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
@@ -161,10 +162,6 @@ export function SiteContractAdmin() {
       !(employee.bankAccountHolderName && employee.bankAccountNumber && employee.bankIfsc && employee.bankName)
   );
   const failedNotifications = notifications.filter((item) => item.status === "Failed");
-  const employeeBankReady =
-    !["Claimant", "ClusterHead", "HOD"].includes(employeeDraft.role) ||
-    Boolean(employeeDraft.bankAccountHolderName && employeeDraft.bankAccountNumber && employeeDraft.bankIfsc && employeeDraft.bankName);
-
   async function load() {
     try {
       const [response, notificationsResponse] = await Promise.all([
@@ -802,12 +799,12 @@ export function SiteContractAdmin() {
           <div className="grid">
             <div className="grid cols-2">
               <label>
-                <span className="muted">Employee ID</span>
-                <input disabled={Boolean(editingEmployeeId)} value={employeeDraft.employeeId} onChange={(event) => setEmployeeDraft({ ...employeeDraft, employeeId: event.target.value })} />
+                <RequiredLabel>Employee ID</RequiredLabel>
+                <input aria-required="true" disabled={Boolean(editingEmployeeId)} required value={employeeDraft.employeeId} onChange={(event) => setEmployeeDraft({ ...employeeDraft, employeeId: event.target.value })} />
               </label>
               <label>
-                <span className="muted">Role</span>
-                <select value={employeeDraft.role} onChange={(event) => setEmployeeDraft({ ...employeeDraft, role: event.target.value as Employee["role"] })}>
+                <RequiredLabel>Role</RequiredLabel>
+                <select aria-required="true" required value={employeeDraft.role} onChange={(event) => setEmployeeDraft({ ...employeeDraft, role: event.target.value as Employee["role"] })}>
                   {roles.map((role) => (
                     <option key={role} value={role}>
                       {role}
@@ -817,12 +814,12 @@ export function SiteContractAdmin() {
               </label>
             </div>
             <label>
-              <span className="muted">Full name</span>
-              <input value={employeeDraft.fullName} onChange={(event) => setEmployeeDraft({ ...employeeDraft, fullName: event.target.value })} />
+              <RequiredLabel>Full name</RequiredLabel>
+              <input aria-required="true" required value={employeeDraft.fullName} onChange={(event) => setEmployeeDraft({ ...employeeDraft, fullName: event.target.value })} />
             </label>
             <label>
-              <span className="muted">Email</span>
-              <input type="email" value={employeeDraft.email} onChange={(event) => setEmployeeDraft({ ...employeeDraft, email: event.target.value })} />
+              <RequiredLabel>Email</RequiredLabel>
+              <input aria-required="true" required type="email" value={employeeDraft.email} onChange={(event) => setEmployeeDraft({ ...employeeDraft, email: event.target.value })} />
             </label>
             <label>
               <span className="muted">Temporary password</span>
@@ -871,7 +868,7 @@ export function SiteContractAdmin() {
               <input type="checkbox" checked={employeeDraft.isHod || employeeDraft.role === "HOD"} onChange={(event) => setEmployeeDraft({ ...employeeDraft, isHod: event.target.checked })} />
               HOD approver
             </label>
-            <button className="button" disabled={busyAction !== null || !employeeDraft.employeeId || !employeeDraft.fullName || !employeeDraft.email || !employeeBankReady} onClick={() => void createEmployee()} type="button">
+            <button className="button" disabled={busyAction !== null || !employeeDraft.employeeId || !employeeDraft.fullName || !employeeDraft.email} onClick={() => void createEmployee()} type="button">
               {busyAction === "employee:create" ? <Loader2 size={18} /> : editingEmployeeId ? <Save size={18} /> : <UserPlus size={18} />}
               {editingEmployeeId ? "Save changes" : "Create employee"}
             </button>
@@ -1138,6 +1135,15 @@ export function SiteContractAdmin() {
         </table>
       </section>
     </div>
+  );
+}
+
+function RequiredLabel({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <span className="muted">
+      {children}
+      <span aria-hidden="true" className="required-mark"> *</span>
+    </span>
   );
 }
 

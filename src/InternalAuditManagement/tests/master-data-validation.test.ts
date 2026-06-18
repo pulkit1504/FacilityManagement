@@ -28,7 +28,7 @@ describe("GA master-data validation", () => {
     expect(resetEmployeePasswordSchema.safeParse({ temporaryPassword: "short" }).success).toBe(false);
   });
 
-  it("requires complete beneficiary details for payable employees", () => {
+  it("allows employee creation without beneficiary bank details", () => {
     const result = createEmployeeSchema.safeParse({
       employeeId: "ga-user",
       fullName: "GA User",
@@ -40,11 +40,6 @@ describe("GA master-data validation", () => {
       imprestAdvanceLimit: 0
     });
 
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(Object.keys(result.error.flatten().fieldErrors)).toEqual(
-        expect.arrayContaining(["bankAccountHolderName", "bankAccountNumber", "bankIfsc", "bankName"])
-      );
-    }
+    expect(result.success).toBe(true);
   });
 });

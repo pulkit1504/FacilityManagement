@@ -58,6 +58,11 @@ label {
   font-weight: 700;
 }
 
+.required-mark {
+  color: var(--danger);
+  font-weight: 900;
+}
+
 .shell {
   min-height: 100vh;
   display: grid;

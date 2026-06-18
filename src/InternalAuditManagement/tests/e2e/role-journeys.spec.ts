@@ -674,6 +674,12 @@ test.describe("role journeys", () => {
     await expect(page.getByRole("heading", { level: 2, name: "User Login Access" })).toBeVisible();
     await expect(page.getByRole("button", { name: /Add expense head|Save expense head/ })).toBeVisible();
     await expect(page.getByRole("button", { name: "Reset password" })).toBeVisible();
+    const employeeForm = page.locator("section").filter({ has: page.getByRole("heading", { level: 2, name: /Add Employee|Edit Employee/ }) });
+    await expect(employeeForm.getByText("Employee ID *")).toBeVisible();
+    await expect(employeeForm.getByText("Role *")).toBeVisible();
+    await expect(employeeForm.getByText("Full name *")).toBeVisible();
+    await expect(employeeForm.getByText("Email *")).toBeVisible();
+    await expect(employeeForm.getByText("Account holder", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Sample CSV" })).toHaveCount(4);
     await expect(page.getByText("Upload CSV", { exact: true })).toHaveCount(4);
     await expectAccessiblePage(page);

@@ -202,24 +202,6 @@ export const createEmployeeSchema = z.object({
   bankIfsc: z.string().trim().min(4).max(20).nullable().optional(),
   bankName: z.string().trim().min(2).max(120).nullable().optional(),
   temporaryPassword: z.string().min(8).max(128).nullable().optional()
-}).superRefine((value, ctx) => {
-  if (!["Claimant", "ClusterHead", "HOD"].includes(value.role)) return;
-
-  const bankFields = [
-    ["bankAccountHolderName", value.bankAccountHolderName],
-    ["bankAccountNumber", value.bankAccountNumber],
-    ["bankIfsc", value.bankIfsc],
-    ["bankName", value.bankName]
-  ] as const;
-  for (const [field, fieldValue] of bankFields) {
-    if (!fieldValue) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [field],
-        message: "Required for employees who can submit payable claims."
-      });
-    }
-  }
 });
 
 export const createHolidaySchema = z.object({

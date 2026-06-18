@@ -811,6 +811,108 @@ test.describe("role journeys", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  test("Admin can bulk upload contracts with Excel-style headers and dates", async ({ page }) => {
+    await signInAs(page, "Admin");
+    const importedContracts: unknown[] = [];
+    await page.route("**/api/v1/admin/master-data", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          contracts: [],
+          sites: [],
+          employees: [],
+          holidays: [],
+          expenseHeads: []
+        })
+      });
+    });
+    await page.route("**/api/v1/admin/notifications", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          deliveryHealth: {
+            apiKeyConfigured: true,
+            fromEmailConfigured: true,
+            fromEmail: "claims@send.nimbusharbor.in",
+            status: "Ready",
+            guidance: "Email provider credentials are configured."
+          }
+        })
+      });
+    });
+    await page.route("**/api/v1/admin/contracts", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      importedContracts.push(route.request().postDataJSON());
+      await route.fulfill({
+        contentType: "application/json",
+        status: 201,
+        body: JSON.stringify({ message: "Contract created." })
+      });
+    });
+
+    await page.goto("/admin");
+    await page.locator('input[type="file"]').first().setInputFiles({
+      name: "contracts.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("Client Name,Contract Description,Start Date,End Date\nNimbus Harbor,Annual FM contract,18-06-2026,31/03/2027")
+    });
+
+    await expect(page.getByText("Imported 1 contracts successfully.")).toBeVisible();
+    expect(importedContracts).toEqual([{
+      clientName: "Nimbus Harbor",
+      description: "Annual FM contract",
+      startDate: "2026-06-18",
+      endDate: "2027-03-31"
+    }]);
+    await expectAccessiblePage(page);
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test("Admin sees a clear error for invalid contract CSV format", async ({ page }) => {
+    await signInAs(page, "Admin");
+    await page.route("**/api/v1/admin/master-data", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          contracts: [],
+          sites: [],
+          employees: [],
+          holidays: [],
+          expenseHeads: []
+        })
+      });
+    });
+    await page.route("**/api/v1/admin/notifications", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [],
+          totalCount: 0,
+          deliveryHealth: {
+            apiKeyConfigured: true,
+            fromEmailConfigured: true,
+            fromEmail: "claims@send.nimbusharbor.in",
+            status: "Ready",
+            guidance: "Email provider credentials are configured."
+          }
+        })
+      });
+    });
+
+    await page.goto("/admin");
+    await page.locator('input[type="file"]').first().setInputFiles({
+      name: "contracts-bad.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("Client Name,Start Date\n,18-06-2026\nNimbus Harbor,31-02-2027")
+    });
+
+    await expect(page.getByText(/Imported 0 contracts\. 2 row\(s\) failed/)).toBeVisible();
+    await expect(page.getByText(/Row 2: Missing required column value: clientName/)).toBeVisible();
+    await expect(page.getByText(/Row 3: Invalid startDate/)).toBeVisible();
+  });
+
   test("Auditor can see Audit Review must-have dashboard controls", async ({ page }) => {
     await signInAs(page, "Auditor");
     await page.route("**/api/v1/fraud/flags?status=Open", async (route) => {

@@ -286,15 +286,19 @@ export function SiteContractAdmin() {
       let imported = 0;
 
       for (const [index, row] of rows.entries()) {
-        const payload = bulkPayload(kind, row, contracts);
-        const response = await fetch(endpoints[kind], {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const data = await response.json();
-        if (response.ok) imported += 1;
-        else errors.push(`Row ${index + 2}: ${getProblemMessage(data, "Import failed.")}`);
+        try {
+          const payload = bulkPayload(kind, row, contracts);
+          const response = await fetch(endpoints[kind], {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await response.json();
+          if (response.ok) imported += 1;
+          else errors.push(`Row ${index + 2}: ${getProblemMessage(data, "Import failed.")}`);
+        } catch (error) {
+          errors.push(`Row ${index + 2}: ${error instanceof Error ? error.message : "CSV row could not be read."}`);
+        }
       }
 
       await load();
@@ -1313,49 +1317,106 @@ function formatBulkKind(kind: BulkUploadKind) {
 function bulkPayload(kind: BulkUploadKind, row: Record<string, string>, contracts: Contract[]) {
   if (kind === "contracts") {
     return {
-      clientName: row.clientName,
-      description: row.description || null,
-      startDate: row.startDate,
-      endDate: row.endDate || null
+      clientName: cell(row, "clientName", "client name", "client", "customer name"),
+      description: optionalCell(row, "description", "contract description", "details"),
+      startDate: toIsoDate(cell(row, "startDate", "start date", "contract start date"), "startDate"),
+      endDate: optionalDate(row, "endDate", "end date", "contract end date")
     };
   }
   if (kind === "sites") {
-    const contract = contracts.find((item) => item.clientName.trim().toLowerCase() === row.contractClientName?.trim().toLowerCase());
-    if (!contract) throw new Error(`Contract client "${row.contractClientName}" was not found. Upload contracts first.`);
+    const contractClientName = cell(row, "contractClientName", "contract client name", "clientName", "client name", "client");
+    const contract = contracts.find((item) => item.clientName.trim().toLowerCase() === contractClientName.trim().toLowerCase());
+    if (!contract) throw new Error(`Contract client "${contractClientName}" was not found. Upload contracts first.`);
     return {
-      siteName: row.siteName,
-      siteAddress: row.siteAddress || null,
-      serviceType: row.serviceType,
+      siteName: cell(row, "siteName", "site name", "site"),
+      siteAddress: optionalCell(row, "siteAddress", "site address", "address"),
+      serviceType: cell(row, "serviceType", "service type"),
       contractId: contract.contractId,
-      clusterHeadEmployeeId: row.clusterHeadEmployeeId
+      clusterHeadEmployeeId: cell(row, "clusterHeadEmployeeId", "cluster head employee id", "cluster head id")
     };
   }
   if (kind === "holidays") {
     return {
-      holidayDate: row.holidayDate,
-      holidayName: row.holidayName,
-      isNational: toBoolean(row.isNational)
+      holidayDate: toIsoDate(cell(row, "holidayDate", "holiday date", "date"), "holidayDate"),
+      holidayName: cell(row, "holidayName", "holiday name", "name"),
+      isNational: toBoolean(optionalCell(row, "isNational", "is national", "national") ?? "")
     };
   }
   return {
-    employeeId: row.employeeId,
-    fullName: row.fullName,
-    email: row.email,
-    role: row.role,
-    directManagerId: row.directManagerId || null,
-    isHod: toBoolean(row.isHod),
-    approvalThresholdAmount: Number(row.approvalThresholdAmount || 0),
-    imprestAdvanceLimit: Number(row.imprestAdvanceLimit || 0),
-    bankAccountHolderName: row.bankAccountHolderName || null,
-    bankAccountNumber: row.bankAccountNumber || null,
-    bankIfsc: row.bankIfsc || null,
-    bankName: row.bankName || null,
-    temporaryPassword: row.temporaryPassword || null
+    employeeId: cell(row, "employeeId", "employee id"),
+    fullName: cell(row, "fullName", "full name", "name"),
+    email: cell(row, "email", "email address"),
+    role: cell(row, "role"),
+    directManagerId: optionalCell(row, "directManagerId", "direct manager id", "manager id"),
+    isHod: toBoolean(optionalCell(row, "isHod", "is hod", "hod") ?? ""),
+    approvalThresholdAmount: Number(optionalCell(row, "approvalThresholdAmount", "approval threshold amount", "threshold") || 0),
+    imprestAdvanceLimit: Number(optionalCell(row, "imprestAdvanceLimit", "imprest advance limit", "advance limit") || 0),
+    bankAccountHolderName: optionalCell(row, "bankAccountHolderName", "bank account holder name", "account holder"),
+    bankAccountNumber: optionalCell(row, "bankAccountNumber", "bank account number", "account number"),
+    bankIfsc: optionalCell(row, "bankIfsc", "bank ifsc", "ifsc"),
+    bankName: optionalCell(row, "bankName", "bank name"),
+    temporaryPassword: optionalCell(row, "temporaryPassword", "temporary password")
   };
 }
 
 function toBoolean(value: string) {
   return ["true", "yes", "1"].includes(value.trim().toLowerCase());
+}
+
+function cell(row: Record<string, string>, ...names: string[]) {
+  const value = optionalCell(row, ...names);
+  if (value) return value;
+  throw new Error(`Missing required column value: ${names[0]}.`);
+}
+
+function optionalCell(row: Record<string, string>, ...names: string[]) {
+  const normalized = new Map(Object.entries(row).map(([key, value]) => [normalizeColumn(key), value.trim()]));
+  for (const name of names) {
+    const value = normalized.get(normalizeColumn(name));
+    if (value) return value;
+  }
+  return null;
+}
+
+function normalizeColumn(value: string) {
+  return value.replace(/^\uFEFF/, "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function optionalDate(row: Record<string, string>, ...names: string[]) {
+  const value = optionalCell(row, ...names);
+  return value ? toIsoDate(value, names[0]) : null;
+}
+
+function toIsoDate(value: string, fieldName: string) {
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const separated = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (separated) {
+    const [, first, second, year] = separated;
+    const firstNumber = Number(first);
+    const secondNumber = Number(second);
+    const dayFirst = secondNumber <= 12 || firstNumber > 12;
+    const day = dayFirst ? firstNumber : secondNumber;
+    const month = dayFirst ? secondNumber : firstNumber;
+    return formatIsoDate(Number(year), month, day, fieldName);
+  }
+
+  if (/^\d{5,6}$/.test(trimmed)) {
+    const excelEpoch = Date.UTC(1899, 11, 30);
+    const date = new Date(excelEpoch + Number(trimmed) * 24 * 60 * 60 * 1000);
+    return formatIsoDate(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), fieldName);
+  }
+
+  throw new Error(`Invalid ${fieldName}. Use YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY, or an Excel date serial.`);
+}
+
+function formatIsoDate(year: number, month: number, day: number, fieldName: string) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    throw new Error(`Invalid ${fieldName}. Check the day and month values.`);
+  }
+  return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
 }
 
 function parseCsv(csv: string) {
@@ -1386,10 +1447,27 @@ function parseCsv(csv: string) {
       cell += character;
     }
   }
+  if (quoted) throw new Error("CSV format error: a quoted value is not closed. Check quotation marks in the uploaded file.");
   row.push(cell.trim());
   if (row.some(Boolean)) rows.push(row);
 
-  const headers = (rows.shift() ?? []).map((header) => header.replace(/^\uFEFF/, ""));
+  const headers = (rows.shift() ?? []).map((header) => header.replace(/^\uFEFF/, "").trim());
   if (headers.length === 0) throw new Error("CSV header row is missing.");
+  const blankHeaderIndex = headers.findIndex((header) => !header);
+  if (blankHeaderIndex >= 0) {
+    throw new Error(`CSV format error: column ${blankHeaderIndex + 1} has a blank header.`);
+  }
+  const seenHeaders = new Set<string>();
+  for (const header of headers) {
+    const normalized = normalizeColumn(header);
+    if (seenHeaders.has(normalized)) {
+      throw new Error(`CSV format error: duplicate column "${header}".`);
+    }
+    seenHeaders.add(normalized);
+  }
+  const invalidRow = rows.findIndex((values) => values.length > headers.length);
+  if (invalidRow >= 0) {
+    throw new Error(`CSV format error: row ${invalidRow + 2} has more values than the header row. Check extra commas or quotes.`);
+  }
   return rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
 }

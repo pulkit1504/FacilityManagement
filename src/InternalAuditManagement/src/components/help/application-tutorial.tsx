@@ -19,7 +19,6 @@ import {
   Route,
   Search,
   ShieldCheck,
-  Upload,
   UserCog,
   WalletCards
 } from "lucide-react";
@@ -175,15 +174,21 @@ export function ApplicationTutorial() {
           <p className="muted">
             Follow one claim from creation to payment, then jump into the role-specific workspace your team uses every day.
           </p>
-          <div className="actions">
-            <Link className="button" href="/claims/new">
-              <ReceiptText size={18} />
-              Start claimant demo
-            </Link>
-            <Link className="button secondary" href="/admin">
-              <Upload size={18} />
-              Open admin setup
-            </Link>
+          <div className="demo-role-launcher" aria-label="Start a role demo">
+            {roleOptions.map(([key, role]) => {
+              const Icon = role.icon;
+              return (
+                <button
+                  className={selectedRole === key ? "active" : ""}
+                  key={key}
+                  onClick={() => setSelectedRole(key)}
+                  type="button"
+                >
+                  <Icon aria-hidden="true" size={18} />
+                  <span>{role.title} demo</span>
+                </button>
+              );
+            })}
           </div>
         </div>
         <div className="demo-snapshot" aria-label="Demo claim summary">

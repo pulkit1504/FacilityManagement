@@ -293,10 +293,14 @@ test.describe("role journeys", () => {
     await expect(page.getByRole("heading", { level: 1, name: "How to use Imprest Claim" })).toBeVisible();
     await expect(page.locator("video")).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 2, name: "Run the app like a live investor walkthrough" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Claimant demo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approver demo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Finance demo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Auditor demo" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Admin demo" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "End-to-end workflow" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Role-based demo paths" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Finance" })).toBeVisible();
-    await page.getByRole("tab", { name: "Finance" }).click();
+    await page.getByRole("button", { name: "Finance demo" }).click();
     await expect(page.getByRole("heading", { level: 3, name: "Finance", exact: true })).toBeVisible();
     await expect(page.getByText("Release payment only when Audit has approved and bank details are complete.")).toBeVisible();
     await expect(page.getByRole("link", { name: "Open Finance workspace" })).toHaveAttribute("href", "/finance");

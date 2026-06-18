@@ -998,6 +998,33 @@ h1 {
   margin-top: 18px;
 }
 
+.demo-role-launcher {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 20px;
+}
+
+.demo-role-launcher button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 800;
+  gap: 8px;
+  justify-content: center;
+  min-height: 46px;
+  padding: 10px;
+}
+
+.demo-role-launcher button.active,
+.demo-role-launcher button:hover {
+  background: #f0fdfa;
+  border-color: var(--accent);
+}
+
 .demo-snapshot {
   background: #0f172a;
   border-radius: 8px;
@@ -1618,6 +1645,7 @@ h1 {
   .demo-hero,
   .demo-workflow,
   .demo-role-layout,
+  .demo-role-launcher,
   .demo-metrics,
   .demo-mini-trail {
     grid-template-columns: 1fr;

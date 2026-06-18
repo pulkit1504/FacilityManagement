@@ -286,15 +286,19 @@ export function SiteContractAdmin() {
       let imported = 0;
 
       for (const [index, row] of rows.entries()) {
-        const payload = bulkPayload(kind, row, contracts);
-        const response = await fetch(endpoints[kind], {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const data = await response.json();
-        if (response.ok) imported += 1;
-        else errors.push(`Row ${index + 2}: ${getProblemMessage(data, "Import failed.")}`);
+        try {
+          const payload = bulkPayload(kind, row, contracts);
+          const response = await fetch(endpoints[kind], {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await response.json();
+          if (response.ok) imported += 1;
+          else errors.push(`Row ${index + 2}: ${getProblemMessage(data, "Import failed.")}`);
+        } catch (error) {
+          errors.push(`Row ${index + 2}: ${error instanceof Error ? error.message : "CSV row could not be read."}`);
+        }
       }
 
       await load();
@@ -1443,10 +1447,27 @@ function parseCsv(csv: string) {
       cell += character;
     }
   }
+  if (quoted) throw new Error("CSV format error: a quoted value is not closed. Check quotation marks in the uploaded file.");
   row.push(cell.trim());
   if (row.some(Boolean)) rows.push(row);
 
   const headers = (rows.shift() ?? []).map((header) => header.replace(/^\uFEFF/, "").trim());
   if (headers.length === 0) throw new Error("CSV header row is missing.");
+  const blankHeaderIndex = headers.findIndex((header) => !header);
+  if (blankHeaderIndex >= 0) {
+    throw new Error(`CSV format error: column ${blankHeaderIndex + 1} has a blank header.`);
+  }
+  const seenHeaders = new Set<string>();
+  for (const header of headers) {
+    const normalized = normalizeColumn(header);
+    if (seenHeaders.has(normalized)) {
+      throw new Error(`CSV format error: duplicate column "${header}".`);
+    }
+    seenHeaders.add(normalized);
+  }
+  const invalidRow = rows.findIndex((values) => values.length > headers.length);
+  if (invalidRow >= 0) {
+    throw new Error(`CSV format error: row ${invalidRow + 2} has more values than the header row. Check extra commas or quotes.`);
+  }
   return rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
 }

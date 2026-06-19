@@ -31,7 +31,7 @@ import type {
   SubmissionMode
 } from "../domain/types";
 import type { CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
-import type { CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateBankDetailsInput, UpdateExpenseHeadInput, UpdateSiteInput } from "../validation/claim.schemas";
+import type { ChangePasswordInput, CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateBankDetailsInput, UpdateExpenseHeadInput, UpdateSiteInput } from "../validation/claim.schemas";
 
 export type CreateClaimRecord = CreateClaimInput & {
   submitterEmployeeId: string;
@@ -96,6 +96,7 @@ export interface ClaimRepository {
   updateExpenseHead(expenseHeadId: string, input: UpdateExpenseHeadInput): Promise<ExpenseHead>;
   deactivateExpenseHead(expenseHeadId: string): Promise<ExpenseHead>;
   resetEmployeePassword(employeeId: string, input: ResetEmployeePasswordInput): Promise<Employee>;
+  changeEmployeePassword(employeeId: string, input: ChangePasswordInput): Promise<Employee | null>;
   getClaimDetail(claimId: string): Promise<ClaimDetail | null>;
   createClaim(input: CreateClaimRecord): Promise<ExpenseClaim>;
   addLineItem(claimId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;

@@ -228,6 +228,30 @@ export const resetEmployeePasswordSchema = z.object({
   requirePasswordReset: z.boolean().default(true)
 });
 
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Enter your current password."),
+    newPassword: z.string().min(8, "New password must be at least 8 characters.").max(128),
+    confirmPassword: z.string().min(1, "Confirm your new password.")
+  })
+  .superRefine((value, ctx) => {
+    if (value.newPassword !== value.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmPassword"],
+        message: "New password and confirmation do not match."
+      });
+    }
+
+    if (value.currentPassword === value.newPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["newPassword"],
+        message: "New password must be different from your current password."
+      });
+    }
+  });
+
 export const cleanupStaleRecordsSchema = z.object({
   olderThanDays: z.coerce.number().int().min(30).max(365).default(90)
 });
@@ -255,5 +279,6 @@ export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
 export type CreateExpenseHeadInput = z.infer<typeof createExpenseHeadSchema>;
 export type UpdateExpenseHeadInput = z.infer<typeof updateExpenseHeadSchema>;
 export type ResetEmployeePasswordInput = z.infer<typeof resetEmployeePasswordSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type CleanupStaleRecordsInput = z.infer<typeof cleanupStaleRecordsSchema>;
 export type UpdateBankDetailsInput = z.infer<typeof updateBankDetailsSchema>;

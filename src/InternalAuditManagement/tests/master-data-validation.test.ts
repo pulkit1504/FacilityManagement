@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignSiteClusterHeadSchema, createClaimSchema, createEmployeeSchema, createExpenseHeadSchema, createSiteSchema, resetEmployeePasswordSchema } from "../src/server/validation/claim.schemas";
+import { assignSiteClusterHeadSchema, changePasswordSchema, createClaimSchema, createEmployeeSchema, createExpenseHeadSchema, createSiteSchema, resetEmployeePasswordSchema } from "../src/server/validation/claim.schemas";
 
 describe("GA master-data validation", () => {
   it("only permits Reimbursement through the expense claim intake", () => {
@@ -26,6 +26,29 @@ describe("GA master-data validation", () => {
     expect(createExpenseHeadSchema.safeParse({ name: "" }).success).toBe(false);
     expect(resetEmployeePasswordSchema.safeParse({ temporaryPassword: "ChangeMe123!", requirePasswordReset: true }).success).toBe(true);
     expect(resetEmployeePasswordSchema.safeParse({ temporaryPassword: "short" }).success).toBe(false);
+  });
+
+  it("validates employee self-service password changes", () => {
+    expect(changePasswordSchema.safeParse({
+      currentPassword: "OldPassword123!",
+      newPassword: "NewPassword123!",
+      confirmPassword: "NewPassword123!"
+    }).success).toBe(true);
+    expect(changePasswordSchema.safeParse({
+      currentPassword: "OldPassword123!",
+      newPassword: "short",
+      confirmPassword: "short"
+    }).success).toBe(false);
+    expect(changePasswordSchema.safeParse({
+      currentPassword: "OldPassword123!",
+      newPassword: "NewPassword123!",
+      confirmPassword: "DifferentPassword123!"
+    }).success).toBe(false);
+    expect(changePasswordSchema.safeParse({
+      currentPassword: "SamePassword123!",
+      newPassword: "SamePassword123!",
+      confirmPassword: "SamePassword123!"
+    }).success).toBe(false);
   });
 
   it("allows employee creation without beneficiary bank details", () => {

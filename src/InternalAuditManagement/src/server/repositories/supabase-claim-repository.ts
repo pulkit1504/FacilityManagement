@@ -41,7 +41,7 @@ import type {
 } from "./claim-repository";
 import { defaultClaimRecord } from "./claim-repository";
 import type { CreateLineItemInput } from "../validation/claim.schemas";
-import type { CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateBankDetailsInput, UpdateExpenseHeadInput, UpdateSiteInput } from "../validation/claim.schemas";
+import type { ChangePasswordInput, CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateBankDetailsInput, UpdateExpenseHeadInput, UpdateSiteInput } from "../validation/claim.schemas";
 import { getSupabaseAdminClient } from "./supabase-client";
 import { hashPassword, verifyPassword } from "../auth/password";
 import { calculateSelectedSettlementAmounts } from "@/shared/settlement";
@@ -628,6 +628,43 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .update({
         password_hash: await hashPassword(input.temporaryPassword),
         password_reset_required: input.requirePasswordReset,
+        password_updated_at: new Date().toISOString()
+      })
+      .eq("employee_id", employeeId)
+      .eq("is_active", true)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapEmployee(data);
+  }
+
+  async changeEmployeePassword(employeeId: string, input: ChangePasswordInput): Promise<Employee | null> {
+    const db = await getSupabaseAdminClient();
+    const { data: employee, error: employeeError } = await db
+      .from("employees")
+      .select("*")
+      .eq("employee_id", employeeId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (employeeError) throw employeeError;
+    if (!employee) return null;
+
+    const storedHash = employee.password_hash ? String(employee.password_hash) : null;
+    const isCurrentPasswordValid =
+      (await verifyPassword(input.currentPassword, storedHash)) ||
+      (!storedHash && isBootstrapLogin(String(employee.email), input.currentPassword));
+
+    if (!isCurrentPasswordValid) {
+      return null;
+    }
+
+    const { data, error } = await db
+      .from("employees")
+      .update({
+        password_hash: await hashPassword(input.newPassword),
+        password_reset_required: false,
         password_updated_at: new Date().toISOString()
       })
       .eq("employee_id", employeeId)

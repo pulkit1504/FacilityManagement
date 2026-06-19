@@ -22,7 +22,7 @@ const links: NavLink[] = [
   { href: "/claims", label: "My Claims", icon: "FileText", exact: true, allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
   { href: "/claims/new", label: "New Claim", icon: "ReceiptText", allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
   { href: "/imprest", label: "Imprest", icon: "ReceiptText", allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
-  { href: "/profile", label: "My Profile", icon: "UserRound", allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
+  { href: "/profile", label: "My Profile", icon: "UserRound" },
   { href: "/approvals", label: "Approvals", icon: "ClipboardCheck", allowedRoles: ["ClusterHead", "HOD", "MD"] satisfies UserRole[] },
   { href: "/finance", label: "Finance Queue", icon: "FileText", allowedRoles: ["Finance"] satisfies UserRole[] },
   { href: "/billing", label: "Billing Alerts", icon: "Link2", allowedRoles: ["BillingTeam", "Finance"] satisfies UserRole[] },

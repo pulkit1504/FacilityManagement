@@ -3,7 +3,7 @@ import type { AuditLogEntry, ClaimDetail, ExpenseClaim, NotificationOutboxItem, 
 import { statusLabel } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { NotificationService } from "./notification-service";
-import type { CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput, UpdateBankDetailsInput, UpdateSettlementAdjustmentInput } from "../validation/claim.schemas";
+import type { ChangePasswordInput, CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput, UpdateBankDetailsInput, UpdateSettlementAdjustmentInput } from "../validation/claim.schemas";
 
 export class ClaimService {
   constructor(
@@ -798,9 +798,6 @@ export class ClaimService {
   }
 
   async getProfile(user: UserContext) {
-    if (!["Claimant", "ClusterHead", "HOD"].includes(user.role)) {
-      throw forbidden("Profile self-service is available to Claimant, Cluster Head, and HOD users.");
-    }
     const [employee, employees, sites, claims] = await Promise.all([
       this.claims.getEmployee(user.userId),
       this.claims.listEmployees(),
@@ -839,6 +836,18 @@ export class ClaimService {
         directManagerId: item.directManagerId
       })),
       linkedSites: sites.filter((site) => linkedSiteIds.has(site.siteId))
+    };
+  }
+
+  async changeProfilePassword(input: ChangePasswordInput, user: UserContext) {
+    const employee = await this.claims.changeEmployeePassword(user.userId, input);
+    if (!employee) {
+      throw conflict("Current password is incorrect.");
+    }
+
+    return {
+      employee,
+      message: "Password changed. Use the new password the next time you sign in."
     };
   }
 

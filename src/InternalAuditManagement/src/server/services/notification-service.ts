@@ -13,9 +13,12 @@ type EmailDeliveryHealth = {
   apiKeyConfigured: boolean;
   fromEmailConfigured: boolean;
   fromEmail: string | null;
-  status: "Ready" | "Restricted" | "NotConfigured";
+  status: "Ready" | "Restricted" | "Invalid" | "NotConfigured";
   guidance: string;
 };
+
+const emailAddressPattern = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+const namedEmailPattern = /^.+\s<([^\s@<>]+@[^\s@<>]+\.[^\s@<>]+)>$/;
 
 export class NotificationService {
   constructor(private readonly claims: ClaimRepository) {}
@@ -96,8 +99,9 @@ async function getEmailDeliveryHealth(): Promise<EmailDeliveryHealth> {
   const apiKeyConfigured = Boolean(apiKey);
   const fromEmailConfigured = Boolean(fromEmail);
   const usesResendSandboxSender = Boolean(fromEmail?.trim().toLowerCase().endsWith("@resend.dev"));
+  const senderIsValid = fromEmailConfigured ? isValidSenderAddress(fromEmail!) : false;
   const status = apiKeyConfigured && fromEmailConfigured
-    ? usesResendSandboxSender ? "Restricted" : "Ready"
+    ? !senderIsValid ? "Invalid" : usesResendSandboxSender ? "Restricted" : "Ready"
     : "NotConfigured";
   return {
     apiKeyConfigured,
@@ -108,6 +112,8 @@ async function getEmailDeliveryHealth(): Promise<EmailDeliveryHealth> {
       ? "Email provider credentials are configured with a custom sender domain. If sends still fail, check the last provider error."
       : status === "Restricted"
         ? "The resend.dev sender is for testing and can only send to the Resend account email. Verify a business domain in Resend and update Notification-FromEmail."
+        : status === "Invalid"
+          ? "Notification-FromEmail must be a full sender address such as claims@send.nimbusharbor.in or Nimbus Claims <claims@send.nimbusharbor.in>."
         : "Email delivery needs Resend-ApiKey and Notification-FromEmail in Key Vault or environment variables."
   };
 }
@@ -120,6 +126,10 @@ async function sendEmail(input: { to: string; subject: string; text: string }) {
 
   if (!apiKey || !fromEmail) {
     throw new Error("Email delivery is not configured. Add Resend-ApiKey and Notification-FromEmail secrets.");
+  }
+
+  if (!isValidSenderAddress(fromEmail)) {
+    throw new Error("Notification-FromEmail is invalid. Use a full sender address such as claims@send.nimbusharbor.in.");
   }
 
   const testRecipient = process.env.APP_AUTH_MODE === "test" ? process.env.NOTIFICATION_TEST_RECIPIENT : undefined;
@@ -149,4 +159,10 @@ async function sendEmail(input: { to: string; subject: string; text: string }) {
   return {
     providerMessageId: body.id ?? null
   };
+}
+
+export function isValidSenderAddress(value: string) {
+  const trimmed = value.trim();
+  const namedEmailMatch = trimmed.match(namedEmailPattern);
+  return emailAddressPattern.test(trimmed) || Boolean(namedEmailMatch && emailAddressPattern.test(namedEmailMatch[1]));
 }

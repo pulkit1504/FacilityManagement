@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { NotificationOutboxItem, UserContext } from "../src/server/domain/types";
 import type { ClaimRepository } from "../src/server/repositories/claim-repository";
 import { AdminService } from "../src/server/services/admin-service";
-import { NotificationService } from "../src/server/services/notification-service";
+import { isValidSenderAddress, NotificationService } from "../src/server/services/notification-service";
 import { cleanupStaleRecordsSchema } from "../src/server/validation/claim.schemas";
 
 vi.mock("../src/server/config/secrets", () => ({
@@ -56,6 +56,13 @@ describe("P2 retention cleanup", () => {
 });
 
 describe("P2 notification delivery", () => {
+  it("validates Resend from sender format before delivery", () => {
+    expect(isValidSenderAddress("claims@send.nimbusharbor.in")).toBe(true);
+    expect(isValidSenderAddress("Nimbus Claims <claims@send.nimbusharbor.in>")).toBe(true);
+    expect(isValidSenderAddress("send.nimbusharbor.in")).toBe(false);
+    expect(isValidSenderAddress("claims@send")).toBe(false);
+  });
+
   it("delivers retry candidates in bounded concurrent batches", async () => {
     const items = Array.from({ length: 7 }, (_, index) => notification(index));
     const claims = {
@@ -109,5 +116,31 @@ describe("P2 notification delivery", () => {
 
     expect(result.deliveryHealth.status).toBe("Restricted");
     expect(result.deliveryHealth.guidance).toContain("resend.dev sender is for testing");
+  });
+
+  it("flags an invalid sender and fails before calling Resend", async () => {
+    const secrets = await import("../src/server/config/secrets");
+    vi.mocked(secrets.getOptionalSecret).mockImplementation(async (name: string) => name === "RESEND_API_KEY" ? "test-key" : "send.nimbusharbor.in");
+    const claims = {
+      listNotifications: vi.fn().mockImplementation(async (status: string) => status === "Queued" || status === "All" ? [notification(1)] : []),
+      markNotificationSent: vi.fn().mockResolvedValue(undefined),
+      markNotificationFailed: vi.fn().mockResolvedValue(undefined)
+    } as unknown as ClaimRepository;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new NotificationService(claims);
+
+    const health = await service.listNotifications(adminUser);
+    const result = await service.deliverQueued(adminUser);
+
+    expect(health.deliveryHealth.status).toBe("Invalid");
+    expect(health.deliveryHealth.guidance).toContain("full sender address");
+    expect(result).toEqual({ attempted: 1, sent: 0, failed: 1 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(claims.markNotificationFailed).toHaveBeenCalledWith(
+      "notification-1",
+      expect.stringContaining("Notification-FromEmail is invalid")
+    );
+    vi.unstubAllGlobals();
   });
 });

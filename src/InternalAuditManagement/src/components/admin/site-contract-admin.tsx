@@ -79,7 +79,7 @@ type DeliveryHealth = {
   apiKeyConfigured: boolean;
   fromEmailConfigured: boolean;
   fromEmail: string | null;
-  status: "Ready" | "Restricted" | "NotConfigured";
+  status: "Ready" | "Restricted" | "Invalid" | "NotConfigured";
   guidance: string;
 };
 

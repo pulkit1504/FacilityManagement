@@ -150,6 +150,28 @@ export const financeLineReviewSchema = z.object({
   }
 });
 
+export const auditLineReviewSchema = z.object({
+  decision: z.enum(["Approved", "Rejected"]),
+  approvedAmount: z.coerce.number().nonnegative().nullable().optional(),
+  remarks: z.string().trim().max(1000).nullable().optional()
+}).superRefine((value, ctx) => {
+  if (value.decision === "Approved" && (value.approvedAmount === null || value.approvedAmount === undefined)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["approvedAmount"],
+      message: "Approved amount is required when approving a line item."
+    });
+  }
+
+  if (value.decision === "Rejected" && !value.remarks) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["remarks"],
+      message: "Remarks are required when rejecting an audit line item."
+    });
+  }
+});
+
 export const confirmPhysicalReceiptSchema = z.object({
   physicalReceiptDate: z.string().date(),
   physicalReceiptTime: z.string().regex(/^\d{2}:\d{2}$/),
@@ -266,6 +288,7 @@ export const updateBankDetailsSchema = z.object({
 export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
 export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
 export type FinanceLineReviewInput = z.infer<typeof financeLineReviewSchema>;
+export type AuditLineReviewInput = z.infer<typeof auditLineReviewSchema>;
 export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptSchema>;
 export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;
 export type ReviewFraudFlagInput = z.infer<typeof reviewFraudFlagSchema>;

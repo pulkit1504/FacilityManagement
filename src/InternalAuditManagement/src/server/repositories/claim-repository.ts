@@ -2,6 +2,7 @@ import type {
   ApprovalStep,
   ApprovalQueueItem,
   AuditActionType,
+  AuditImprestRegisterItem,
   AuditLogEntry,
   AuditQueueItem,
   BillingAlert,
@@ -102,6 +103,12 @@ export interface ClaimRepository {
   addLineItem(claimId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
   updateLineItem(claimId: string, lineItemId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
   reviewLineItem(claimId: string, lineItemId: string, decision: "Accepted" | "Rejected", remarks?: string | null): Promise<ExpenseLineItem>;
+  reviewAuditLineItem(claimId: string, lineItemId: string, input: {
+    decision: "Approved" | "Rejected";
+    approvedAmount: number | null;
+    remarks?: string | null;
+    reviewedByUserId: string;
+  }): Promise<ExpenseLineItem>;
   deleteLineItem(claimId: string, lineItemId: string): Promise<void>;
   invoiceReferenceExists(
     invoiceNumber: string,
@@ -130,6 +137,7 @@ export interface ClaimRepository {
   listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
   listFinanceQueue(): Promise<FinanceQueueItem[]>;
   listAuditQueue(): Promise<AuditQueueItem[]>;
+  listAuditImprestRegister(): Promise<AuditImprestRegisterItem[]>;
   listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]>;
   activeSettlementExists(advanceClaimId: string, excludingClaimId: string): Promise<boolean>;
   findActiveAdvanceAdjustment(advanceClaimId: string, excludingClaimId: string): Promise<ExpenseClaim | null>;

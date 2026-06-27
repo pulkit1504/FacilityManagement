@@ -5,6 +5,7 @@ import type {
   ApprovalQueueItem,
   AuditLogEntry,
   AuditQueueItem,
+  AuditImprestRegisterItem,
   BillableClaimReportRow,
   BillingAlert,
   BillingAlertQueueItem,
@@ -119,6 +120,11 @@ function mapLineItem(row: Record<string, unknown>): ExpenseLineItem {
     invoiceValidationStatus: row.invoice_validation_status as ExpenseLineItem["invoiceValidationStatus"],
     financeReviewStatus: (row.finance_review_status ?? "Pending") as ExpenseLineItem["financeReviewStatus"],
     financeReviewRemarks: row.finance_review_remarks ? String(row.finance_review_remarks) : null,
+    auditReviewStatus: (row.audit_review_status ?? "Pending") as ExpenseLineItem["auditReviewStatus"],
+    auditApprovedAmount: row.audit_approved_amount === null || row.audit_approved_amount === undefined ? null : Number(row.audit_approved_amount),
+    auditReviewRemarks: row.audit_review_remarks ? String(row.audit_review_remarks) : null,
+    auditReviewedBy: row.audit_reviewed_by ? String(row.audit_reviewed_by) : null,
+    auditReviewedAt: row.audit_reviewed_at ? String(row.audit_reviewed_at) : null,
     billingAlertCreated: Boolean(row.billing_alert_created),
     siteId: row.site_id ? String(row.site_id) : null,
     missingReceiptFlag: Boolean(row.missing_receipt_flag),
@@ -876,6 +882,11 @@ export class SupabaseClaimRepository implements ClaimRepository {
         line_ticket_id: input.lineTicketId ?? null,
         invoice_validation_status: input.expenseTag === "AlreadyBilled" && input.clientInvoiceNumber ? "PendingErpValidation" : "NotApplicable",
         site_id: input.expenseTag === "ContractPartCost" ? input.siteId ?? null : null,
+        audit_review_status: "Pending",
+        audit_approved_amount: null,
+        audit_review_remarks: null,
+        audit_reviewed_by: null,
+        audit_reviewed_at: null,
         sort_order: input.sortOrder
       })
       .eq("claim_id", claimId)
@@ -901,6 +912,36 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .update({
         finance_review_status: decision,
         finance_review_remarks: remarks ?? null
+      })
+      .eq("claim_id", claimId)
+      .eq("line_item_id", lineItemId)
+      .eq("is_deleted", false)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapLineItem(data);
+  }
+
+  async reviewAuditLineItem(
+    claimId: string,
+    lineItemId: string,
+    input: {
+      decision: "Approved" | "Rejected";
+      approvedAmount: number | null;
+      remarks?: string | null;
+      reviewedByUserId: string;
+    }
+  ): Promise<ExpenseLineItem> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_line_items")
+      .update({
+        audit_review_status: input.decision,
+        audit_approved_amount: input.decision === "Approved" ? input.approvedAmount : null,
+        audit_review_remarks: input.remarks ?? null,
+        audit_reviewed_by: input.reviewedByUserId,
+        audit_reviewed_at: new Date().toISOString()
       })
       .eq("claim_id", claimId)
       .eq("line_item_id", lineItemId)
@@ -1507,6 +1548,47 @@ export class SupabaseClaimRepository implements ClaimRepository {
         receiptConfirmedAt: claim.physical_receipt_confirmed_at ? String(claim.physical_receipt_confirmed_at) : null,
         auditorVoucherReceivedAt: auditorVoucherReceivedAtByClaim.get(claimId) ?? null,
         auditDecisionRequired: true
+      };
+    });
+  }
+
+  async listAuditImprestRegister(): Promise<AuditImprestRegisterItem[]> {
+    const db = await getSupabaseAdminClient();
+    const [{ data, error }, siteNames, employees] = await Promise.all([
+      db
+        .from("expense_claims")
+        .select("claim_id,ticket_id,claim_kind,status,submitter_employee_id,site_id,total_amount,advance_amount,settled_amount,advance_balance,advance_adjustment_amount,final_payable_amount,updated_at")
+        .eq("is_deleted", false)
+        .order("updated_at", { ascending: false })
+        .limit(1_000),
+      this.getSiteNameMap(),
+      this.listEmployees()
+    ]);
+
+    if (error) throw error;
+
+    const employeeNames = new Map(employees.map((employee) => [employee.employeeId, employee.fullName]));
+    return (data ?? []).map((row) => {
+      const updatedAt = String(row.updated_at);
+      const siteId = row.site_id ? String(row.site_id) : null;
+      const employeeId = String(row.submitter_employee_id);
+      const status = row.status as AuditImprestRegisterItem["status"];
+      return {
+        claimId: String(row.claim_id),
+        ticketId: row.ticket_id ? String(row.ticket_id) : `${row.claim_kind === "Advance" ? "ADV" : "EXP"}-${String(row.claim_id).slice(0, 8).toUpperCase()}`,
+        claimKind: (row.claim_kind ?? "Reimbursement") as AuditImprestRegisterItem["claimKind"],
+        status,
+        statusLabel: statusLabel(status),
+        submittedBy: employeeNames.get(employeeId) ?? employeeId,
+        siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
+        totalAmount: Number(row.total_amount ?? 0),
+        advanceAmount: Number(row.advance_amount ?? 0),
+        settledAmount: Number(row.settled_amount ?? 0),
+        advanceBalance: Number(row.advance_balance ?? 0),
+        advanceAdjustmentAmount: Number(row.advance_adjustment_amount ?? 0),
+        finalPayableAmount: Number(row.final_payable_amount ?? 0),
+        updatedAt,
+        ageDays: Math.max(0, Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86_400_000))
       };
     });
   }

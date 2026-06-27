@@ -929,7 +929,7 @@ test.describe("role journeys", () => {
 
   test("Auditor can see Audit Review must-have dashboard controls", async ({ page }) => {
     await signInAs(page, "Auditor");
-    await page.route("**/api/v1/fraud/flags?status=Open", async (route) => {
+    await page.route(/\/api\/v1\/fraud\/flags(?:\?.*)?$/, async (route) => {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -939,7 +939,7 @@ test.describe("role journeys", () => {
         })
       });
     });
-    await page.route("**/api/v1/audit/queue", async (route) => {
+    await page.route(/\/api\/v1\/audit\/queue$/, async (route) => {
       await route.fulfill({
         contentType: "application/json",
         body: JSON.stringify({
@@ -948,10 +948,44 @@ test.describe("role journeys", () => {
         })
       });
     });
-    await page.route("**/api/v1/claims/claim-audit-queue-1", async (route) => {
+    await page.route(/\/api\/v1\/audit\/imprest-register$/, async (route) => {
       await route.fulfill({
         contentType: "application/json",
-        body: JSON.stringify(auditClaimDetailFixture())
+        body: JSON.stringify({
+          total: 1,
+          items: [{
+            claimId: "claim-audit-queue-1",
+            ticketId: "EXP-AUD-QUEUE",
+            claimKind: "Reimbursement",
+            status: "AuditPending",
+            statusLabel: "Audit review pending",
+            submittedBy: "Riya Sharma",
+            siteName: "Investor Demo Site",
+            totalAmount: 4800,
+            advanceAmount: 0,
+            settledAmount: 0,
+            advanceBalance: 0,
+            advanceAdjustmentAmount: 0,
+            finalPayableAmount: 4800,
+            updatedAt: "2026-06-08T10:00:00.000Z",
+            ageDays: 1
+          }]
+        })
+      });
+    });
+    let auditReviewStatus: "Pending" | "Approved" = "Pending";
+    let auditApprovedAmount: number | null = null;
+    await page.route("**/api/v1/claims/claim-audit-queue-1", async (route) => {
+      const detail = auditClaimDetailFixture();
+      const line = detail.lineItems[0] as unknown as {
+        auditReviewStatus: "Pending" | "Approved";
+        auditApprovedAmount: number | null;
+      };
+      line.auditReviewStatus = auditReviewStatus;
+      line.auditApprovedAmount = auditApprovedAmount;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify(detail)
       });
     });
     await page.route("**/api/v1/claims/claim-audit-queue-1/summary/export", async (route) => {
@@ -968,6 +1002,22 @@ test.describe("role journeys", () => {
           claimId: "claim-audit-queue-1",
           receivedAt: "2026-06-08T11:00:00.000Z",
           message: "Voucher pack marked as received."
+        })
+      });
+    });
+    await page.route("**/api/v1/audit/claims/claim-audit-queue-1/line-items/line-audit-queue-1/review", async (route) => {
+      expect(route.request().method()).toBe("POST");
+      auditReviewStatus = "Approved";
+      auditApprovedAmount = 4800;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          lineItem: {
+            ...auditClaimDetailFixture().lineItems[0],
+            auditReviewStatus,
+            auditApprovedAmount
+          },
+          message: "Audit line approval recorded."
         })
       });
     });
@@ -1013,11 +1063,17 @@ test.describe("role journeys", () => {
     await expect(summaryDialog.getByText("Material purchase")).toBeVisible();
     await summaryDialog.getByRole("button", { name: "Close claim summary" }).click();
     await page.getByRole("button", { name: "Mark vouchers received" }).click();
-    await expect(page.getByRole("button", { name: "Approve" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Review lines first" })).toBeDisabled();
     await page.getByRole("button", { name: "View receipts" }).click();
     await expect(page.getByRole("heading", { level: 3, name: "Receipt Evidence" })).toBeVisible();
     await expect(page.getByText("B2C - Already Billed | Demo Vendor | Client CLI-100 | Vendor VEND-100")).toBeVisible();
     await expect(page.getByRole("button", { name: "receipt.pdf" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Imprest Register" })).toBeVisible();
+    await expect(page.getByRole("row", { name: /EXP-AUD-QUEUE/ })).toBeVisible();
+    await page.getByLabel("Audit approved amount for Material purchase").fill("4800");
+    await page.getByRole("button", { name: "Approve line" }).click();
+    await expect(page.getByRole("button", { name: "Approved" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
 
     await page.getByRole("button", { name: "Evidence", exact: true }).click();
     await expect(page.getByRole("heading", { level: 3, name: "Drill-down Evidence" })).toBeVisible();
@@ -1073,6 +1129,11 @@ function returnedClaimFixture(status: "Draft" | "Rejected") {
       invoiceValidationStatus: "PendingErpValidation",
       financeReviewStatus: "Pending",
       financeReviewRemarks: null,
+      auditReviewStatus: "Pending",
+      auditApprovedAmount: null,
+      auditReviewRemarks: null,
+      auditReviewedBy: null,
+      auditReviewedAt: null,
       billingAlertCreated: false,
       siteId: null,
       missingReceiptFlag: false,
@@ -1264,6 +1325,11 @@ function auditClaimDetailFixture() {
       invoiceValidationStatus: "PendingErpValidation",
       financeReviewStatus: "Pending",
       financeReviewRemarks: null,
+      auditReviewStatus: "Pending",
+      auditApprovedAmount: null,
+      auditReviewRemarks: null,
+      auditReviewedBy: null,
+      auditReviewedAt: null,
       billingAlertCreated: false,
       siteId: null,
       missingReceiptFlag: false,

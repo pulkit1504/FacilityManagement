@@ -1,7 +1,7 @@
 import { conflict, forbidden, notFound } from "../errors/application-error";
 import { statusLabel, type ClaimDetail, type UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
-import type { AuditClaimDecisionInput } from "../validation/claim.schemas";
+import type { AuditClaimDecisionInput, AuditLineReviewInput } from "../validation/claim.schemas";
 import type { NotificationService } from "./notification-service";
 
 export class AuditService {
@@ -16,6 +16,15 @@ export class AuditService {
     return {
       items,
       totalPending: items.length
+    };
+  }
+
+  async listImprestRegister(user: UserContext) {
+    this.assertAuditor(user);
+    const items = await this.claims.listAuditImprestRegister();
+    return {
+      items,
+      total: items.length
     };
   }
 
@@ -53,6 +62,7 @@ export class AuditService {
 
   async approveClaim(claimId: string, input: AuditClaimDecisionInput, user: UserContext) {
     const claim = await this.loadAuditClaim(claimId, user);
+    this.assertAllLinesApproved(claim);
     const pendingStep = this.pendingAuditorStep(claim);
 
     await this.claims.decideApprovalStep(pendingStep.stepId, "Approved", input.remarks);
@@ -89,6 +99,42 @@ export class AuditService {
 
   async requestInformation(claimId: string, input: AuditClaimDecisionInput, user: UserContext) {
     return this.returnToClaimant(claimId, input, user, "AUDIT_INFO_REQUEST", "Pending information");
+  }
+
+  async reviewLineItem(claimId: string, lineItemId: string, input: AuditLineReviewInput, user: UserContext) {
+    const claim = await this.loadAuditClaim(claimId, user);
+    const lineItem = claim.lineItems.find((item) => item.lineItemId === lineItemId);
+    if (!lineItem) throw notFound("Line item was not found for this claim.");
+
+    const approvedAmount = input.decision === "Approved" ? Number(input.approvedAmount ?? 0) : null;
+    if (approvedAmount !== null && approvedAmount > lineItem.amount) {
+      throw conflict("Audit approved amount cannot exceed the line item amount.");
+    }
+
+    const updated = await this.claims.reviewAuditLineItem(claimId, lineItemId, {
+      decision: input.decision,
+      approvedAmount,
+      remarks: input.remarks ?? null,
+      reviewedByUserId: user.userId
+    });
+
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: input.decision === "Approved" ? "AUDIT_LINE_APPROVE" : "AUDIT_LINE_REJECT",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks:
+        input.decision === "Approved"
+          ? `Audit approved ${approvedAmount} for line item ${lineItemId}.${input.remarks ? ` ${input.remarks}` : ""}`
+          : `Audit rejected line item ${lineItemId}. ${input.remarks}`,
+      correlationId: user.correlationId
+    });
+
+    return {
+      lineItem: updated,
+      message: input.decision === "Approved" ? "Audit line approval recorded." : "Audit line rejection recorded."
+    };
   }
 
   private async returnToClaimant(
@@ -160,6 +206,15 @@ export class AuditService {
       .find((item) => item.requiredApproverRole === "Auditor");
     if (!step) throw conflict("Auditor approval step is missing for this claim.");
     return step;
+  }
+
+  private assertAllLinesApproved(claim: ClaimDetail) {
+    const incompleteLines = claim.lineItems.filter((item) => item.auditReviewStatus !== "Approved" || item.auditApprovedAmount === null);
+    if (incompleteLines.length > 0) {
+      throw conflict("Approve every line item and enter the audit-approved amount before approving the claim.", {
+        incompleteLineItemIds: incompleteLines.map((item) => item.lineItemId)
+      });
+    }
   }
 
   private async createBillingAlertsForClaim(claim: ClaimDetail, user: UserContext) {

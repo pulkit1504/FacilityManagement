@@ -2375,6 +2375,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         .from("expense_claims")
         .select("claim_id,ticket_id,company,submitter_employee_id,site_id")
         .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed", "PaymentReleased"])
+        .eq("claim_kind", "Reimbursement")
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
         .limit(1_000),
@@ -2388,7 +2389,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const { data: lines, error: linesError } = claimIds.length
       ? await db
           .from("expense_line_items")
-          .select("claim_id,expense_head,description,amount,billable_amount,expense_tag,client_invoice_number,transaction_date")
+          .select("claim_id,expense_head,description,amount,billable_amount,expense_tag,client_invoice_number,payment_mode,vendor_name,vendor_invoice_number,site_or_department,transaction_date")
           .in("claim_id", claimIds)
           .eq("is_deleted", false)
           .limit(5_000)
@@ -2425,6 +2426,10 @@ export class SupabaseClaimRepository implements ClaimRepository {
         billableAmount: Number(line.billable_amount ?? (expenseTag === "PendingBilling" || expenseTag === "AlreadyBilled" ? line.amount : 0)),
         expenseTag,
         invoiceNumber,
+        paymentMode: line.payment_mode ? line.payment_mode as BillableClaimReportRow["paymentMode"] : null,
+        vendorName: line.vendor_name ? String(line.vendor_name) : null,
+        vendorInvoiceNumber: line.vendor_invoice_number ? String(line.vendor_invoice_number) : null,
+        siteOrDepartment: line.site_or_department ? String(line.site_or_department) : null,
         recoveryStatus:
           expenseTag === "AlreadyBilled" && invoiceNumber
             ? "Billed"

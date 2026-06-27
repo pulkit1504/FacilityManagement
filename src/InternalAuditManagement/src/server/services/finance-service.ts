@@ -63,6 +63,10 @@ export class FinanceService {
         "Billable Amount",
         "Expense Tag",
         "Invoice Number",
+        "Cash / UPI",
+        "Vendor Name",
+        "Vendor Invoice Number",
+        "Site / Department",
         "Recovery Status",
         "Transaction Date"
       ],
@@ -77,6 +81,10 @@ export class FinanceService {
         row.billableAmount,
         row.expenseTag,
         row.invoiceNumber ?? "",
+        row.paymentMode ?? "",
+        row.vendorName ?? "",
+        row.vendorInvoiceNumber ?? "",
+        row.siteOrDepartment ?? "",
         row.recoveryStatus,
         row.transactionDate
       ])

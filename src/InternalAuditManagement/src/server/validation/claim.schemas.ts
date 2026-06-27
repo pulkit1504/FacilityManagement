@@ -1,10 +1,11 @@
 import { z } from "zod";
-import { expenseTags, paymentModes, submissionModes, userRoles } from "../domain/types";
+import { expenseTags, operatingCompanies, paymentModes, submissionModes, userRoles } from "../domain/types";
 
 export const createClaimSchema = z
   .object({
     submissionMode: z.enum(submissionModes),
     claimKind: z.enum(["Reimbursement", "Advance"]).default("Reimbursement"),
+    company: z.enum(operatingCompanies).default("Nimbus"),
     siteId: z.string().trim().min(1).nullable().optional(),
     claimPeriodMonth: z.string().date().nullable().optional(),
     advanceClaimId: z.string().uuid().nullable().optional(),
@@ -109,6 +110,7 @@ export const createLineItemSchema = z
   });
 
 export const createAdvanceRequestSchema = z.object({
+  company: z.enum(operatingCompanies).default("Nimbus"),
   siteId: z.string().trim().min(1),
   amount: z.coerce.number().positive(),
   description: z.string().trim().min(3).max(500),

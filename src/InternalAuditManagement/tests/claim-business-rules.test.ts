@@ -37,6 +37,7 @@ function claim(overrides: Partial<ClaimDetail> = {}): ClaimDetail {
     claimId: "claim-1",
     ticketId: "EXP-001",
     submitterEmployeeId: user.userId,
+    company: "Nimbus",
     claimKind: "Reimbursement",
     submissionMode: "SingleVoucher",
     proformaPeriodStart: null,
@@ -293,7 +294,7 @@ describe("claim business rules", () => {
 
     await expect(
       new ClaimService(claims, notifications).createAdvanceRequest(
-        { siteId: "site-1", amount: 1_000, description: "Petty cash", claimPeriodMonth: "2026-06-01" },
+        { company: "Nimbus", siteId: "site-1", amount: 1_000, description: "Petty cash", claimPeriodMonth: "2026-06-01" },
         user
       )
     ).rejects.toMatchObject({ message: "Advance request exceeds the configured employee limit." });

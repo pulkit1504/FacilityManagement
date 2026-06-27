@@ -12,6 +12,7 @@ import { SlaChip } from "@/components/ui/sla-chip";
 type FinanceItem = {
   claimId: string;
   ticketId: string;
+  company: OperatingCompany;
   claimKind: "Advance" | "Reimbursement";
   status: "HodApproved" | "MdApproved" | "FinanceConfirmed";
   submittedBy: string;
@@ -33,6 +34,7 @@ type FinanceItem = {
 type PendingAdvance = {
   claimId: string;
   ticketId: string;
+  company: OperatingCompany;
   submittedBy: string;
   siteName: string | null;
   advanceAmount: number;
@@ -42,6 +44,9 @@ type PendingAdvance = {
   settlementStatus: "Open" | "Aging" | "Overdue";
   settlementStatusLabel: string;
 };
+
+type OperatingCompany = "Nimbus" | "Striker";
+type ReportCompanyFilter = "All" | OperatingCompany;
 
 type ClaimReceiptDetail = {
   ticketId: string;
@@ -78,6 +83,7 @@ export function FinanceQueue() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [reportMonth, setReportMonth] = useState("");
+  const [reportCompany, setReportCompany] = useState<ReportCompanyFilter>("All");
   const [decision, setDecision] = useState<FinanceDecision | null>(null);
   const [decisionRemarks, setDecisionRemarks] = useState("");
   const [decisionError, setDecisionError] = useState("");
@@ -374,7 +380,10 @@ export function FinanceQueue() {
     return item.claimKind === "Advance" || item.status === "FinanceConfirmed";
   }
 
-  const reportQuery = reportMonth ? `?month=${encodeURIComponent(reportMonth)}` : "";
+  const reportParams = new URLSearchParams();
+  if (reportMonth) reportParams.set("month", reportMonth);
+  if (reportCompany !== "All") reportParams.set("company", reportCompany);
+  const reportQuery = reportParams.toString() ? `?${reportParams.toString()}` : "";
   const recordSearch = (searchParams.get("q") ?? "").trim().toLowerCase();
   const filteredItems = items.filter((item) => (
     matchesFinanceBucket(item, bucket, claimDetails[item.claimId]) &&
@@ -382,6 +391,7 @@ export function FinanceQueue() {
   ));
   const filteredAdvances = advances.filter((advance) => matchesText(recordSearch, [
     advance.ticketId,
+    advance.company,
     advance.submittedBy,
     advance.siteName,
     advance.settlementStatusLabel,
@@ -396,7 +406,16 @@ export function FinanceQueue() {
           <h2>Finance Queue</h2>
           <div className="actions">
             {recordSearch ? <span className="badge success">Search: {recordSearch}</span> : null}
+            <select aria-label="Report company" value={reportCompany} onChange={(event) => setReportCompany(event.target.value as ReportCompanyFilter)}>
+              <option value="All">All companies</option>
+              <option value="Nimbus">Nimbus</option>
+              <option value="Striker">Striker</option>
+            </select>
             <input aria-label="Report month" type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} />
+            <a className="button secondary" href={`/api/v1/finance/reports/company-expenses${reportQuery}`}>
+              <Download size={16} />
+              Company CSV
+            </a>
             <a className="button secondary" href={`/api/v1/finance/reports/imprest${reportQuery}`}>
               <Download size={16} />
               Imprest CSV
@@ -450,7 +469,7 @@ export function FinanceQueue() {
                 <td>
                   <strong>{item.ticketId ?? item.claimId.slice(0, 8)}</strong>
                   <br />
-                  <span className="muted">{item.claimKind} · {item.submittedBy}</span>
+                  <span className="muted">{item.company} · {item.claimKind} · {item.submittedBy}</span>
                   <br />
                   <SlaChip days={item.daysPending} />
                 </td>
@@ -610,6 +629,7 @@ export function FinanceQueue() {
             <tr>
               <th>Advance</th>
               <th>Claimant</th>
+              <th>Company</th>
               <th>Site</th>
               <th>Advance</th>
               <th>Settled</th>
@@ -620,7 +640,7 @@ export function FinanceQueue() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <span className="loading-inline">
                     <Loader2 size={16} />
                     Loading advances...
@@ -636,6 +656,7 @@ export function FinanceQueue() {
                   <SlaChip days={advance.ageDays} />
                 </td>
                 <td>{advance.submittedBy}</td>
+                <td>{advance.company}</td>
                 <td>{advance.siteName ?? "No site linked"}</td>
                 <td>Rs {advance.advanceAmount.toLocaleString("en-IN")}</td>
                 <td>Rs {advance.settledAmount.toLocaleString("en-IN")}</td>
@@ -651,7 +672,7 @@ export function FinanceQueue() {
             ))}
             {!isLoading && filteredAdvances.length === 0 ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <div className="table-empty-state">
                     <strong>{recordSearch ? "No advances match this search" : "No open advance balances"}</strong>
                     <span>{recordSearch ? "Try searching by ticket, claimant, site, amount, or settlement status." : "All paid advances are fully settled or no paid advances are currently open."}</span>
@@ -730,6 +751,7 @@ function matchesFinanceSearch(item: FinanceItem, query: string, detail?: ClaimRe
   return matchesText(query, [
     item.claimId,
     item.ticketId,
+    item.company,
     item.claimKind,
     item.status,
     item.submittedBy,

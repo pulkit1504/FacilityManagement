@@ -4,6 +4,9 @@ export type SubmissionMode = (typeof submissionModes)[number];
 export const claimKinds = ["Advance", "Reimbursement"] as const;
 export type ClaimKind = (typeof claimKinds)[number];
 
+export const operatingCompanies = ["Nimbus", "Striker"] as const;
+export type OperatingCompany = (typeof operatingCompanies)[number];
+
 export const paymentModes = ["Cash", "UPI"] as const;
 export type PaymentMode = (typeof paymentModes)[number];
 
@@ -135,6 +138,7 @@ export type ExpenseClaim = {
   claimId: string;
   ticketId: string;
   submitterEmployeeId: string;
+  company: OperatingCompany;
   claimKind: ClaimKind;
   submissionMode: SubmissionMode;
   proformaPeriodStart: string | null;
@@ -218,6 +222,7 @@ export type ClaimDetail = ExpenseClaim & {
 export type ApprovalQueueItem = {
   claimId: string;
   ticketId: string;
+  company: OperatingCompany;
   submittedBy: string;
   submittedByRole: UserRole;
   siteName: string | null;
@@ -249,6 +254,7 @@ export type FinanceQueueItem = ApprovalQueueItem & {
 export type PendingAdvanceItem = {
   claimId: string;
   ticketId: string;
+  company: OperatingCompany;
   submittedBy: string;
   siteId: string | null;
   siteName: string | null;
@@ -358,6 +364,7 @@ export type AuditQueueItem = FinanceQueueItem & {
 export type AuditImprestRegisterItem = {
   claimId: string;
   ticketId: string;
+  company: OperatingCompany;
   claimKind: ClaimKind;
   status: ClaimStatus;
   statusLabel: string;
@@ -401,6 +408,7 @@ export type MisDashboardMetrics = {
 
 export type ImprestLedgerReportRow = {
   ticketId: string;
+  company: OperatingCompany;
   claimantName: string;
   siteName: string | null;
   advanceAmount: number;
@@ -412,6 +420,7 @@ export type ImprestLedgerReportRow = {
 
 export type BillableClaimReportRow = {
   ticketId: string;
+  company: OperatingCompany;
   claimantName: string;
   siteName: string | null;
   expenseHead: string | null;
@@ -422,6 +431,35 @@ export type BillableClaimReportRow = {
   invoiceNumber: string | null;
   recoveryStatus: "Billed" | "B2C - Pending Billing" | "Non Billable";
   transactionDate: string;
+};
+
+export type CompanyExpenseReportRow = {
+  ticketId: string;
+  company: OperatingCompany;
+  claimKind: ClaimKind;
+  status: ClaimStatus;
+  claimantName: string;
+  siteName: string | null;
+  expenseHead: string | null;
+  description: string;
+  amount: number;
+  billableAmount: number;
+  nonBillableAmount: number;
+  ctcAmount: number;
+  contractualPartAmount: number;
+  expenseTag: ExpenseTag;
+  clientInvoiceNumber: string | null;
+  vendorName: string | null;
+  vendorInvoiceNumber: string | null;
+  transactionDate: string;
+  paymentMode: PaymentMode | null;
+  financeReviewStatus: ExpenseLineItem["financeReviewStatus"];
+  auditReviewStatus: ExpenseLineItem["auditReviewStatus"];
+  auditApprovedAmount: number | null;
+  advanceAmount: number;
+  advanceAdjustmentAmount: number;
+  finalPayableAmount: number;
+  updatedAt: string;
 };
 
 export type NotificationOutboxInput = {

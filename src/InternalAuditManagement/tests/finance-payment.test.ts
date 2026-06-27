@@ -15,6 +15,7 @@ function advanceClaim(): ClaimDetail {
     claimId: "claim-1",
     ticketId: "ADV-TEST",
     submitterEmployeeId: "claimant-1",
+    company: "Nimbus",
     claimKind: "Advance",
     submissionMode: "SingleVoucher",
     proformaPeriodStart: null,

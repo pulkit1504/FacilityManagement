@@ -8,6 +8,7 @@ import type {
   BillingAlert,
   BillingAlertQueueItem,
   BillableClaimReportRow,
+  CompanyExpenseReportRow,
   ClaimDetail,
   ClaimStatus,
   ClientContract,
@@ -165,11 +166,12 @@ export interface ClaimRepository {
   getMisDashboardMetrics(): Promise<MisDashboardMetrics>;
   listImprestLedgerReport(): Promise<ImprestLedgerReportRow[]>;
   listBillableClaimReport(): Promise<BillableClaimReportRow[]>;
+  listCompanyExpenseReport(): Promise<CompanyExpenseReportRow[]>;
 }
 
 export type ClaimSummary = Pick<
   ExpenseClaim,
-  "claimId" | "submissionMode" | "status" | "totalAmount" | "siteId" | "createdAt" | "updatedAt"
+  "claimId" | "company" | "submissionMode" | "status" | "totalAmount" | "siteId" | "createdAt" | "updatedAt"
 > & {
   ticketId: string;
   claimKind: ExpenseClaim["claimKind"];
@@ -193,6 +195,7 @@ export function defaultClaimRecord(
     claimId,
     ticketId: `${ticketPrefix}-${ticketDate}-${ticketSuffix}`,
     submitterEmployeeId: input.submitterEmployeeId,
+    company: input.company ?? "Nimbus",
     claimKind: input.claimKind ?? "Reimbursement",
     submissionMode: input.submissionMode as SubmissionMode,
     proformaPeriodStart: input.proformaPeriodStart ?? null,

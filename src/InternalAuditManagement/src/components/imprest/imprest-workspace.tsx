@@ -14,6 +14,7 @@ type SiteOption = {
 type PendingAdvance = {
   claimId: string;
   ticketId: string;
+  company: OperatingCompany;
   siteName: string | null;
   advanceAmount: number;
   settledAmount: number;
@@ -24,9 +25,12 @@ type PendingAdvance = {
   settlementStatusLabel: string;
 };
 
+type OperatingCompany = "Nimbus" | "Striker";
+
 export function ImprestWorkspace() {
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [advances, setAdvances] = useState<PendingAdvance[]>([]);
+  const [company, setCompany] = useState<OperatingCompany>("Nimbus");
   const [siteId, setSiteId] = useState("");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
@@ -70,6 +74,7 @@ export function ImprestWorkspace() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          company,
           siteId,
           amount: Number(amount),
           description,
@@ -128,10 +133,17 @@ export function ImprestWorkspace() {
         <div className="topbar" style={{ marginBottom: 12 }}>
           <div>
             <h2>Request Advance</h2>
-            <p className="muted">Create an imprest advance request and send it through the normal approval flow.</p>
+            <p className="muted">Create an imprest advance request for Nimbus or Striker and send it through the normal approval flow.</p>
           </div>
         </div>
         <div className="grid cols-3">
+          <label>
+            <span className="muted">Company</span>
+            <select value={company} onChange={(event) => setCompany(event.target.value as OperatingCompany)}>
+              <option value="Nimbus">Nimbus</option>
+              <option value="Striker">Striker</option>
+            </select>
+          </label>
           <label>
             <span className="muted">Site</span>
             <select value={siteId} onChange={(event) => setSiteId(event.target.value)}>
@@ -176,6 +188,7 @@ export function ImprestWorkspace() {
           <thead>
             <tr>
               <th>Advance</th>
+              <th>Company</th>
               <th>Site</th>
               <th>Amount</th>
               <th>Settled</th>
@@ -187,7 +200,7 @@ export function ImprestWorkspace() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <span className="loading-inline">
                     <Loader2 size={16} />
                     Loading advances...
@@ -202,6 +215,7 @@ export function ImprestWorkspace() {
                   <br />
                   <span className="muted">{advance.ageDays} days open</span>
                 </td>
+                <td>{advance.company}</td>
                 <td>{advance.siteName ?? "No site linked"}</td>
                 <td>Rs {advance.advanceAmount.toLocaleString("en-IN")}</td>
                 <td>Rs {advance.settledAmount.toLocaleString("en-IN")}</td>
@@ -223,7 +237,7 @@ export function ImprestWorkspace() {
             ))}
             {!isLoading && advances.length === 0 ? (
               <tr>
-                <td colSpan={7}>No paid advances with an open balance.</td>
+                <td colSpan={8}>No paid advances with an open balance.</td>
               </tr>
             ) : null}
           </tbody>

@@ -1,5 +1,5 @@
 import { conflict, forbidden, notFound } from "../errors/application-error";
-import { statusLabel, type UserContext } from "../domain/types";
+import { statusLabel, type OperatingCompany, type UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { ConfirmPhysicalReceiptInput, FinanceLineReviewInput } from "../validation/claim.schemas";
 import type { NotificationService } from "./notification-service";
@@ -33,9 +33,10 @@ export class FinanceService {
     this.assertFinance(user);
     const rows = (await this.claims.listImprestLedgerReport()).filter((row) => matchesReportFilters(row, filters, row.paidAt));
     return toCsv(
-      ["Ticket", "Claimant", "Site", "Advance Amount", "Settled Amount", "Open Balance", "Status", "Paid At"],
+      ["Ticket", "Company", "Claimant", "Site", "Advance Amount", "Settled Amount", "Open Balance", "Status", "Paid At"],
       rows.map((row) => [
         row.ticketId,
+        row.company,
         row.claimantName,
         row.siteName ?? "",
         row.advanceAmount,
@@ -53,6 +54,7 @@ export class FinanceService {
     return toCsv(
       [
         "Ticket",
+        "Company",
         "Claimant",
         "Site",
         "Expense Head",
@@ -66,6 +68,7 @@ export class FinanceService {
       ],
       rows.map((row) => [
         row.ticketId,
+        row.company,
         row.claimantName,
         row.siteName ?? "",
         row.expenseHead ?? "",
@@ -76,6 +79,69 @@ export class FinanceService {
         row.invoiceNumber ?? "",
         row.recoveryStatus,
         row.transactionDate
+      ])
+    );
+  }
+
+  async exportCompanyExpenses(user: UserContext, filters: ReportFilters = {}) {
+    this.assertFinance(user);
+    const rows = (await this.claims.listCompanyExpenseReport()).filter((row) => matchesReportFilters(row, filters, row.transactionDate));
+    return toCsv(
+      [
+        "Ticket",
+        "Company",
+        "Claim Type",
+        "Status",
+        "Claimant",
+        "Site",
+        "Expense Head",
+        "Description",
+        "Expense Tag",
+        "Amount",
+        "Billable Amount",
+        "Non Billable Amount",
+        "CTC Amount",
+        "Contractual Part Amount",
+        "Client Invoice",
+        "Vendor",
+        "Vendor Invoice",
+        "Transaction Date",
+        "Payment Mode",
+        "Finance Review",
+        "Audit Review",
+        "Audit Approved Amount",
+        "Advance Amount",
+        "Advance Adjusted",
+        "Final Payable",
+        "Updated At"
+      ],
+      rows.map((row) => [
+        row.ticketId,
+        row.company,
+        row.claimKind,
+        row.status,
+        row.claimantName,
+        row.siteName ?? "",
+        row.expenseHead ?? "",
+        row.description,
+        row.expenseTag,
+        row.amount,
+        row.billableAmount,
+        row.nonBillableAmount,
+        row.ctcAmount,
+        row.contractualPartAmount,
+        row.clientInvoiceNumber ?? "",
+        row.vendorName ?? "",
+        row.vendorInvoiceNumber ?? "",
+        row.transactionDate,
+        row.paymentMode ?? "",
+        row.financeReviewStatus,
+        row.auditReviewStatus,
+        row.auditApprovedAmount ?? "",
+        row.advanceAmount,
+        row.advanceAdjustmentAmount,
+        row.finalPayableAmount,
+        row.updatedAt
       ])
     );
   }
@@ -291,11 +357,13 @@ type ReportFilters = {
   site?: string | null;
   claimant?: string | null;
   month?: string | null;
+  company?: OperatingCompany | "All" | null;
 };
 
-function matchesReportFilters(row: { siteName: string | null; claimantName: string }, filters: ReportFilters, dateValue?: string | null) {
+function matchesReportFilters(row: { siteName: string | null; claimantName: string; company?: OperatingCompany }, filters: ReportFilters, dateValue?: string | null) {
   if (filters.site && row.siteName !== filters.site) return false;
   if (filters.claimant && row.claimantName !== filters.claimant) return false;
+  if (filters.company && filters.company !== "All" && row.company !== filters.company) return false;
   if (filters.month && (!dateValue || !dateValue.startsWith(filters.month))) return false;
   return true;
 }

@@ -16,6 +16,7 @@ function adjustedReimbursementClaim(): ClaimDetail {
     claimId: "settlement-1",
     ticketId: "EXP-TEST",
     submitterEmployeeId: "claimant-1",
+    company: "Nimbus",
     claimKind: "Reimbursement",
     submissionMode: "SingleVoucher",
     proformaPeriodStart: null,

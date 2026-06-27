@@ -22,6 +22,7 @@ export class ClaimService {
       items: claims.map((claim) => ({
         claimId: claim.claimId,
         ticketId: claim.ticketId,
+        company: claim.company,
         claimKind: claim.claimKind,
         submissionMode: claim.submissionMode,
         status: claim.status,
@@ -62,6 +63,7 @@ export class ClaimService {
     return {
       claimId: claim.claimId,
       ticketId: claim.ticketId,
+      company: claim.company,
       status: claim.status,
       statusLabel: statusLabel(claim.status),
       createdAt: claim.createdAt
@@ -336,6 +338,7 @@ export class ClaimService {
     const claim = await this.claims.createClaim({
       submitterEmployeeId: user.userId,
       claimKind: "Advance",
+      company: input.company,
       submissionMode: "SingleVoucher",
       siteId: input.siteId,
       claimPeriodMonth: input.claimPeriodMonth ?? null,

@@ -33,6 +33,7 @@ function auditPendingClaim(): ClaimDetail {
     claimId: "claim-1",
     ticketId: "EXP-000001",
     submitterEmployeeId: "claimant-1",
+    company: "Nimbus",
     claimKind: "Reimbursement",
     submissionMode: "SingleVoucher",
     proformaPeriodStart: null,

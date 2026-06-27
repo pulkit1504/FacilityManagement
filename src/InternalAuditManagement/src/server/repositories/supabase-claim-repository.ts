@@ -10,6 +10,7 @@ import type {
   BillingAlert,
   BillingAlertQueueItem,
   ClaimDetail,
+  CompanyExpenseReportRow,
   ClaimStatus,
   ClientContract,
   Employee,
@@ -51,6 +52,7 @@ type ClaimRow = {
   claim_id: string;
   ticket_id: string | null;
   submitter_employee_id: string;
+  company: string | null;
   claim_kind: string | null;
   submission_mode: string;
   proforma_period_start: string | null;
@@ -78,6 +80,7 @@ function mapClaim(row: ClaimRow): ExpenseClaim {
     claimId: row.claim_id,
     ticketId: row.ticket_id ?? `EXP-${row.claim_id.slice(0, 8).toUpperCase()}`,
     submitterEmployeeId: row.submitter_employee_id,
+    company: (row.company ?? "Nimbus") as ExpenseClaim["company"],
     claimKind: (row.claim_kind ?? "Reimbursement") as ExpenseClaim["claimKind"],
     submissionMode: row.submission_mode as ExpenseClaim["submissionMode"],
     proformaPeriodStart: row.proforma_period_start,
@@ -806,6 +809,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         claim_id: claim.claimId,
         ticket_id: claim.ticketId,
         submitter_employee_id: claim.submitterEmployeeId,
+        company: claim.company,
         claim_kind: claim.claimKind,
         submission_mode: claim.submissionMode,
         proforma_period_start: claim.proformaPeriodStart,
@@ -1093,7 +1097,6 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const { data, error } = await db
       .from("expense_claims")
       .update({
-        claim_kind: "Reimbursement",
         advance_claim_id: advanceClaimId,
         advance_adjustment_amount: amounts.advanceAdjusted,
         final_payable_amount: amounts.finalPayable,
@@ -1382,7 +1385,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const [{ data, error }, siteNames, employees] = await Promise.all([
       db
         .from("expense_claims")
-        .select("claim_id,ticket_id,claim_kind,status,advance_claim_id,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
+        .select("claim_id,ticket_id,company,claim_kind,status,advance_claim_id,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
         .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed"])
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
@@ -1429,6 +1432,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       return {
         claimId,
         ticketId: claim.ticket_id ? String(claim.ticket_id) : `EXP-${claimId.slice(0, 8).toUpperCase()}`,
+        company: (claim.company ?? "Nimbus") as FinanceQueueItem["company"],
         claimKind: (claim.claim_kind ?? "Reimbursement") as FinanceQueueItem["claimKind"],
         status: String(claim.status) as FinanceQueueItem["status"],
         submittedBy: String(claim.submitter_employee_id),
@@ -1462,7 +1466,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const [{ data, error }, siteNames, employees] = await Promise.all([
       db
         .from("expense_claims")
-        .select("claim_id,ticket_id,claim_kind,status,advance_claim_id,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
+        .select("claim_id,ticket_id,company,claim_kind,status,advance_claim_id,submitter_employee_id,total_amount,advance_adjustment_amount,final_payable_amount,net_advance_left_amount,site_id,physical_receipt_confirmed_at,created_at,updated_at")
         .eq("status", "AuditPending")
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
@@ -1523,6 +1527,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       return {
         claimId,
         ticketId: claim.ticket_id ? String(claim.ticket_id) : `EXP-${claimId.slice(0, 8).toUpperCase()}`,
+        company: (claim.company ?? "Nimbus") as AuditQueueItem["company"],
         claimKind: (claim.claim_kind ?? "Reimbursement") as AuditQueueItem["claimKind"],
         status: String(claim.status) as AuditQueueItem["status"],
         submittedBy: submitter?.fullName ?? String(claim.submitter_employee_id),
@@ -1557,7 +1562,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const [{ data, error }, siteNames, employees] = await Promise.all([
       db
         .from("expense_claims")
-        .select("claim_id,ticket_id,claim_kind,status,submitter_employee_id,site_id,total_amount,advance_amount,settled_amount,advance_balance,advance_adjustment_amount,final_payable_amount,updated_at")
+        .select("claim_id,ticket_id,company,claim_kind,status,submitter_employee_id,site_id,total_amount,advance_amount,settled_amount,advance_balance,advance_adjustment_amount,final_payable_amount,updated_at")
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
         .limit(1_000),
@@ -1576,6 +1581,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       return {
         claimId: String(row.claim_id),
         ticketId: row.ticket_id ? String(row.ticket_id) : `${row.claim_kind === "Advance" ? "ADV" : "EXP"}-${String(row.claim_id).slice(0, 8).toUpperCase()}`,
+        company: (row.company ?? "Nimbus") as AuditImprestRegisterItem["company"],
         claimKind: (row.claim_kind ?? "Reimbursement") as AuditImprestRegisterItem["claimKind"],
         status,
         statusLabel: statusLabel(status),
@@ -1597,7 +1603,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const db = await getSupabaseAdminClient();
     let query = db
       .from("expense_claims")
-      .select("claim_id,ticket_id,submitter_employee_id,site_id,advance_amount,settled_amount,advance_balance,updated_at")
+      .select("claim_id,ticket_id,company,submitter_employee_id,site_id,advance_amount,settled_amount,advance_balance,updated_at")
       .eq("claim_kind", "Advance")
       .eq("status", "PaymentReleased")
       .gt("advance_balance", 0)
@@ -1620,6 +1626,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       return {
         claimId: String(row.claim_id),
         ticketId: row.ticket_id ? String(row.ticket_id) : `ADV-${String(row.claim_id).slice(0, 8).toUpperCase()}`,
+        company: (row.company ?? "Nimbus") as PendingAdvanceItem["company"],
         submittedBy: String(row.submitter_employee_id),
         siteId,
         siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
@@ -2332,7 +2339,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const [{ data, error }, siteNames, employees] = await Promise.all([
       db
         .from("expense_claims")
-        .select("ticket_id,submitter_employee_id,site_id,advance_amount,settled_amount,advance_balance,status,updated_at")
+        .select("ticket_id,company,submitter_employee_id,site_id,advance_amount,settled_amount,advance_balance,status,updated_at")
         .eq("claim_kind", "Advance")
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
@@ -2349,6 +2356,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       const employeeId = String(row.submitter_employee_id);
       return {
         ticketId: String(row.ticket_id),
+        company: (row.company ?? "Nimbus") as ImprestLedgerReportRow["company"],
         claimantName: employeeNames.get(employeeId) ?? employeeId,
         siteName: siteId ? siteNames.get(siteId) ?? siteId : null,
         advanceAmount: Number(row.advance_amount ?? 0),
@@ -2365,7 +2373,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const [{ data: claims, error: claimsError }, siteNames, employees] = await Promise.all([
       db
         .from("expense_claims")
-        .select("claim_id,ticket_id,submitter_employee_id,site_id")
+        .select("claim_id,ticket_id,company,submitter_employee_id,site_id")
         .in("status", ["HodApproved", "MdApproved", "FinanceConfirmed", "PaymentReleased"])
         .eq("is_deleted", false)
         .order("updated_at", { ascending: false })
@@ -2394,6 +2402,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
         String(claim.claim_id),
         {
           ticketId: String(claim.ticket_id),
+          company: (claim.company ?? "Nimbus") as BillableClaimReportRow["company"],
           employeeId: String(claim.submitter_employee_id),
           siteId: claim.site_id ? String(claim.site_id) : null
         }
@@ -2407,6 +2416,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       const invoiceNumber = line.client_invoice_number ? String(line.client_invoice_number) : null;
       return {
         ticketId: claim?.ticketId ?? String(line.claim_id),
+        company: claim?.company ?? "Nimbus",
         claimantName: claim ? employeeNames.get(claim.employeeId) ?? claim.employeeId : "Unknown",
         siteName,
         expenseHead: line.expense_head ? String(line.expense_head) : null,
@@ -2422,6 +2432,96 @@ export class SupabaseClaimRepository implements ClaimRepository {
               ? "B2C - Pending Billing"
               : "Non Billable",
         transactionDate: String(line.transaction_date)
+      };
+    });
+  }
+
+  async listCompanyExpenseReport(): Promise<CompanyExpenseReportRow[]> {
+    const db = await getSupabaseAdminClient();
+    const [{ data: claims, error: claimsError }, siteNames, employees] = await Promise.all([
+      db
+        .from("expense_claims")
+        .select("claim_id,ticket_id,company,claim_kind,status,submitter_employee_id,site_id,total_amount,advance_amount,advance_adjustment_amount,final_payable_amount,updated_at")
+        .eq("is_deleted", false)
+        .order("updated_at", { ascending: false })
+        .limit(2_000),
+      this.getSiteNameMap(),
+      this.listEmployees()
+    ]);
+
+    if (claimsError) throw claimsError;
+
+    const claimIds = (claims ?? []).map((claim) => String(claim.claim_id));
+    const { data: lines, error: linesError } = claimIds.length
+      ? await db
+          .from("expense_line_items")
+          .select("claim_id,expense_head,description,amount,billable_amount,expense_tag,client_invoice_number,vendor_name,vendor_invoice_number,transaction_date,payment_mode,finance_review_status,audit_review_status,audit_approved_amount")
+          .in("claim_id", claimIds)
+          .eq("is_deleted", false)
+          .limit(10_000)
+      : { data: [], error: null };
+
+    if (linesError) throw linesError;
+
+    const employeeNames = new Map(employees.map((employee) => [employee.employeeId, employee.fullName]));
+    const claimsById = new Map(
+      (claims ?? []).map((claim) => [
+        String(claim.claim_id),
+        {
+          ticketId: String(claim.ticket_id),
+          company: (claim.company ?? "Nimbus") as CompanyExpenseReportRow["company"],
+          claimKind: (claim.claim_kind ?? "Reimbursement") as CompanyExpenseReportRow["claimKind"],
+          status: claim.status as CompanyExpenseReportRow["status"],
+          employeeId: String(claim.submitter_employee_id),
+          siteId: claim.site_id ? String(claim.site_id) : null,
+          advanceAmount: Number(claim.advance_amount ?? 0),
+          advanceAdjustmentAmount: Number(claim.advance_adjustment_amount ?? 0),
+          finalPayableAmount: Number(claim.final_payable_amount ?? claim.total_amount ?? 0),
+          updatedAt: String(claim.updated_at)
+        }
+      ])
+    );
+
+    return (lines ?? []).map((line) => {
+      const claim = claimsById.get(String(line.claim_id));
+      const amount = Number(line.amount ?? 0);
+      const expenseTag = line.expense_tag as CompanyExpenseReportRow["expenseTag"];
+      const billableAmount =
+        expenseTag === "PendingBilling" || expenseTag === "AlreadyBilled"
+          ? Number(line.billable_amount ?? amount)
+          : 0;
+      const ctcAmount = expenseTag === "BackendCTC" ? amount : 0;
+      const contractualPartAmount = expenseTag === "ContractPartCost" ? amount : 0;
+      const nonBillableAmount = billableAmount === 0 && ctcAmount === 0 && contractualPartAmount === 0 ? amount : 0;
+      const siteName = claim?.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null;
+
+      return {
+        ticketId: claim?.ticketId ?? String(line.claim_id),
+        company: claim?.company ?? "Nimbus",
+        claimKind: claim?.claimKind ?? "Reimbursement",
+        status: claim?.status ?? "Draft",
+        claimantName: claim ? employeeNames.get(claim.employeeId) ?? claim.employeeId : "Unknown",
+        siteName,
+        expenseHead: line.expense_head ? String(line.expense_head) : null,
+        description: String(line.description),
+        amount,
+        billableAmount,
+        nonBillableAmount,
+        ctcAmount,
+        contractualPartAmount,
+        expenseTag,
+        clientInvoiceNumber: line.client_invoice_number ? String(line.client_invoice_number) : null,
+        vendorName: line.vendor_name ? String(line.vendor_name) : null,
+        vendorInvoiceNumber: line.vendor_invoice_number ? String(line.vendor_invoice_number) : null,
+        transactionDate: String(line.transaction_date),
+        paymentMode: line.payment_mode ? line.payment_mode as CompanyExpenseReportRow["paymentMode"] : null,
+        financeReviewStatus: (line.finance_review_status ?? "Pending") as CompanyExpenseReportRow["financeReviewStatus"],
+        auditReviewStatus: (line.audit_review_status ?? "Pending") as CompanyExpenseReportRow["auditReviewStatus"],
+        auditApprovedAmount: line.audit_approved_amount === null || line.audit_approved_amount === undefined ? null : Number(line.audit_approved_amount),
+        advanceAmount: claim?.advanceAmount ?? 0,
+        advanceAdjustmentAmount: claim?.advanceAdjustmentAmount ?? 0,
+        finalPayableAmount: claim?.finalPayableAmount ?? amount,
+        updatedAt: claim?.updatedAt ?? String(line.transaction_date)
       };
     });
   }
@@ -2480,6 +2580,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return {
       claimId: claim.claimId,
       ticketId: claim.ticketId,
+      company: claim.company,
       submittedBy: claim.submitterEmployeeId,
       submittedByRole: "Claimant",
       siteName: claim.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,

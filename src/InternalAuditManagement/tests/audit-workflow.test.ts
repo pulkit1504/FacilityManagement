@@ -71,6 +71,11 @@ function auditPendingClaim(): ClaimDetail {
       invoiceValidationStatus: "NotApplicable",
       financeReviewStatus: "Accepted",
       financeReviewRemarks: null,
+      auditReviewStatus: "Approved",
+      auditApprovedAmount: 2_000,
+      auditReviewRemarks: null,
+      auditReviewedBy: "emp-auditor-001",
+      auditReviewedAt: "2026-06-08T11:30:00.000Z",
       billingAlertCreated: false,
       siteId: "site-1",
       missingReceiptFlag: false,
@@ -216,5 +221,89 @@ describe("Auditor receipt workflow", () => {
       actionType: "AUDITOR_VOUCHERS_RECEIVED",
       postActionStatus: "AuditPending"
     }));
+  });
+
+  it("records line-item audit approval with the approved amount", async () => {
+    const claim = auditPendingClaim();
+    claim.lineItems[0] = {
+      ...claim.lineItems[0],
+      auditReviewStatus: "Pending",
+      auditApprovedAmount: null,
+      auditReviewedAt: null,
+      auditReviewedBy: null
+    };
+    const updatedLine = {
+      ...claim.lineItems[0],
+      auditReviewStatus: "Approved" as const,
+      auditApprovedAmount: 1_750,
+      auditReviewedBy: auditor.userId,
+      auditReviewedAt: "2026-06-08T12:00:00.000Z"
+    };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog]),
+      reviewAuditLineItem: vi.fn().mockResolvedValue(updatedLine),
+      appendAuditLog: vi.fn()
+    } as unknown as ClaimRepository;
+
+    const result = await new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService).reviewLineItem("claim-1", "line-1", {
+      decision: "Approved",
+      approvedAmount: 1_750,
+      remarks: "Partial disallowance documented."
+    }, auditor);
+
+    expect(result.lineItem.auditApprovedAmount).toBe(1_750);
+    expect(claims.reviewAuditLineItem).toHaveBeenCalledWith("claim-1", "line-1", expect.objectContaining({
+      decision: "Approved",
+      approvedAmount: 1_750,
+      reviewedByUserId: auditor.userId
+    }));
+    expect(claims.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: "AUDIT_LINE_APPROVE"
+    }));
+  });
+
+  it("blocks claim audit approval until every line has an audit amount", async () => {
+    const claim = auditPendingClaim();
+    claim.lineItems[0] = {
+      ...claim.lineItems[0],
+      auditReviewStatus: "Pending",
+      auditApprovedAmount: null
+    };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog])
+    } as unknown as ClaimRepository;
+
+    await expect(new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService).approveClaim("claim-1", {
+      remarks: "Evidence reviewed."
+    }, auditor)).rejects.toThrow("Approve every line item");
+  });
+
+  it("does not allow an audit-approved amount above the line amount", async () => {
+    const claim = auditPendingClaim();
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog]),
+      reviewAuditLineItem: vi.fn()
+    } as unknown as ClaimRepository;
+
+    await expect(new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService).reviewLineItem("claim-1", "line-1", {
+      decision: "Approved",
+      approvedAmount: 2_001,
+      remarks: "Too high."
+    }, auditor)).rejects.toThrow("cannot exceed");
+    expect(claims.reviewAuditLineItem).not.toHaveBeenCalled();
+  });
+
+  it("lists the audit imprest register for auditors", async () => {
+    const claims = {
+      listAuditImprestRegister: vi.fn().mockResolvedValue([{ claimId: "claim-1", ticketId: "EXP-000001" }])
+    } as unknown as ClaimRepository;
+
+    const result = await new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService).listImprestRegister(auditor);
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toMatchObject({ ticketId: "EXP-000001" });
   });
 });

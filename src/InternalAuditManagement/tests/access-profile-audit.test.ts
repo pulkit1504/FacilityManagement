@@ -225,6 +225,11 @@ describe("profile and audit trail", () => {
         missingReceiptFlag: false,
         financeReviewStatus: "Pending",
         financeReviewRemarks: null,
+        auditReviewStatus: "Pending",
+        auditApprovedAmount: null,
+        auditReviewRemarks: null,
+        auditReviewedBy: null,
+        auditReviewedAt: null,
         sortOrder: 0,
         attachments: []
       }]

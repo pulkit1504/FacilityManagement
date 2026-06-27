@@ -94,6 +94,10 @@ type AuditReceiptDetail = {
     vendorName: string | null;
     vendorInvoiceNumber: string | null;
     missingReceiptFlag: boolean;
+    auditReviewStatus: "Pending" | "Approved" | "Rejected";
+    auditApprovedAmount: number | null;
+    auditReviewRemarks: string | null;
+    auditReviewedAt: string | null;
     attachments: Array<{
       attachmentId: string;
       originalFileName: string;
@@ -101,6 +105,24 @@ type AuditReceiptDetail = {
       uploadedAt: string;
     }>;
   }>;
+};
+
+type AuditImprestRegisterItem = {
+  claimId: string;
+  ticketId: string;
+  claimKind: string;
+  status: string;
+  statusLabel: string;
+  submittedBy: string;
+  siteName: string | null;
+  totalAmount: number;
+  advanceAmount: number;
+  settledAmount: number;
+  advanceBalance: number;
+  advanceAdjustmentAmount: number;
+  finalPayableAmount: number;
+  updatedAt: string;
+  ageDays: number;
 };
 
 type PriorityFilter = "All" | "Critical" | "High" | "Medium";
@@ -124,6 +146,7 @@ export function FraudReview() {
   const [flags, setFlags] = useState<FraudFlagItem[]>([]);
   const [auditItems, setAuditItems] = useState<AuditClaimItem[]>([]);
   const [auditReceiptDetails, setAuditReceiptDetails] = useState<Record<string, AuditReceiptDetail>>({});
+  const [imprestRegister, setImprestRegister] = useState<AuditImprestRegisterItem[]>([]);
   const [expandedAuditClaimId, setExpandedAuditClaimId] = useState<string | null>(null);
   const [expandedFlagId, setExpandedFlagId] = useState<string | null>(null);
   const [workspaceClaimId, setWorkspaceClaimId] = useState<string | null>(null);
@@ -229,6 +252,7 @@ export function FraudReview() {
   const repeatCorrections = correctionFlags.filter((flag) => (flag.approvalTrail ?? []).filter((step) => step.decision === "Rejected").length > 1);
   const recordSearch = query.trim().toLowerCase();
   const filteredAuditItems = auditItems.filter((item) => matchesAuditQueueSearch(item, recordSearch));
+  const filteredImprestRegister = imprestRegister.filter((item) => matchesImprestRegisterSearch(item, recordSearch));
   const agingBuckets = [
     { label: "0-2 days", count: enrichedFlags.filter((flag) => flag.daysOpen <= 2).length, priority: "Normal" },
     { label: "3-7 days", count: enrichedFlags.filter((flag) => flag.daysOpen >= 3 && flag.daysOpen <= 7).length, priority: "Escalate if unowned" },
@@ -252,19 +276,24 @@ export function FraudReview() {
   async function load() {
     try {
       setIsLoading(true);
-      const [flagsResponse, queueResponse] = await Promise.all([
+      const [flagsResponse, queueResponse, imprestResponse] = await Promise.all([
         fetch("/api/v1/fraud/flags?status=Open", { cache: "no-store" }),
-        fetch("/api/v1/audit/queue", { cache: "no-store" })
+        fetch("/api/v1/audit/queue", { cache: "no-store" }),
+        fetch("/api/v1/audit/imprest-register", { cache: "no-store" })
       ]);
-      const [flagsData, queueData] = await Promise.all([flagsResponse.json(), queueResponse.json()]);
+      const [flagsData, queueData, imprestData] = await Promise.all([flagsResponse.json(), queueResponse.json(), imprestResponse.json()]);
       if (!flagsResponse.ok) {
         setMessage(getProblemMessage(flagsData, "Could not load fraud flags."));
         return;
       }
       setFlags(flagsData.flags ?? []);
       setAuditItems(queueResponse.ok ? queueData.items ?? [] : []);
+      setImprestRegister(imprestResponse.ok ? imprestData.items ?? [] : []);
       if (!queueResponse.ok) {
         setMessage(getProblemMessage(queueData, "Audit claim queue could not be loaded."));
+      }
+      if (!imprestResponse.ok) {
+        setMessage(getProblemMessage(imprestData, "Audit imprest register could not be loaded."));
       }
     } catch {
       setMessage("Could not load fraud flags. Check your connection and try again.");
@@ -351,6 +380,36 @@ export function FraudReview() {
       window.open(data.downloadUrl, "_blank", "noopener,noreferrer");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not open receipt.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function reviewAuditLine(
+    claimId: string,
+    lineItemId: string,
+    decision: "Approved" | "Rejected",
+    approvedAmount: number | null,
+    remarks?: string | null
+  ) {
+    setBusyAction(`audit-line:${lineItemId}`);
+    setMessage(`${decision === "Approved" ? "Approving" : "Rejecting"} audit line...`);
+    try {
+      const response = await fetch(`/api/v1/audit/claims/${claimId}/line-items/${lineItemId}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, approvedAmount, remarks })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getProblemMessage(data, "Audit line review failed."));
+      const refreshed = await fetch(`/api/v1/claims/${claimId}`, { cache: "no-store" });
+      const detail = await refreshed.json();
+      if (refreshed.ok) {
+        setAuditReceiptDetails((current) => ({ ...current, [claimId]: detail }));
+      }
+      setMessage(data.message ?? "Audit line review recorded.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Audit line review failed.");
     } finally {
       setBusyAction(null);
     }
@@ -561,9 +620,15 @@ export function FraudReview() {
                           {item.auditorVoucherReceivedAt ? `Received ${formatTimestamp(item.auditorVoucherReceivedAt)}` : "Mark vouchers received"}
                         </button>
                       ) : null}
-                      <button className="button" disabled={Boolean(busyAction) || (item.claimKind !== "Advance" && !item.auditorVoucherReceivedAt)} onClick={() => void auditClaim(item.claimId, "approve")} type="button">
+                      <button
+                        className="button"
+                        disabled={Boolean(busyAction) || (item.claimKind !== "Advance" && !item.auditorVoucherReceivedAt) || !auditLinesReady(auditReceiptDetails[item.claimId])}
+                        onClick={() => void auditClaim(item.claimId, "approve")}
+                        title={!auditReceiptDetails[item.claimId] ? "Open receipt evidence and approve each line before claim approval" : !auditLinesReady(auditReceiptDetails[item.claimId]) ? "Approve every line and enter the audit amount first" : "Approve claim"}
+                        type="button"
+                      >
                         {busyAction === `approve:${item.claimId}` ? <Loader2 size={16} /> : <CheckCircle2 size={16} />}
-                        Approve
+                        {!auditReceiptDetails[item.claimId] ? "Review lines first" : !auditLinesReady(auditReceiptDetails[item.claimId]) ? "Approve all lines" : "Approve"}
                       </button>
                       <button className="button secondary" disabled={Boolean(busyAction) || (item.claimKind !== "Advance" && !item.auditorVoucherReceivedAt)} onClick={() => void auditClaim(item.claimId, "request-information")} type="button">
                         {busyAction === `request-information:${item.claimId}` ? <Loader2 size={16} /> : <FileText size={16} />}
@@ -585,6 +650,8 @@ export function FraudReview() {
                         detail={auditReceiptDetails[item.claimId]}
                         isLoading={busyAction === `audit-receipts:${item.claimId}`}
                         onOpenReceipt={openAuditReceipt}
+                        onReviewLine={reviewAuditLine}
+                        busyAction={busyAction}
                       />
                     </td>
                   </tr>
@@ -600,6 +667,90 @@ export function FraudReview() {
                   <div className="table-empty-state">
                     <strong>{recordSearch ? "No audit receipt claims match this search" : "No voucher packs waiting for Audit"}</strong>
                     <span>{recordSearch ? "Try searching by ticket, claimant, site, amount, urgency, or claim type." : "Finance has not sent any receipt-confirmed packs for Auditor decision."}</span>
+                  </div>
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </section>
+
+      <section aria-label="Audit imprest register" className="panel">
+        <div className="section-heading">
+          <div>
+            <h2>Imprest Register</h2>
+            <p className="muted">All advances and claims in the system with their latest status, exposure, and settlement position.</p>
+          </div>
+          <div className="actions">
+            {recordSearch ? <span className="badge success">Search: {recordSearch}</span> : null}
+            <span className="badge">{filteredImprestRegister.length} records</span>
+          </div>
+        </div>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Record</th>
+              <th>Claimant / site</th>
+              <th>Status</th>
+              <th>Exposure</th>
+              <th>Settlement</th>
+              <th>Last activity</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredImprestRegister.slice(0, 25).map((item) => (
+              <tr key={item.claimId}>
+                <td>
+                  <strong>{item.ticketId}</strong>
+                  <br />
+                  <span className="muted">{item.claimKind}</span>
+                </td>
+                <td>
+                  {item.submittedBy}
+                  <br />
+                  <span className="muted">{item.siteName ?? "No site linked"}</span>
+                </td>
+                <td>
+                  <span className={`badge ${item.status === "PaymentReleased" ? "success" : item.status === "Rejected" ? "danger" : "warning"}`}>
+                    {item.statusLabel}
+                  </span>
+                </td>
+                <td>
+                  <strong>{formatCurrency(item.claimKind === "Advance" ? item.advanceAmount : item.finalPayableAmount)}</strong>
+                  <br />
+                  <span className="muted">Claim total {formatCurrency(item.totalAmount)}</span>
+                </td>
+                <td>
+                  {item.claimKind === "Advance" ? (
+                    <>
+                      <strong>{formatCurrency(item.advanceBalance)}</strong>
+                      <br />
+                      <span className="muted">Settled {formatCurrency(item.settledAmount)}</span>
+                    </>
+                  ) : (
+                    <>
+                      <strong>{formatCurrency(item.advanceAdjustmentAmount)}</strong>
+                      <br />
+                      <span className="muted">Advance adjusted</span>
+                    </>
+                  )}
+                </td>
+                <td>
+                  <SlaChip days={item.ageDays} />
+                  <br />
+                  <span className="muted">{formatTimestamp(item.updatedAt)}</span>
+                </td>
+              </tr>
+            ))}
+            {isLoading ? (
+              <tr><td colSpan={6}><span className="loading-inline"><Loader2 size={16} />Loading imprest register...</span></td></tr>
+            ) : null}
+            {!isLoading && filteredImprestRegister.length === 0 ? (
+              <tr>
+                <td colSpan={6}>
+                  <div className="table-empty-state">
+                    <strong>{recordSearch ? "No imprest records match this search" : "No imprest records yet"}</strong>
+                    <span>{recordSearch ? "Try searching by ticket, claimant, site, status, type, or amount." : "Advances and submitted claims will appear here for auditor oversight."}</span>
                   </div>
                 </td>
               </tr>
@@ -937,13 +1088,19 @@ function AuditReceiptPanel({
   claimId,
   detail,
   isLoading,
-  onOpenReceipt
+  onOpenReceipt,
+  onReviewLine,
+  busyAction
 }: {
   claimId: string;
   detail: AuditReceiptDetail | undefined;
   isLoading: boolean;
   onOpenReceipt: (claimId: string, lineItemId: string, attachmentId: string) => Promise<void>;
+  onReviewLine: (claimId: string, lineItemId: string, decision: "Approved" | "Rejected", approvedAmount: number | null, remarks?: string | null) => Promise<void>;
+  busyAction: string | null;
 }) {
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+
   if (isLoading || !detail) {
     return <span className="loading-inline"><Loader2 size={16} />Loading receipt evidence...</span>;
   }
@@ -958,15 +1115,62 @@ function AuditReceiptPanel({
             <p className="muted">
               {expenseTagLabel(line.expenseTag)} | {line.vendorName ?? "No vendor"} | {invoiceReferenceLabel(line.clientInvoiceNumber, line.vendorInvoiceNumber)}
             </p>
+            {line.auditReviewRemarks ? <p className="muted">Audit note: {line.auditReviewRemarks}</p> : null}
           </div>
           <div>
             <strong>{formatCurrency(line.amount)}</strong>
             <p className="muted">{line.attachments.length} receipt attachment(s)</p>
+            <span className={`badge ${line.auditReviewStatus === "Approved" ? "success" : line.auditReviewStatus === "Rejected" ? "danger" : "warning"}`}>
+              {line.auditReviewStatus === "Approved" && line.auditApprovedAmount !== null ? `Approved ${formatCurrency(line.auditApprovedAmount)}` : line.auditReviewStatus}
+            </span>
           </div>
+          <label style={{ minWidth: 180 }}>
+            <span className="muted">Audit approved amount</span>
+            <input
+              aria-label={`Audit approved amount for ${line.description}`}
+              disabled={line.auditReviewStatus === "Approved" || Boolean(busyAction)}
+              inputMode="decimal"
+              min={0}
+              max={line.amount}
+              onChange={(event) => setAmounts((current) => ({ ...current, [line.lineItemId]: event.target.value }))}
+              placeholder={String(line.amount)}
+              type="number"
+              value={amounts[line.lineItemId] ?? (line.auditApprovedAmount === null ? "" : String(line.auditApprovedAmount))}
+            />
+          </label>
           <div className="actions">
             <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
               {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
             </span>
+            <button
+              className={line.auditReviewStatus === "Approved" ? "button accepted" : "button secondary"}
+              disabled={Boolean(busyAction) || line.auditReviewStatus === "Approved"}
+              onClick={() => {
+                const rawAmount = amounts[line.lineItemId] ?? String(line.auditApprovedAmount ?? line.amount);
+                const approvedAmount = Number(rawAmount);
+                if (!Number.isFinite(approvedAmount) || approvedAmount < 0 || approvedAmount > line.amount) {
+                  window.alert("Enter an audit approved amount between 0 and the line amount.");
+                  return;
+                }
+                void onReviewLine(claimId, line.lineItemId, "Approved", approvedAmount, "Audit line amount approved.");
+              }}
+              type="button"
+            >
+              {busyAction === `audit-line:${line.lineItemId}` ? <Loader2 size={16} /> : line.auditReviewStatus === "Approved" ? <ClipboardCheck size={16} /> : <CheckCircle2 size={16} />}
+              {line.auditReviewStatus === "Approved" ? "Approved" : "Approve line"}
+            </button>
+            <button
+              className="button secondary"
+              disabled={Boolean(busyAction)}
+              onClick={() => {
+                const remarks = window.prompt("Reject line - enter audit remarks");
+                if (!remarks) return;
+                void onReviewLine(claimId, line.lineItemId, "Rejected", null, remarks);
+              }}
+              type="button"
+            >
+              Reject line
+            </button>
             {line.attachments.map((attachment) => (
               <button className="button secondary" key={attachment.attachmentId} onClick={() => void onOpenReceipt(claimId, line.lineItemId, attachment.attachmentId)} type="button">
                 <Download size={16} />
@@ -1049,6 +1253,29 @@ function matchesAuditQueueSearch(item: AuditClaimItem, query: string) {
   ]
     .filter((value): value is string => Boolean(value))
     .some((value) => value.toLowerCase().includes(query));
+}
+
+function matchesImprestRegisterSearch(item: AuditImprestRegisterItem, query: string) {
+  if (!query) return true;
+  return [
+    item.claimId,
+    item.ticketId,
+    item.claimKind,
+    item.status,
+    item.statusLabel,
+    item.submittedBy,
+    item.siteName,
+    String(item.totalAmount),
+    String(item.advanceAmount),
+    String(item.advanceBalance),
+    String(item.finalPayableAmount)
+  ]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => value.toLowerCase().includes(query));
+}
+
+function auditLinesReady(detail: AuditReceiptDetail | undefined) {
+  return Boolean(detail?.lineItems.length) && detail!.lineItems.every((line) => line.auditReviewStatus === "Approved" && line.auditApprovedAmount !== null);
 }
 
 function enrichFlag(flag: FraudFlagItem) {

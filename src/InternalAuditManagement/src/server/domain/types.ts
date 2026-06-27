@@ -53,6 +53,8 @@ export const auditActionTypes = [
   "FINANCE_LINE_REJECT",
   "PHYSICAL_RECEIPT_CONFIRM",
   "AUDITOR_VOUCHERS_RECEIVED",
+  "AUDIT_LINE_APPROVE",
+  "AUDIT_LINE_REJECT",
   "AUDIT_APPROVE",
   "AUDIT_REJECT",
   "AUDIT_INFO_REQUEST",
@@ -173,6 +175,11 @@ export type ExpenseLineItem = {
   invoiceValidationStatus: "Valid" | "Invalid" | "NotApplicable" | "PendingErpValidation";
   financeReviewStatus: "Pending" | "Accepted" | "Rejected";
   financeReviewRemarks: string | null;
+  auditReviewStatus: "Pending" | "Approved" | "Rejected";
+  auditApprovedAmount: number | null;
+  auditReviewRemarks: string | null;
+  auditReviewedBy: string | null;
+  auditReviewedAt: string | null;
   billingAlertCreated: boolean;
   siteId: string | null;
   missingReceiptFlag: boolean;
@@ -346,6 +353,24 @@ export type AuditQueueItem = FinanceQueueItem & {
   receiptConfirmedAt: string | null;
   auditorVoucherReceivedAt: string | null;
   auditDecisionRequired: boolean;
+};
+
+export type AuditImprestRegisterItem = {
+  claimId: string;
+  ticketId: string;
+  claimKind: ClaimKind;
+  status: ClaimStatus;
+  statusLabel: string;
+  submittedBy: string;
+  siteName: string | null;
+  totalAmount: number;
+  advanceAmount: number;
+  settledAmount: number;
+  advanceBalance: number;
+  advanceAdjustmentAmount: number;
+  finalPayableAmount: number;
+  updatedAt: string;
+  ageDays: number;
 };
 
 export type OverviewMetrics = {

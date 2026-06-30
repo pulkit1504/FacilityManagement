@@ -557,6 +557,12 @@ export class ClaimService {
       }
     };
 
+    if (submitter.isHod && claim.claimKind !== "Advance") {
+      const md = await this.claims.findManagingDirector();
+      if (md) addStep("MD", md);
+      return steps;
+    }
+
     const sites = await this.claims.listActiveSites();
     const site = claim.siteId ? sites.find((item) => item.siteId === claim.siteId) : null;
     if (site?.clusterHeadEmployeeId) {

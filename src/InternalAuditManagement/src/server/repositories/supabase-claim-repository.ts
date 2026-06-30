@@ -306,6 +306,10 @@ function normalizeVendorName(value: string | null | undefined) {
   return (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function normalizeEmailForLookup(value: string) {
+  return value.trim().toLowerCase();
+}
+
 function mapContract(row: Record<string, unknown>): ClientContract {
   return {
     contractId: String(row.contract_id),
@@ -1178,7 +1182,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const { data, error } = await db
       .from("employees")
       .select("*")
-      .eq("email", email.toLowerCase())
+      .ilike("email", normalizeEmailForLookup(email))
       .eq("is_active", true)
       .maybeSingle();
 
@@ -1191,7 +1195,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
     const { data, error } = await db
       .from("employees")
       .select("*")
-      .eq("email", email.toLowerCase())
+      .ilike("email", normalizeEmailForLookup(email))
       .eq("is_active", true)
       .maybeSingle();
 

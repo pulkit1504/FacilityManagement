@@ -1156,6 +1156,7 @@ function auditActionLabel(actionType: string) {
     FINANCE_CONFIRM: "Finance confirmed",
     FINANCE_LINE_ACCEPT: "Finance accepted line",
     FINANCE_LINE_REJECT: "Finance rejected line",
+    EXPENSE_HEAD_CORRECTED: "Expense head corrected",
     PHYSICAL_RECEIPT_CONFIRM: "Physical receipts confirmed",
     AUDITOR_VOUCHERS_RECEIVED: "Auditor received vouchers",
     AUDIT_APPROVE: "Audit approved",

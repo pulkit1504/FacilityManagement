@@ -264,6 +264,27 @@ describe("Auditor receipt workflow", () => {
     }));
   });
 
+  it("lets Audit correct a line expense head while reviewing evidence", async () => {
+    const claim = auditPendingClaim();
+    const updatedLine = { ...claim.lineItems[0], expenseHead: "Repairs and Maintenance" };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog]),
+      updateLineItemExpenseHead: vi.fn().mockResolvedValue(updatedLine),
+      appendAuditLog: vi.fn()
+    } as unknown as ClaimRepository;
+
+    const result = await new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService)
+      .correctLineItemExpenseHead("claim-1", "line-1", { expenseHead: "Repairs and Maintenance" }, auditor);
+
+    expect(result.lineItem.expenseHead).toBe("Repairs and Maintenance");
+    expect(claims.updateLineItemExpenseHead).toHaveBeenCalledWith("claim-1", "line-1", "Repairs and Maintenance");
+    expect(claims.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: "EXPENSE_HEAD_CORRECTED",
+      auditRemarks: expect.stringContaining("Audit corrected expense head")
+    }));
+  });
+
   it("blocks claim audit approval until every line has an audit amount", async () => {
     const claim = auditPendingClaim();
     claim.lineItems[0] = {

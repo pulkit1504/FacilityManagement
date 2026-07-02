@@ -181,6 +181,26 @@ describe("Finance payment release", () => {
     expect(claims.createAuditorApprovalStep).not.toHaveBeenCalled();
   });
 
+  it("lets Finance correct a line expense head after operational approval", async () => {
+    const claim = approvedReimbursementClaim();
+    const updatedLine = { ...claim.lineItems[0], expenseHead: "Repairs and Maintenance" };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      updateLineItemExpenseHead: vi.fn().mockResolvedValue(updatedLine),
+      appendAuditLog: vi.fn()
+    } as unknown as ClaimRepository;
+
+    const result = await new FinanceService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService)
+      .correctLineItemExpenseHead(claim.claimId, "line-1", { expenseHead: "Repairs and Maintenance" }, financeUser);
+
+    expect(result.lineItem.expenseHead).toBe("Repairs and Maintenance");
+    expect(claims.updateLineItemExpenseHead).toHaveBeenCalledWith(claim.claimId, "line-1", "Repairs and Maintenance");
+    expect(claims.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: "EXPENSE_HEAD_CORRECTED",
+      auditRemarks: expect.stringContaining("Accounts corrected expense head")
+    }));
+  });
+
   it("requires Auditor approval before releasing reimbursement payment", async () => {
     const claim = approvedReimbursementClaim();
     claim.status = "FinanceConfirmed";

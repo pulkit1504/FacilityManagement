@@ -152,6 +152,10 @@ export const financeLineReviewSchema = z.object({
   }
 });
 
+export const lineExpenseHeadCorrectionSchema = z.object({
+  expenseHead: z.string().trim().min(1, "Expense head is required.").max(120)
+});
+
 export const auditLineReviewSchema = z.object({
   decision: z.enum(["Approved", "Rejected"]),
   approvedAmount: z.coerce.number().nonnegative().nullable().optional(),
@@ -290,6 +294,7 @@ export const updateBankDetailsSchema = z.object({
 export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
 export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
 export type FinanceLineReviewInput = z.infer<typeof financeLineReviewSchema>;
+export type LineExpenseHeadCorrectionInput = z.infer<typeof lineExpenseHeadCorrectionSchema>;
 export type AuditLineReviewInput = z.infer<typeof auditLineReviewSchema>;
 export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptSchema>;
 export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;

@@ -87,6 +87,7 @@ type AuditReceiptDetail = {
   ticketId: string;
   lineItems: Array<{
     lineItemId: string;
+    expenseHead: string | null;
     description: string;
     amount: number;
     expenseTag: string;
@@ -415,6 +416,39 @@ export function FraudReview() {
     }
   }
 
+  async function correctAuditExpenseHead(claimId: string, lineItemId: string, currentExpenseHead: string | null) {
+    const expenseHead = window.prompt("Correct expense head", currentExpenseHead ?? "");
+    if (!expenseHead) return;
+
+    setBusyAction(`audit-expense-head:${lineItemId}`);
+    setMessage("Correcting expense head...");
+    try {
+      const response = await fetch(`/api/v1/audit/claims/${claimId}/line-items/${lineItemId}/expense-head`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expenseHead })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getProblemMessage(data, "Expense head correction failed."));
+      setAuditReceiptDetails((current) => ({
+        ...current,
+        [claimId]: {
+          ...current[claimId],
+          lineItems: (current[claimId]?.lineItems ?? []).map((line) =>
+            line.lineItemId === lineItemId
+              ? { ...line, expenseHead: data.lineItem.expenseHead }
+              : line
+          )
+        }
+      }));
+      setMessage(data.message ?? "Expense head corrected.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Expense head correction failed.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   useEffect(() => {
     void load();
   }, []);
@@ -651,6 +685,7 @@ export function FraudReview() {
                         isLoading={busyAction === `audit-receipts:${item.claimId}`}
                         onOpenReceipt={openAuditReceipt}
                         onReviewLine={reviewAuditLine}
+                        onCorrectExpenseHead={correctAuditExpenseHead}
                         busyAction={busyAction}
                       />
                     </td>
@@ -1090,6 +1125,7 @@ function AuditReceiptPanel({
   isLoading,
   onOpenReceipt,
   onReviewLine,
+  onCorrectExpenseHead,
   busyAction
 }: {
   claimId: string;
@@ -1097,6 +1133,7 @@ function AuditReceiptPanel({
   isLoading: boolean;
   onOpenReceipt: (claimId: string, lineItemId: string, attachmentId: string) => Promise<void>;
   onReviewLine: (claimId: string, lineItemId: string, decision: "Approved" | "Rejected", approvedAmount: number | null, remarks?: string | null) => Promise<void>;
+  onCorrectExpenseHead: (claimId: string, lineItemId: string, currentExpenseHead: string | null) => Promise<void>;
   busyAction: string | null;
 }) {
   const [amounts, setAmounts] = useState<Record<string, string>>({});
@@ -1115,6 +1152,7 @@ function AuditReceiptPanel({
             <p className="muted">
               {expenseTagLabel(line.expenseTag)} | {line.vendorName ?? "No vendor"} | {invoiceReferenceLabel(line.clientInvoiceNumber, line.vendorInvoiceNumber)}
             </p>
+            <p className="muted">Expense head: {line.expenseHead ?? "Not set"}</p>
             {line.auditReviewRemarks ? <p className="muted">Audit note: {line.auditReviewRemarks}</p> : null}
           </div>
           <div>
@@ -1158,6 +1196,15 @@ function AuditReceiptPanel({
             >
               {busyAction === `audit-line:${line.lineItemId}` ? <Loader2 size={16} /> : line.auditReviewStatus === "Approved" ? <ClipboardCheck size={16} /> : <CheckCircle2 size={16} />}
               {line.auditReviewStatus === "Approved" ? "Approved" : "Approve line"}
+            </button>
+            <button
+              className="button secondary"
+              disabled={Boolean(busyAction)}
+              onClick={() => void onCorrectExpenseHead(claimId, line.lineItemId, line.expenseHead)}
+              type="button"
+            >
+              {busyAction === `audit-expense-head:${line.lineItemId}` ? <Loader2 size={16} /> : null}
+              Correct head
             </button>
             <button
               className="button secondary"

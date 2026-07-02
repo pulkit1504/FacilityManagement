@@ -52,6 +52,7 @@ type ClaimReceiptDetail = {
   ticketId: string;
   lineItems: Array<{
     lineItemId: string;
+    expenseHead: string | null;
     description: string;
     amount: number;
     missingReceiptFlag: boolean;
@@ -281,6 +282,39 @@ export function FinanceQueue() {
       const errorMessage = error instanceof Error ? error.message : "Line review failed.";
       if (lineDecision === "Rejected") setDecisionError(errorMessage);
       else setMessage(errorMessage);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function correctExpenseHead(claimId: string, lineItemId: string, currentExpenseHead: string | null) {
+    const expenseHead = window.prompt("Correct expense head", currentExpenseHead ?? "");
+    if (!expenseHead) return;
+
+    setBusyAction(`expense-head:${lineItemId}`);
+    setMessage("Correcting expense head...");
+    try {
+      const response = await fetch(`/api/v1/finance/${claimId}/line-items/${lineItemId}/expense-head`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expenseHead })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getProblemMessage(data, "Expense head correction failed."));
+      setClaimDetails((current) => ({
+        ...current,
+        [claimId]: {
+          ...current[claimId],
+          lineItems: (current[claimId]?.lineItems ?? []).map((line) =>
+            line.lineItemId === lineItemId
+              ? { ...line, expenseHead: data.lineItem.expenseHead }
+              : line
+          )
+        }
+      }));
+      setMessage(data.message ?? "Expense head corrected.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Expense head correction failed.");
     } finally {
       setBusyAction(null);
     }
@@ -567,6 +601,8 @@ export function FinanceQueue() {
                             <strong>{line.description}</strong>
                             <br />
                             <span className="muted">Rs {line.amount.toLocaleString("en-IN")}</span>
+                            <br />
+                            <span className="muted">Expense head: {line.expenseHead ?? "Not set"}</span>
                           </div>
                           <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
                             {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
@@ -583,6 +619,10 @@ export function FinanceQueue() {
                             >
                               {line.financeReviewStatus === "Accepted" ? <ClipboardCheck size={16} /> : null}
                               {line.financeReviewStatus === "Accepted" ? "Accepted" : "Accept"}
+                            </button>
+                            <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void correctExpenseHead(item.claimId, line.lineItemId, line.expenseHead)} type="button">
+                              {busyAction === `expense-head:${line.lineItemId}` ? <Loader2 size={16} /> : null}
+                              Correct head
                             </button>
                             <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => openDecision({ kind: "reject-line", claimId: item.claimId, lineItemId: line.lineItemId, title: line.description })} type="button">
                               Reject

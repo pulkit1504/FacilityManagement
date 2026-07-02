@@ -1,7 +1,7 @@
 import { conflict, forbidden, notFound } from "../errors/application-error";
 import { statusLabel, type ClaimDetail, type UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
-import type { AuditClaimDecisionInput, AuditLineReviewInput } from "../validation/claim.schemas";
+import type { AuditClaimDecisionInput, AuditLineReviewInput, LineExpenseHeadCorrectionInput } from "../validation/claim.schemas";
 import type { NotificationService } from "./notification-service";
 
 export class AuditService {
@@ -134,6 +134,36 @@ export class AuditService {
     return {
       lineItem: updated,
       message: input.decision === "Approved" ? "Audit line approval recorded." : "Audit line rejection recorded."
+    };
+  }
+
+  async correctLineItemExpenseHead(claimId: string, lineItemId: string, input: LineExpenseHeadCorrectionInput, user: UserContext) {
+    const claim = await this.loadAuditClaim(claimId, user);
+    const lineItem = claim.lineItems.find((item) => item.lineItemId === lineItemId);
+    if (!lineItem) throw notFound("Line item was not found for this claim.");
+
+    const nextExpenseHead = input.expenseHead.trim();
+    if (lineItem.expenseHead === nextExpenseHead) {
+      return {
+        lineItem,
+        message: "Expense head is already set to this value."
+      };
+    }
+
+    const updated = await this.claims.updateLineItemExpenseHead(claimId, lineItemId, nextExpenseHead);
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: "EXPENSE_HEAD_CORRECTED",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks: `Audit corrected expense head for line item ${lineItemId}: ${lineItem.expenseHead ?? "Not set"} -> ${updated.expenseHead ?? "Not set"}.`,
+      correlationId: user.correlationId
+    });
+
+    return {
+      lineItem: updated,
+      message: "Expense head corrected."
     };
   }
 

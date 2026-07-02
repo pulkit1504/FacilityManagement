@@ -1,7 +1,7 @@
 import { conflict, forbidden, notFound } from "../errors/application-error";
 import { statusLabel, type OperatingCompany, type UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
-import type { ConfirmPhysicalReceiptInput, FinanceLineReviewInput } from "../validation/claim.schemas";
+import type { ConfirmPhysicalReceiptInput, FinanceLineReviewInput, LineExpenseHeadCorrectionInput } from "../validation/claim.schemas";
 import type { NotificationService } from "./notification-service";
 
 export class FinanceService {
@@ -231,6 +231,44 @@ export class FinanceService {
       financeReviewStatus: updated.financeReviewStatus,
       financeReviewRemarks: updated.financeReviewRemarks,
       message: input.decision === "Accepted" ? "Line item accepted." : "Line item rejected. Return the claim to claimant for correction."
+    };
+  }
+
+  async correctLineItemExpenseHead(claimId: string, lineItemId: string, input: LineExpenseHeadCorrectionInput, user: UserContext) {
+    this.assertFinance(user);
+
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) throw notFound("Claim was not found.");
+
+    if (!["HodApproved", "MdApproved", "FinanceConfirmed"].includes(claim.status)) {
+      throw conflict("Expense head can be corrected by Accounts only after operational approval.");
+    }
+
+    const lineItem = claim.lineItems.find((item) => item.lineItemId === lineItemId);
+    if (!lineItem) throw notFound("Line item was not found on this claim.");
+
+    const nextExpenseHead = input.expenseHead.trim();
+    if (lineItem.expenseHead === nextExpenseHead) {
+      return {
+        lineItem,
+        message: "Expense head is already set to this value."
+      };
+    }
+
+    const updated = await this.claims.updateLineItemExpenseHead(claimId, lineItemId, nextExpenseHead);
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: "EXPENSE_HEAD_CORRECTED",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks: `Accounts corrected expense head for line item ${lineItemId}: ${lineItem.expenseHead ?? "Not set"} -> ${updated.expenseHead ?? "Not set"}.`,
+      correlationId: user.correlationId
+    });
+
+    return {
+      lineItem: updated,
+      message: "Expense head corrected."
     };
   }
 

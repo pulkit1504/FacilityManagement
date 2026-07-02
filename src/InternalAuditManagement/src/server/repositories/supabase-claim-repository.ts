@@ -931,6 +931,21 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return mapLineItem(data);
   }
 
+  async updateLineItemExpenseHead(claimId: string, lineItemId: string, expenseHead: string): Promise<ExpenseLineItem> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_line_items")
+      .update({ expense_head: expenseHead.trim() })
+      .eq("claim_id", claimId)
+      .eq("line_item_id", lineItemId)
+      .eq("is_deleted", false)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return mapLineItem(data);
+  }
+
   async reviewAuditLineItem(
     claimId: string,
     lineItemId: string,

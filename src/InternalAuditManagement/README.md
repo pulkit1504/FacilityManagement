@@ -36,7 +36,7 @@ The Playwright suite runs Claimant, Approver, Finance, and Admin journeys on des
 
 ## Secrets
 
-Production secrets should live in Azure Key Vault. Set `AZURE_KEY_VAULT_URL` and grant the running app identity `Key Vault Secrets User` access.
+Production secrets should live in Azure Key Vault. Set `AZURE_KEY_VAULT_URL` and grant the running app identity `Key Vault Secrets User` access. The current Azure subscription for the shared Key Vault and Blob Storage resources is `4e10764a-d524-4492-bb90-94038585336e`; runtime access is still controlled by the vault URL, service-principal credential, and RBAC assignment.
 
 Expected Key Vault secret names:
 

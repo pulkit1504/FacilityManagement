@@ -734,6 +734,27 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return mapLineItem(data);
   }
 
+  async updateFinanceLineItem(claimId: string, lineItemId: string, expenseHead: string, amount: number): Promise<ExpenseLineItem> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db
+      .from("expense_line_items")
+      .update({
+        expense_head: expenseHead.trim(),
+        amount,
+        finance_review_status: "Pending",
+        finance_review_remarks: null
+      })
+      .eq("claim_id", claimId)
+      .eq("line_item_id", lineItemId)
+      .eq("is_deleted", false)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    await this.updateClaimTotal(claimId);
+    return mapLineItem(data);
+  }
+
   async invoiceReferenceExists(
     invoiceNumber: string,
     options: {
@@ -1479,6 +1500,8 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .update({
         status: "Draft",
         rejection_reason: null,
+        physical_receipt_confirmed_at: null,
+        physical_receipt_confirmed_by: null,
         updated_at: new Date().toISOString()
       })
       .eq("claim_id", claimId)

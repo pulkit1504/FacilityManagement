@@ -3,6 +3,7 @@ import { statusLabel, type UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { NotificationService } from "./notification-service";
 import type { ApproveClaimInput, RejectClaimInput } from "../validation/claim.schemas";
+import { claimNotificationBody } from "./claim-notification-details";
 
 export class ApprovalService {
   constructor(
@@ -26,6 +27,8 @@ export class ApprovalService {
   async approveClaim(claimId: string, input: ApproveClaimInput, user: UserContext) {
     const claim = await this.claims.getClaimDetail(claimId);
     if (!claim) throw notFound("Claim was not found.");
+    const [submitter, sites] = await Promise.all([this.claims.getEmployee(claim.submitterEmployeeId), this.claims.listActiveSites()]);
+    const details = (intro: string) => claimNotificationBody(claim, submitter?.fullName ?? claim.submitterEmployeeId, sites.find((site) => site.siteId === claim.siteId)?.siteName ?? null, intro);
 
     const step = claim.approvalSteps.find((item) => item.decision === "Pending");
     if (!step) throw conflict("This claim has no pending approval step.");
@@ -74,7 +77,7 @@ export class ApprovalService {
             recipientEmployeeId: nextApprover.employeeId,
             recipientEmail: nextApprover.email,
             subject: `Claim ${claim.ticketId} is pending your approval`,
-            body: `Claim ${claim.ticketId} for Rs ${claim.totalAmount.toLocaleString("en-IN")} has been routed to you.${nextOperationalStep.lineItemId ? " The MD approval is limited to a cash line item above Rs 10,000." : ""}`,
+            body: details(`Claim ${claim.ticketId} has been routed to you.${nextOperationalStep.lineItemId ? " The MD approval is limited to a cash line item above Rs 10,000." : ""}`),
             relatedClaimId: claimId
           });
         }
@@ -115,7 +118,7 @@ export class ApprovalService {
           recipientEmployeeId: employee.employeeId,
           recipientEmail: employee.email,
           subject: `Claim ${claim.ticketId} is ready for Finance review`,
-          body: `Claim ${claim.ticketId} has completed operational approval and is ready for Finance receipt confirmation.`,
+          body: details(`Claim ${claim.ticketId} has completed operational approval and is ready for Finance receipt confirmation.`),
           relatedClaimId: claimId
         })
       )

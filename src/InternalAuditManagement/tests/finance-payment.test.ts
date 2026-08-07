@@ -127,6 +127,23 @@ function repository(bankReady: boolean) {
 }
 
 describe("Finance payment release", () => {
+  it("allows Finance to update expense head and amount and resets line review", async () => {
+    const claim = approvedReimbursementClaim();
+    const updatedLine = { ...claim.lineItems[0], expenseHead: "Travel", amount: 1750, financeReviewStatus: "Pending" as const };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      updateFinanceLineItem: vi.fn().mockResolvedValue(updatedLine),
+      appendAuditLog: vi.fn()
+    } as unknown as ClaimRepository;
+
+    const result = await new FinanceService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService)
+      .updateLineItem(claim.claimId, claim.lineItems[0].lineItemId, { expenseHead: "Travel", amount: 1750 }, financeUser);
+
+    expect(claims.updateFinanceLineItem).toHaveBeenCalledWith(claim.claimId, claim.lineItems[0].lineItemId, "Travel", 1750);
+    expect(result.financeReviewStatus).toBe("Pending");
+    expect(claims.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({ actionType: "FINANCE_LINE_UPDATE" }));
+  });
+
   it("routes confirmed physical receipts to Auditor before payment release", async () => {
     const claim = approvedReimbursementClaim();
     const claims = {
@@ -137,6 +154,8 @@ describe("Finance payment release", () => {
       submitClaim: vi.fn().mockResolvedValue({ ...claim, status: "AuditPending" }),
       createAuditorApprovalStep: vi.fn(),
       appendAuditLog: vi.fn(),
+      getEmployee: vi.fn().mockResolvedValue(employee(true)),
+      listActiveSites: vi.fn().mockResolvedValue([]),
       listEmployees: vi.fn().mockResolvedValue([auditorEmployee()])
     } as unknown as ClaimRepository;
     const notification = { enqueueAndSend: vi.fn().mockResolvedValue({ status: "Sent" }) } as unknown as NotificationService;

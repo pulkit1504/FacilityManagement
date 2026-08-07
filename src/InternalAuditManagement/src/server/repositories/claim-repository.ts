@@ -93,6 +93,7 @@ export interface ClaimRepository {
   addLineItem(claimId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
   updateLineItem(claimId: string, lineItemId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
   reviewLineItem(claimId: string, lineItemId: string, decision: "Accepted" | "Rejected", remarks?: string | null): Promise<ExpenseLineItem>;
+  updateFinanceLineItem(claimId: string, lineItemId: string, expenseHead: string, amount: number): Promise<ExpenseLineItem>;
   deleteLineItem(claimId: string, lineItemId: string): Promise<void>;
   invoiceReferenceExists(
     invoiceNumber: string,

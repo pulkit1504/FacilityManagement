@@ -231,7 +231,6 @@ create index if not exists ix_audit_log_timestamp on audit_log(action_timestamp 
 create index if not exists ix_billing_alerts_next_send on billing_alerts(next_send_at) where is_resolved = false;
 create index if not exists ix_line_items_date_amount on expense_line_items(transaction_date, amount) where is_deleted = false;
 create index if not exists ix_line_items_finance_review on expense_line_items(finance_review_status) where is_deleted = false;
-create unique index if not exists ux_line_items_client_invoice_number on expense_line_items(lower(client_invoice_number)) where client_invoice_number is not null and is_deleted = false;
 create index if not exists ix_employees_manager on employees(direct_manager_id) where is_active = true;
 create index if not exists ix_employees_imprest_limit on employees(imprest_advance_limit) where is_active = true and imprest_advance_limit > 0;
 create index if not exists ix_sites_cluster_head on sites(cluster_head_employee_id) where is_active = true;

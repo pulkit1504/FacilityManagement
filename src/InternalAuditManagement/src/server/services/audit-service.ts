@@ -22,9 +22,7 @@ export class AuditService {
   async receiveVouchers(claimId: string, user: UserContext) {
     const claim = await this.loadAuditClaim(claimId, user, false);
     const auditEntries = await this.claims.listAuditLogForClaim(claimId);
-    const existingReceipt = auditEntries
-      .filter((entry) => entry.actionType === "AUDITOR_VOUCHERS_RECEIVED")
-      .at(-1);
+    const existingReceipt = currentCycleVoucherReceipt(auditEntries);
 
     if (existingReceipt) {
       return {
@@ -146,7 +144,7 @@ export class AuditService {
     }
     if (requireVoucherReceipt && claim.claimKind !== "Advance") {
       const auditEntries = await this.claims.listAuditLogForClaim(claimId);
-      if (!auditEntries.some((entry) => entry.actionType === "AUDITOR_VOUCHERS_RECEIVED")) {
+      if (!currentCycleVoucherReceipt(auditEntries)) {
         throw conflict("Auditor must mark the voucher pack as received before making an audit decision.");
       }
     }
@@ -205,4 +203,12 @@ export class AuditService {
       throw forbidden("Only Auditor or MD can perform audit review.");
     }
   }
+}
+
+function currentCycleVoucherReceipt(entries: Awaited<ReturnType<ClaimRepository["listAuditLogForClaim"]>>) {
+  let lastReturnIndex = -1;
+  entries.forEach((entry, index) => {
+    if (entry.actionType === "AUDIT_INFO_REQUEST" || entry.actionType === "AUDIT_REJECT") lastReturnIndex = index;
+  });
+  return entries.slice(lastReturnIndex + 1).filter((entry) => entry.actionType === "AUDITOR_VOUCHERS_RECEIVED").at(-1);
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Banknote, ClipboardCheck, Download, Eye, Loader2, X } from "lucide-react";
+import { AlertTriangle, Banknote, Check, ClipboardCheck, Download, Eye, Loader2, Pencil, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
@@ -42,6 +42,7 @@ type ClaimReceiptDetail = {
   ticketId: string;
   lineItems: Array<{
     lineItemId: string;
+    expenseHead: string | null;
     description: string;
     amount: number;
     missingReceiptFlag: boolean;
@@ -72,6 +73,7 @@ export function FinanceQueue() {
   const [decision, setDecision] = useState<FinanceDecision | null>(null);
   const [decisionRemarks, setDecisionRemarks] = useState("");
   const [decisionError, setDecisionError] = useState("");
+  const [editingLine, setEditingLine] = useState<{ claimId: string; lineItemId: string; expenseHead: string; amount: string } | null>(null);
   const decisionDialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
@@ -341,6 +343,43 @@ export function FinanceQueue() {
     );
   }
 
+  async function saveLineChanges() {
+    if (!editingLine) return;
+    const amount = Number(editingLine.amount);
+    if (!editingLine.expenseHead.trim() || !Number.isFinite(amount) || amount <= 0) {
+      setMessage("Enter an expense head and an amount greater than zero.");
+      return;
+    }
+    setBusyAction(`edit:${editingLine.lineItemId}`);
+    try {
+      const response = await fetch(`/api/v1/finance/${editingLine.claimId}/line-items/${editingLine.lineItemId}/review`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expenseHead: editingLine.expenseHead, amount })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getProblemMessage(data, "Could not update the line item."));
+      setClaimDetails((current) => ({
+        ...current,
+        [editingLine.claimId]: {
+          ...current[editingLine.claimId],
+          lineItems: (current[editingLine.claimId]?.lineItems ?? []).map((line) =>
+            line.lineItemId === editingLine.lineItemId
+              ? { ...line, expenseHead: data.expenseHead, amount: data.amount, financeReviewStatus: data.financeReviewStatus, financeReviewRemarks: null }
+              : line
+          )
+        }
+      }));
+      setEditingLine(null);
+      setMessage(data.message ?? "Line item updated.");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update the line item.");
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   function auditApproved(item: FinanceItem) {
     return item.claimKind === "Advance" || item.status === "FinanceConfirmed";
   }
@@ -477,7 +516,14 @@ export function FinanceQueue() {
                           <div>
                             <strong>{line.description}</strong>
                             <br />
-                            <span className="muted">Rs {line.amount.toLocaleString("en-IN")}</span>
+                            {editingLine?.lineItemId === line.lineItemId ? (
+                              <div className="actions">
+                                <input aria-label="Expense head" onChange={(event) => setEditingLine({ ...editingLine, expenseHead: event.target.value })} placeholder="Expense head" value={editingLine.expenseHead} />
+                                <input aria-label="Amount" inputMode="decimal" onChange={(event) => setEditingLine({ ...editingLine, amount: event.target.value })} value={editingLine.amount} />
+                              </div>
+                            ) : (
+                              <span className="muted">{line.expenseHead ?? "Expense head not set"} · Rs {line.amount.toLocaleString("en-IN")}</span>
+                            )}
                           </div>
                           <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
                             {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
@@ -486,6 +532,16 @@ export function FinanceQueue() {
                             {line.financeReviewStatus}
                           </span>
                           <div className="actions">
+                            {editingLine?.lineItemId === line.lineItemId ? (
+                              <>
+                                <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void saveLineChanges()} type="button"><Check size={16} /> Save</button>
+                                <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => setEditingLine(null)} type="button"><X size={16} /> Cancel</button>
+                              </>
+                            ) : (
+                              <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => setEditingLine({ claimId: item.claimId, lineItemId: line.lineItemId, expenseHead: line.expenseHead ?? "", amount: String(line.amount) })} type="button">
+                                <Pencil size={16} /> Edit head / amount
+                              </button>
+                            )}
                             <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void reviewLine(item.claimId, line.lineItemId, "Accepted")} type="button">
                               Accept
                             </button>

@@ -141,7 +141,7 @@ describe("claim business rules", () => {
     expect(result.lineItemId).toBe("line-1");
   });
 
-  it("checks client invoice globally and vendor invoice within the same vendor", async () => {
+  it("allows repeated client bills while checking vendor invoices within the same vendor", async () => {
     const draft = claim();
     const claims = {
       getClaimDetail: vi.fn().mockResolvedValue(draft),
@@ -163,7 +163,7 @@ describe("claim business rules", () => {
         user
       )
     ).rejects.toMatchObject({ message: "Duplicate invoice number detected." });
-    expect(claims.invoiceReferenceExists).toHaveBeenCalledWith("CLIENT-UNIQUE", { referenceType: "Client", excludingLineItemId: undefined });
+    expect(claims.invoiceReferenceExists).not.toHaveBeenCalledWith("CLIENT-UNIQUE", expect.anything());
     expect(claims.invoiceReferenceExists).toHaveBeenCalledWith("VENDOR-DUPLICATE", {
       referenceType: "Vendor",
       vendorName: "Demo Vendor",

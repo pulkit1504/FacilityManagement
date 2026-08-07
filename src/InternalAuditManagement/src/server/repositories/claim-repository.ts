@@ -105,6 +105,7 @@ export interface ClaimRepository {
   updateLineItem(claimId: string, lineItemId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
   updateLineItemExpenseHead(claimId: string, lineItemId: string, expenseHead: string): Promise<ExpenseLineItem>;
   reviewLineItem(claimId: string, lineItemId: string, decision: "Accepted" | "Rejected", remarks?: string | null): Promise<ExpenseLineItem>;
+  updateFinanceLineItem(claimId: string, lineItemId: string, expenseHead: string, amount: number): Promise<ExpenseLineItem>;
   reviewAuditLineItem(claimId: string, lineItemId: string, input: {
     decision: "Approved" | "Rejected";
     approvedAmount: number | null;

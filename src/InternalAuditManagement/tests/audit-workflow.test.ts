@@ -224,6 +224,29 @@ describe("Auditor receipt workflow", () => {
     }));
   });
 
+  it("requires a new voucher receipt after Audit returns a claim for correction", async () => {
+    const claim = auditPendingClaim();
+    const returnedLog = {
+      ...receivedLog,
+      auditId: "audit-return-1",
+      actionType: "AUDIT_INFO_REQUEST" as const,
+      actionTimestamp: "2026-06-09T11:00:00.000Z"
+    };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog, returnedLog]),
+      appendAuditLog: vi.fn()
+    } as unknown as ClaimRepository;
+    const service = new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService);
+
+    await expect(service.approveClaim("claim-1", { remarks: "Reviewed again." }, auditor)).rejects.toThrow(
+      "Auditor must mark the voucher pack as received"
+    );
+    await expect(service.receiveVouchers("claim-1", auditor)).resolves.toMatchObject({
+      message: expect.stringContaining("marked as received")
+    });
+  });
+
   it("records line-item audit approval with the approved amount", async () => {
     const claim = auditPendingClaim();
     claim.lineItems[0] = {

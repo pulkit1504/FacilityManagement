@@ -1,8 +1,9 @@
 import { conflict, forbidden, notFound } from "../errors/application-error";
 import { statusLabel, type OperatingCompany, type UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
-import type { ConfirmPhysicalReceiptInput, FinanceLineReviewInput, LineExpenseHeadCorrectionInput } from "../validation/claim.schemas";
+import type { ConfirmPhysicalReceiptInput, FinanceLineReviewInput, FinanceLineUpdateInput, LineExpenseHeadCorrectionInput } from "../validation/claim.schemas";
 import type { NotificationService } from "./notification-service";
+import { claimNotificationBody } from "./claim-notification-details";
 
 export class FinanceService {
   constructor(
@@ -383,15 +384,53 @@ export class FinanceService {
     }
   }
 
+  async updateLineItem(claimId: string, lineItemId: string, input: FinanceLineUpdateInput, user: UserContext) {
+    this.assertFinance(user);
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) throw notFound("Claim was not found.");
+    if (!["HodApproved", "MdApproved"].includes(claim.status)) {
+      throw conflict("Finance can modify line items only before the voucher pack is sent to Audit.");
+    }
+
+    const lineItem = claim.lineItems.find((item) => item.lineItemId === lineItemId);
+    if (!lineItem) throw notFound("Line item was not found on this claim.");
+
+    const updated = await this.claims.updateFinanceLineItem(claimId, lineItemId, input.expenseHead, input.amount);
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: "FINANCE_LINE_UPDATE",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks: `Finance changed line ${lineItemId}: expense head "${lineItem.expenseHead ?? "Not set"}" to "${updated.expenseHead ?? "Not set"}", amount Rs ${lineItem.amount.toLocaleString("en-IN")} to Rs ${updated.amount.toLocaleString("en-IN")}. Line reset to Pending review.`,
+      correlationId: user.correlationId
+    });
+
+    return {
+      lineItemId: updated.lineItemId,
+      expenseHead: updated.expenseHead,
+      amount: updated.amount,
+      financeReviewStatus: updated.financeReviewStatus,
+      financeReviewRemarks: updated.financeReviewRemarks,
+      message: "Expense head and amount updated. Review and accept the line again."
+    };
+  }
+
   private async notifyAuditors(claim: NonNullable<Awaited<ReturnType<ClaimRepository["getClaimDetail"]>>>) {
-    const auditors = (await this.claims.listEmployees()).filter((employee) => employee.role === "Auditor");
+    const [employees, sites, submitter] = await Promise.all([
+      this.claims.listEmployees(),
+      this.claims.listActiveSites(),
+      this.claims.getEmployee(claim.submitterEmployeeId)
+    ]);
+    const auditors = employees.filter((employee) => employee.role === "Auditor");
+    const body = claimNotificationBody(claim, submitter?.fullName ?? claim.submitterEmployeeId, sites.find((site) => site.siteId === claim.siteId)?.siteName ?? null, `${claim.ticketId} has a confirmed physical receipt and is waiting for Auditor review.`);
     await Promise.all(
       auditors.map((auditor) =>
         this.notifications.enqueueAndSend({
           recipientEmployeeId: auditor.employeeId,
           recipientEmail: auditor.email,
           subject: `Audit review required for ${claim.ticketId}`,
-          body: `${claim.ticketId} has a confirmed physical receipt and is waiting for Auditor review.`,
+          body,
           relatedClaimId: claim.claimId
         })
       )

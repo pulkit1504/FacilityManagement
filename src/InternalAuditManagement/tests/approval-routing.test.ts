@@ -219,6 +219,8 @@ describe("approval routing rules", () => {
       submitClaim: vi.fn().mockResolvedValue({ ...claim, status: "MdApproved" }),
       createFinanceApprovalStep: vi.fn(),
       appendAuditLog: vi.fn(),
+      getEmployee: vi.fn().mockResolvedValue(employee("claimant-1", "Claimant")),
+      listActiveSites: vi.fn().mockResolvedValue([]),
       listEmployees: vi.fn().mockResolvedValue([employee("finance-1", "Finance")])
     } as unknown as ClaimRepository;
 

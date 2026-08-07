@@ -4,6 +4,7 @@ import { statusLabel } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { NotificationService } from "./notification-service";
 import type { ChangePasswordInput, CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput, UpdateBankDetailsInput, UpdateSettlementAdjustmentInput } from "../validation/claim.schemas";
+import { claimNotificationBody } from "./claim-notification-details";
 
 export class ClaimService {
   constructor(
@@ -295,7 +296,7 @@ export class ClaimService {
     this.assertOwnDraftClaim(claim, user);
     this.assertLineItemDateIsValidForClaim(claim, input);
     await this.assertAdvanceAdjustmentIsLinkedToPaidAdvance(claim);
-    await this.assertInvoiceReferenceIsUnique(input);
+    await this.assertVendorInvoiceReferenceIsUnique(input);
 
     return this.claims.addLineItem(claimId, input);
   }
@@ -392,7 +393,7 @@ export class ClaimService {
     this.assertLineItemBelongsToClaim(claim, lineItemId);
     this.assertLineItemDateIsValidForClaim(claim, input);
     await this.assertAdvanceAdjustmentIsLinkedToPaidAdvance(claim);
-    await this.assertInvoiceReferenceIsUnique(input, lineItemId);
+    await this.assertVendorInvoiceReferenceIsUnique(input, lineItemId);
 
     const updatedLine = await this.claims.updateLineItem(claimId, lineItemId, input);
 
@@ -529,7 +530,12 @@ export class ClaimService {
     await this.notifyEmployee(
       firstApprover,
       `Claim ${claim.ticketId} is pending your approval`,
-      `Claim ${claim.ticketId} for Rs ${claim.totalAmount.toLocaleString("en-IN")} has been submitted for your approval.`,
+      claimNotificationBody(
+        claim,
+        submitter.fullName,
+        claim.siteId ? (await this.claims.listActiveSites()).find((site) => site.siteId === claim.siteId)?.siteName ?? null : null,
+        `Claim ${claim.ticketId} has been submitted for your approval.`
+      ),
       claimId
     );
 
@@ -613,7 +619,12 @@ export class ClaimService {
   }
 
   private async notifyFinanceTeam(claim: ClaimDetail, claimId: string) {
-    const employees = await this.claims.listEmployees();
+    const [employees, sites, submitter] = await Promise.all([
+      this.claims.listEmployees(),
+      this.claims.listActiveSites(),
+      this.claims.getEmployee(claim.submitterEmployeeId)
+    ]);
+    const body = claimNotificationBody(claim, submitter?.fullName ?? claim.submitterEmployeeId, sites.find((site) => site.siteId === claim.siteId)?.siteName ?? null, `Advance ${claim.ticketId} is ready for Finance review.`);
     await Promise.all(
       employees
         .filter((employee) => employee.role === "Finance")
@@ -621,7 +632,7 @@ export class ClaimService {
           this.notifyEmployee(
             employee,
             `Advance ${claim.ticketId} is ready for Finance review`,
-            `Advance ${claim.ticketId} for Rs ${claim.totalAmount.toLocaleString("en-IN")} is ready for Finance review.`,
+            body,
             claimId
           )
         )
@@ -1015,16 +1026,7 @@ export class ClaimService {
     };
   }
 
-  private async assertInvoiceReferenceIsUnique(input: CreateLineItemInput, excludingLineItemId?: string) {
-    const clientInvoiceNumber = input.clientInvoiceNumber?.trim();
-    if (clientInvoiceNumber) {
-      if (await this.claims.invoiceReferenceExists(clientInvoiceNumber, { referenceType: "Client", excludingLineItemId })) {
-        throw conflict("Duplicate invoice number detected.", {
-          errors: [`Client invoice number ${clientInvoiceNumber} is already used on another claim line.`]
-        });
-      }
-    }
-
+  private async assertVendorInvoiceReferenceIsUnique(input: CreateLineItemInput, excludingLineItemId?: string) {
     const vendorInvoiceNumber = input.vendorInvoiceNumber?.trim();
     if (vendorInvoiceNumber) {
       if (await this.claims.invoiceReferenceExists(vendorInvoiceNumber, {

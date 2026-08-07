@@ -109,6 +109,11 @@ export const createLineItemSchema = z
     }
   });
 
+export const financeLineUpdateSchema = z.object({
+  expenseHead: z.string().trim().min(1).max(120),
+  amount: z.coerce.number().positive()
+});
+
 export const createAdvanceRequestSchema = z.object({
   company: z.enum(operatingCompanies).default("Nimbus"),
   siteId: z.string().trim().min(1),
@@ -300,6 +305,7 @@ export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptS
 export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;
 export type ReviewFraudFlagInput = z.infer<typeof reviewFraudFlagSchema>;
 export type AuditClaimDecisionInput = z.infer<typeof auditClaimDecisionSchema>;
+export type FinanceLineUpdateInput = z.infer<typeof financeLineUpdateSchema>;
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 export type CreateSiteInput = z.infer<typeof createSiteSchema>;
 export type UpdateSiteInput = z.infer<typeof updateSiteSchema>;

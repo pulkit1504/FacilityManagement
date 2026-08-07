@@ -4,6 +4,7 @@ import { useState } from "react";
 import { LogIn } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
+import { CompanyLogo } from "@/components/layout/company-logo";
 
 export function EmailLoginForm({ error }: Readonly<{ error?: string }>) {
   const [email, setEmail] = useState("");
@@ -37,6 +38,7 @@ export function EmailLoginForm({ error }: Readonly<{ error?: string }>) {
 
   return (
     <section className="panel login-panel">
+      <CompanyLogo compact />
       <h1>Sign In</h1>
       <p className="muted">Use your registered email address and password.</p>
       <label>

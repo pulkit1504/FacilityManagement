@@ -1,7 +1,7 @@
 import { conflict, forbidden, notFound } from "../errors/application-error";
-import { statusLabel, type UserContext } from "../domain/types";
+import { statusLabel, type OperatingCompany, type UserContext } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
-import type { ConfirmPhysicalReceiptInput, FinanceLineReviewInput, FinanceLineUpdateInput } from "../validation/claim.schemas";
+import type { ConfirmPhysicalReceiptInput, FinanceLineReviewInput, FinanceLineUpdateInput, LineExpenseHeadCorrectionInput } from "../validation/claim.schemas";
 import type { NotificationService } from "./notification-service";
 import { claimNotificationBody } from "./claim-notification-details";
 
@@ -34,9 +34,10 @@ export class FinanceService {
     this.assertFinance(user);
     const rows = (await this.claims.listImprestLedgerReport()).filter((row) => matchesReportFilters(row, filters, row.paidAt));
     return toCsv(
-      ["Ticket", "Claimant", "Site", "Advance Amount", "Settled Amount", "Open Balance", "Status", "Paid At"],
+      ["Ticket", "Company", "Claimant", "Site", "Advance Amount", "Settled Amount", "Open Balance", "Status", "Paid At"],
       rows.map((row) => [
         row.ticketId,
+        row.company,
         row.claimantName,
         row.siteName ?? "",
         row.advanceAmount,
@@ -54,6 +55,7 @@ export class FinanceService {
     return toCsv(
       [
         "Ticket",
+        "Company",
         "Claimant",
         "Site",
         "Expense Head",
@@ -62,11 +64,16 @@ export class FinanceService {
         "Billable Amount",
         "Expense Tag",
         "Invoice Number",
+        "Cash / UPI",
+        "Vendor Name",
+        "Vendor Invoice Number",
+        "Site / Department",
         "Recovery Status",
         "Transaction Date"
       ],
       rows.map((row) => [
         row.ticketId,
+        row.company,
         row.claimantName,
         row.siteName ?? "",
         row.expenseHead ?? "",
@@ -75,8 +82,75 @@ export class FinanceService {
         row.billableAmount,
         row.expenseTag,
         row.invoiceNumber ?? "",
+        row.paymentMode ?? "",
+        row.vendorName ?? "",
+        row.vendorInvoiceNumber ?? "",
+        row.siteOrDepartment ?? "",
         row.recoveryStatus,
         row.transactionDate
+      ])
+    );
+  }
+
+  async exportCompanyExpenses(user: UserContext, filters: ReportFilters = {}) {
+    this.assertFinance(user);
+    const rows = (await this.claims.listCompanyExpenseReport()).filter((row) => matchesReportFilters(row, filters, row.transactionDate));
+    return toCsv(
+      [
+        "Ticket",
+        "Company",
+        "Claim Type",
+        "Status",
+        "Claimant",
+        "Site",
+        "Expense Head",
+        "Description",
+        "Expense Tag",
+        "Amount",
+        "Billable Amount",
+        "Non Billable Amount",
+        "CTC Amount",
+        "Contractual Part Amount",
+        "Client Invoice",
+        "Vendor",
+        "Vendor Invoice",
+        "Transaction Date",
+        "Payment Mode",
+        "Finance Review",
+        "Audit Review",
+        "Audit Approved Amount",
+        "Advance Amount",
+        "Advance Adjusted",
+        "Final Payable",
+        "Updated At"
+      ],
+      rows.map((row) => [
+        row.ticketId,
+        row.company,
+        row.claimKind,
+        row.status,
+        row.claimantName,
+        row.siteName ?? "",
+        row.expenseHead ?? "",
+        row.description,
+        row.expenseTag,
+        row.amount,
+        row.billableAmount,
+        row.nonBillableAmount,
+        row.ctcAmount,
+        row.contractualPartAmount,
+        row.clientInvoiceNumber ?? "",
+        row.vendorName ?? "",
+        row.vendorInvoiceNumber ?? "",
+        row.transactionDate,
+        row.paymentMode ?? "",
+        row.financeReviewStatus,
+        row.auditReviewStatus,
+        row.auditApprovedAmount ?? "",
+        row.advanceAmount,
+        row.advanceAdjustmentAmount,
+        row.finalPayableAmount,
+        row.updatedAt
       ])
     );
   }
@@ -158,6 +232,44 @@ export class FinanceService {
       financeReviewStatus: updated.financeReviewStatus,
       financeReviewRemarks: updated.financeReviewRemarks,
       message: input.decision === "Accepted" ? "Line item accepted." : "Line item rejected. Return the claim to claimant for correction."
+    };
+  }
+
+  async correctLineItemExpenseHead(claimId: string, lineItemId: string, input: LineExpenseHeadCorrectionInput, user: UserContext) {
+    this.assertFinance(user);
+
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) throw notFound("Claim was not found.");
+
+    if (!["HodApproved", "MdApproved", "FinanceConfirmed"].includes(claim.status)) {
+      throw conflict("Expense head can be corrected by Accounts only after operational approval.");
+    }
+
+    const lineItem = claim.lineItems.find((item) => item.lineItemId === lineItemId);
+    if (!lineItem) throw notFound("Line item was not found on this claim.");
+
+    const nextExpenseHead = input.expenseHead.trim();
+    if (lineItem.expenseHead === nextExpenseHead) {
+      return {
+        lineItem,
+        message: "Expense head is already set to this value."
+      };
+    }
+
+    const updated = await this.claims.updateLineItemExpenseHead(claimId, lineItemId, nextExpenseHead);
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: "EXPENSE_HEAD_CORRECTED",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks: `Accounts corrected expense head for line item ${lineItemId}: ${lineItem.expenseHead ?? "Not set"} -> ${updated.expenseHead ?? "Not set"}.`,
+      correlationId: user.correlationId
+    });
+
+    return {
+      lineItem: updated,
+      message: "Expense head corrected."
     };
   }
 
@@ -330,11 +442,13 @@ type ReportFilters = {
   site?: string | null;
   claimant?: string | null;
   month?: string | null;
+  company?: OperatingCompany | "All" | null;
 };
 
-function matchesReportFilters(row: { siteName: string | null; claimantName: string }, filters: ReportFilters, dateValue?: string | null) {
+function matchesReportFilters(row: { siteName: string | null; claimantName: string; company?: OperatingCompany }, filters: ReportFilters, dateValue?: string | null) {
   if (filters.site && row.siteName !== filters.site) return false;
   if (filters.claimant && row.claimantName !== filters.claimant) return false;
+  if (filters.company && filters.company !== "All" && row.company !== filters.company) return false;
   if (filters.month && (!dateValue || !dateValue.startsWith(filters.month))) return false;
   return true;
 }

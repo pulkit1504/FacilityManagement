@@ -37,6 +37,7 @@ function claim(overrides: Partial<ClaimDetail> = {}): ClaimDetail {
     claimId: "claim-1",
     ticketId: "EXP-001",
     submitterEmployeeId: user.userId,
+    company: "Nimbus",
     claimKind: "Reimbursement",
     submissionMode: "SingleVoucher",
     proformaPeriodStart: null,
@@ -194,6 +195,36 @@ describe("claim business rules", () => {
     expect(claims.addLineItem).toHaveBeenCalledOnce();
   });
 
+  it("requires only line site for Contract Part Cost items", () => {
+    expect(() =>
+      createLineItemSchema.parse(line({
+        expenseTag: "ContractPartCost",
+        siteId: "site-1",
+        siteOrDepartment: null,
+        transactionDate: "2026-06-03"
+      }))
+    ).not.toThrow();
+
+    expect(() =>
+      createLineItemSchema.parse(line({
+        expenseTag: "ContractPartCost",
+        siteId: null,
+        siteOrDepartment: null,
+        transactionDate: "2026-06-03"
+      }))
+    ).toThrow("Contract Part Cost items must be linked to a site.");
+  });
+
+  it("requires site or department only for Backend CTC items", () => {
+    expect(() =>
+      createLineItemSchema.parse(line({
+        expenseTag: "BackendCTC",
+        siteOrDepartment: null,
+        transactionDate: "2026-06-03"
+      }))
+    ).toThrow("Backend CTC items require a site or department reference.");
+  });
+
   it("blocks single voucher dates more than 20 days old", async () => {
     const draft = claim({ claimPeriodMonth: "2026-05-01" });
     const claims = {
@@ -263,7 +294,7 @@ describe("claim business rules", () => {
 
     await expect(
       new ClaimService(claims, notifications).createAdvanceRequest(
-        { siteId: "site-1", amount: 1_000, description: "Petty cash", claimPeriodMonth: "2026-06-01" },
+        { company: "Nimbus", siteId: "site-1", amount: 1_000, description: "Petty cash", claimPeriodMonth: "2026-06-01" },
         user
       )
     ).rejects.toMatchObject({ message: "Advance request exceeds the configured employee limit." });

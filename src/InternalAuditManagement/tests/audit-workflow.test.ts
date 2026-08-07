@@ -33,6 +33,7 @@ function auditPendingClaim(): ClaimDetail {
     claimId: "claim-1",
     ticketId: "EXP-000001",
     submitterEmployeeId: "claimant-1",
+    company: "Nimbus",
     claimKind: "Reimbursement",
     submissionMode: "SingleVoucher",
     proformaPeriodStart: null,
@@ -71,6 +72,11 @@ function auditPendingClaim(): ClaimDetail {
       invoiceValidationStatus: "NotApplicable",
       financeReviewStatus: "Accepted",
       financeReviewRemarks: null,
+      auditReviewStatus: "Approved",
+      auditApprovedAmount: 2_000,
+      auditReviewRemarks: null,
+      auditReviewedBy: "emp-auditor-001",
+      auditReviewedAt: "2026-06-08T11:30:00.000Z",
       billingAlertCreated: false,
       siteId: "site-1",
       missingReceiptFlag: false,
@@ -127,6 +133,52 @@ describe("Auditor receipt workflow", () => {
     expect(claims.createFinanceApprovalStep).toHaveBeenCalledWith("claim-1");
     expect(claims.createBillingAlert).toHaveBeenCalledWith(expect.objectContaining({ claimId: "claim-1", lineItemId: "line-1" }));
     expect(notifications.enqueueAndSend).toHaveBeenCalledOnce();
+  });
+
+  it("creates billing alerts only for B2C - Pending Billing items after audit approval", async () => {
+    const claim = auditPendingClaim();
+    const pendingBillingLine = claim.lineItems[0];
+    claim.lineItems = [
+      pendingBillingLine,
+      {
+        ...pendingBillingLine,
+        lineItemId: "line-contract-cost",
+        expenseTag: "ContractPartCost",
+        description: "Contract manpower cost",
+        billableAmount: null,
+        siteId: "site-1"
+      },
+      {
+        ...pendingBillingLine,
+        lineItemId: "line-backend-ctc",
+        expenseTag: "BackendCTC",
+        description: "Backend CTC payout",
+        billableAmount: null,
+        siteOrDepartment: "Operations",
+        siteId: null
+      }
+    ];
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      decideApprovalStep: vi.fn(),
+      submitClaim: vi.fn().mockResolvedValue({ ...claim, status: "FinanceConfirmed" }),
+      createFinanceApprovalStep: vi.fn(),
+      createBillingAlert: vi.fn().mockResolvedValue({ alertId: "alert-1" }),
+      appendAuditLog: vi.fn(),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog]),
+      listEmployees: vi.fn().mockResolvedValue([employee("emp-finance-001", "Finance")])
+    } as unknown as ClaimRepository;
+    const notifications = { enqueueAndSend: vi.fn().mockResolvedValue({ status: "Sent" }) } as unknown as NotificationService;
+
+    await new AuditService(claims, notifications).approveClaim("claim-1", {
+      remarks: "Evidence reviewed."
+    }, auditor);
+
+    expect(claims.createBillingAlert).toHaveBeenCalledOnce();
+    expect(claims.createBillingAlert).toHaveBeenCalledWith(expect.objectContaining({
+      claimId: "claim-1",
+      lineItemId: "line-1"
+    }));
   });
 
   it("returns pending information requests to the claimant with the auditor reason", async () => {
@@ -193,5 +245,110 @@ describe("Auditor receipt workflow", () => {
     await expect(service.receiveVouchers("claim-1", auditor)).resolves.toMatchObject({
       message: expect.stringContaining("marked as received")
     });
+  });
+
+  it("records line-item audit approval with the approved amount", async () => {
+    const claim = auditPendingClaim();
+    claim.lineItems[0] = {
+      ...claim.lineItems[0],
+      auditReviewStatus: "Pending",
+      auditApprovedAmount: null,
+      auditReviewedAt: null,
+      auditReviewedBy: null
+    };
+    const updatedLine = {
+      ...claim.lineItems[0],
+      auditReviewStatus: "Approved" as const,
+      auditApprovedAmount: 1_750,
+      auditReviewedBy: auditor.userId,
+      auditReviewedAt: "2026-06-08T12:00:00.000Z"
+    };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog]),
+      reviewAuditLineItem: vi.fn().mockResolvedValue(updatedLine),
+      appendAuditLog: vi.fn()
+    } as unknown as ClaimRepository;
+
+    const result = await new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService).reviewLineItem("claim-1", "line-1", {
+      decision: "Approved",
+      approvedAmount: 1_750,
+      remarks: "Partial disallowance documented."
+    }, auditor);
+
+    expect(result.lineItem.auditApprovedAmount).toBe(1_750);
+    expect(claims.reviewAuditLineItem).toHaveBeenCalledWith("claim-1", "line-1", expect.objectContaining({
+      decision: "Approved",
+      approvedAmount: 1_750,
+      reviewedByUserId: auditor.userId
+    }));
+    expect(claims.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: "AUDIT_LINE_APPROVE"
+    }));
+  });
+
+  it("lets Audit correct a line expense head while reviewing evidence", async () => {
+    const claim = auditPendingClaim();
+    const updatedLine = { ...claim.lineItems[0], expenseHead: "Repairs and Maintenance" };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog]),
+      updateLineItemExpenseHead: vi.fn().mockResolvedValue(updatedLine),
+      appendAuditLog: vi.fn()
+    } as unknown as ClaimRepository;
+
+    const result = await new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService)
+      .correctLineItemExpenseHead("claim-1", "line-1", { expenseHead: "Repairs and Maintenance" }, auditor);
+
+    expect(result.lineItem.expenseHead).toBe("Repairs and Maintenance");
+    expect(claims.updateLineItemExpenseHead).toHaveBeenCalledWith("claim-1", "line-1", "Repairs and Maintenance");
+    expect(claims.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: "EXPENSE_HEAD_CORRECTED",
+      auditRemarks: expect.stringContaining("Audit corrected expense head")
+    }));
+  });
+
+  it("blocks claim audit approval until every line has an audit amount", async () => {
+    const claim = auditPendingClaim();
+    claim.lineItems[0] = {
+      ...claim.lineItems[0],
+      auditReviewStatus: "Pending",
+      auditApprovedAmount: null
+    };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog])
+    } as unknown as ClaimRepository;
+
+    await expect(new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService).approveClaim("claim-1", {
+      remarks: "Evidence reviewed."
+    }, auditor)).rejects.toThrow("Approve every line item");
+  });
+
+  it("does not allow an audit-approved amount above the line amount", async () => {
+    const claim = auditPendingClaim();
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      listAuditLogForClaim: vi.fn().mockResolvedValue([receivedLog]),
+      reviewAuditLineItem: vi.fn()
+    } as unknown as ClaimRepository;
+
+    await expect(new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService).reviewLineItem("claim-1", "line-1", {
+      decision: "Approved",
+      approvedAmount: 2_001,
+      remarks: "Too high."
+    }, auditor)).rejects.toThrow("cannot exceed");
+    expect(claims.reviewAuditLineItem).not.toHaveBeenCalled();
+  });
+
+  it("lists the audit imprest register for auditors", async () => {
+    const claims = {
+      listAuditImprestRegister: vi.fn().mockResolvedValue([{ claimId: "claim-1", ticketId: "EXP-000001" }])
+    } as unknown as ClaimRepository;
+
+    const result = await new AuditService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService).listImprestRegister(auditor);
+
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toMatchObject({ ticketId: "EXP-000001" });
   });
 });

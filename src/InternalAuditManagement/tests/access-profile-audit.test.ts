@@ -30,6 +30,7 @@ const claim: ClaimDetail = {
   claimId: "claim-1",
   ticketId: "EXP-000001",
   submitterEmployeeId: "claimant-1",
+  company: "Nimbus",
   claimKind: "Reimbursement",
   submissionMode: "SingleVoucher",
   proformaPeriodStart: null,
@@ -129,6 +130,50 @@ describe("profile and audit trail", () => {
     expect(result.linkedSites.map((item) => item.siteId)).toEqual(["site-1"]);
   });
 
+  it("allows every active employee role to load profile self-service", async () => {
+    const finance = employee("finance-1", "Finance");
+    const claims = {
+      getEmployee: vi.fn().mockResolvedValue(finance),
+      listEmployees: vi.fn().mockResolvedValue([finance]),
+      listActiveSites: vi.fn().mockResolvedValue([]),
+      listClaimsForUser: vi.fn().mockResolvedValue([])
+    } as unknown as ClaimRepository;
+
+    const result = await new ClaimService(claims, {} as NotificationService).getProfile({ ...claimant, userId: "finance-1", role: "Finance" });
+
+    expect(result.employee.employeeId).toBe("finance-1");
+    expect(result.linkedEmployees).toEqual([]);
+    expect(result.linkedSites).toEqual([]);
+  });
+
+  it("lets employees change their own password when the current password is valid", async () => {
+    const updated = { ...employee("auditor-1", "Auditor"), passwordResetRequired: false };
+    const claims = {
+      changeEmployeePassword: vi.fn().mockResolvedValue(updated)
+    } as unknown as ClaimRepository;
+
+    const result = await new ClaimService(claims, {} as NotificationService).changeProfilePassword({
+      currentPassword: "OldPassword123!",
+      newPassword: "NewPassword123!",
+      confirmPassword: "NewPassword123!"
+    }, { ...claimant, userId: "auditor-1", role: "Auditor" });
+
+    expect(result.employee.passwordResetRequired).toBe(false);
+    expect(result.message).toContain("Password changed");
+  });
+
+  it("rejects self-service password changes when the current password is wrong", async () => {
+    const claims = {
+      changeEmployeePassword: vi.fn().mockResolvedValue(null)
+    } as unknown as ClaimRepository;
+
+    await expect(new ClaimService(claims, {} as NotificationService).changeProfilePassword({
+      currentPassword: "WrongPassword123!",
+      newPassword: "NewPassword123!",
+      confirmPassword: "NewPassword123!"
+    }, { ...claimant, userId: "finance-1", role: "Finance" })).rejects.toMatchObject({ status: 409 });
+  });
+
   it("includes approval decision timestamps and rejection remarks in audit CSV", async () => {
     const claims = {
       getClaimDetail: vi.fn().mockResolvedValue(claim),
@@ -153,5 +198,64 @@ describe("profile and audit trail", () => {
     expect(csv).toContain("2026-06-02T10:00:00.000Z");
     expect(csv).toContain("HOD,Rejected");
     expect(csv).toContain("Correct receipt.");
+  });
+
+  it("exports an Excel-ready claim summary with claim and line-item details", async () => {
+    const summaryClaim: ClaimDetail = {
+      ...claim,
+      status: "Submitted",
+      totalAmount: 1_250,
+      lineItems: [{
+        lineItemId: "line-1",
+        claimId: claim.claimId,
+        expenseHead: "Repairs and Maintenance",
+        description: "Replace lobby light",
+        amount: 1_250,
+        transactionDate: "2026-06-02",
+        paymentMode: "UPI",
+        expenseTag: "AlreadyBilled",
+        clientInvoiceNumber: "CLIENT-100",
+        vendorName: "Demo Vendor",
+        vendorInvoiceNumber: "VENDOR-100",
+        billableAmount: null,
+        siteOrDepartment: null,
+        lineTicketId: null,
+        invoiceValidationStatus: "PendingErpValidation",
+        siteId: null,
+        billingAlertCreated: false,
+        missingReceiptFlag: false,
+        financeReviewStatus: "Pending",
+        financeReviewRemarks: null,
+        auditReviewStatus: "Pending",
+        auditApprovedAmount: null,
+        auditReviewRemarks: null,
+        auditReviewedBy: null,
+        auditReviewedAt: null,
+        sortOrder: 0,
+        attachments: []
+      }]
+    };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(summaryClaim)
+    } as unknown as ClaimRepository;
+
+    const result = await new ClaimService(claims, {} as NotificationService).exportClaimSummary(summaryClaim.claimId, claimant);
+
+    expect(result.ticketId).toBe("EXP-000001");
+    expect(result.csv).toContain("Ticket,Status,Claim Type");
+    expect(result.csv).toContain("Replace lobby light");
+    expect(result.csv).toContain("Demo Vendor,VENDOR-100,CLIENT-100");
+    expect(result.csv).toContain("1250,Attached");
+  });
+
+  it("allows an Auditor to view and export summaries for exception claims", async () => {
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim)
+    } as unknown as ClaimRepository;
+    const auditor = { ...claimant, role: "Auditor" as const, userId: "auditor-1" };
+    const service = new ClaimService(claims, {} as NotificationService);
+
+    await expect(service.getClaimDetail(claim.claimId, auditor)).resolves.toMatchObject({ ticketId: "EXP-000001" });
+    await expect(service.exportClaimSummary(claim.claimId, auditor)).resolves.toMatchObject({ ticketId: "EXP-000001" });
   });
 });

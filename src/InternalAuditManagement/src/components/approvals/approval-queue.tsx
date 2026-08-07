@@ -1,10 +1,13 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Check, Eye, Loader2, RotateCcw, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { expenseTagLabel } from "@/shared/expense-tags";
 import { getProblemMessage } from "@/components/ui/problem-message";
+import { UniversalClaimDrawer } from "@/components/claims/universal-claim-drawer";
+import { SlaChip } from "@/components/ui/sla-chip";
 
 type ApprovalItem = {
   claimId: string;
@@ -44,8 +47,10 @@ type SiteOption = {
 };
 
 export function ApprovalQueue() {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<ApprovalItem[]>([]);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
+  const [workspaceClaimId, setWorkspaceClaimId] = useState<string | null>(null);
   const [claimDetails, setClaimDetails] = useState<Record<string, ApprovalClaimDetail>>({});
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -87,6 +92,11 @@ export function ApprovalQueue() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const claimId = searchParams.get("claim");
+    if (claimId) setWorkspaceClaimId(claimId);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!returnClaim) return;
@@ -219,9 +229,30 @@ export function ApprovalQueue() {
     return sites.find((site) => site.siteId === siteId)?.siteName ?? siteId;
   }
 
+  const recordSearch = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const filteredItems = items.filter((item) => matchesText(recordSearch, [
+    item.claimId,
+    item.submittedBy,
+    item.siteName,
+    item.urgencyLevel,
+    String(item.totalAmount),
+    String(item.finalPayableAmount),
+    String(item.netAdvanceLeftAmount),
+    claimDetails[item.claimId]?.lineItems.map((line) => [
+      line.description,
+      line.expenseTag,
+      line.clientInvoiceNumber,
+      siteLabel(line.siteId),
+      String(line.amount)
+    ].join(" ")).join(" ")
+  ]));
+
   return (
     <section aria-label="Pending approval queue table" className="panel" tabIndex={0}>
-      <h2>Pending Approval Queue</h2>
+      <div className="topbar" style={{ marginBottom: 12 }}>
+        <h2>Pending Approval Queue</h2>
+        {recordSearch ? <span className="badge success">Search: {recordSearch}</span> : null}
+      </div>
       <ActionFeedback message={message} onDismiss={() => setMessage("")} />
       <table className="table">
         <thead>
@@ -245,7 +276,7 @@ export function ApprovalQueue() {
               </td>
             </tr>
           ) : null}
-          {!isLoading && items.map((item) => (
+          {!isLoading && filteredItems.map((item) => (
             <Fragment key={item.claimId}>
               <tr>
                 <td>
@@ -270,15 +301,17 @@ export function ApprovalQueue() {
                   </span>
                 </td>
                 <td>
-                  <span className={`badge ${item.urgencyLevel === "Overdue" ? "danger" : item.urgencyLevel === "Attention" ? "warning" : "success"}`}>
-                    {item.daysPending} days
-                  </span>
+                  <SlaChip days={item.daysPending} />
                 </td>
                 <td>
                   <div className="actions">
                     <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void toggleDetails(item.claimId)} type="button">
                       {busyAction === `details:${item.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
                       {expandedClaimId === item.claimId ? "Hide details" : "View details"}
+                    </button>
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => setWorkspaceClaimId(item.claimId)} type="button">
+                      <Eye size={16} />
+                      Open workspace
                     </button>
                     <button className="button" disabled={Boolean(busyAction)} onClick={() => void approve(item.claimId)} type="button">
                       {busyAction === `approve:${item.claimId}` ? <Loader2 size={16} /> : <Check size={16} />}
@@ -340,9 +373,9 @@ export function ApprovalQueue() {
               ) : null}
             </Fragment>
           ))}
-          {!isLoading && items.length === 0 ? (
+          {!isLoading && filteredItems.length === 0 ? (
             <tr>
-              <td colSpan={6}>No pending approvals.</td>
+              <td colSpan={6}>{recordSearch ? "No approvals match the current search." : "No pending approvals."}</td>
             </tr>
           ) : null}
         </tbody>
@@ -400,6 +433,14 @@ export function ApprovalQueue() {
           </div>
         </div>
       ) : null}
+      <UniversalClaimDrawer claimId={workspaceClaimId} isOpen={Boolean(workspaceClaimId)} onClose={() => setWorkspaceClaimId(null)} onError={setMessage} />
     </section>
   );
+}
+
+function matchesText(query: string, values: Array<string | number | null | undefined>) {
+  if (!query) return true;
+  return values
+    .filter((value): value is string | number => value !== null && value !== undefined)
+    .some((value) => String(value).toLowerCase().includes(query));
 }

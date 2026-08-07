@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Banknote, Check, ClipboardCheck, Download, Eye, Loader2, Pencil, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
+import { ClaimSummaryActions } from "@/components/claims/claim-summary-actions";
+import { UniversalClaimDrawer } from "@/components/claims/universal-claim-drawer";
 import { getProblemMessage } from "@/components/ui/problem-message";
+import { SlaChip } from "@/components/ui/sla-chip";
 
 type FinanceItem = {
   claimId: string;
   ticketId: string;
+  company: OperatingCompany;
   claimKind: "Advance" | "Reimbursement";
   status: "HodApproved" | "MdApproved" | "FinanceConfirmed";
   submittedBy: string;
@@ -19,6 +24,7 @@ type FinanceItem = {
   physicalReceiptRequired: boolean;
   physicalReceiptConfirmed: boolean;
   pendingBillingItemCount: number;
+  daysPending: number;
   bankAccountHolderName: string | null;
   bankAccountNumber: string | null;
   bankIfsc: string | null;
@@ -28,6 +34,7 @@ type FinanceItem = {
 type PendingAdvance = {
   claimId: string;
   ticketId: string;
+  company: OperatingCompany;
   submittedBy: string;
   siteName: string | null;
   advanceAmount: number;
@@ -37,6 +44,9 @@ type PendingAdvance = {
   settlementStatus: "Open" | "Aging" | "Overdue";
   settlementStatusLabel: string;
 };
+
+type OperatingCompany = "Nimbus" | "Striker";
+type ReportCompanyFilter = "All" | OperatingCompany;
 
 type ClaimReceiptDetail = {
   ticketId: string;
@@ -61,19 +71,25 @@ type FinanceDecision =
   | { kind: "reject-line"; claimId: string; lineItemId: string; title: string }
   | { kind: "return-claim"; claimId: string; title: string };
 
+type FinanceBucket = "All" | "ReviewVouchers" | "ReadyForAudit" | "SentToAudit" | "PaymentReady";
+
 export function FinanceQueue() {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<FinanceItem[]>([]);
   const [advances, setAdvances] = useState<PendingAdvance[]>([]);
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
+  const [workspaceClaimId, setWorkspaceClaimId] = useState<string | null>(null);
   const [claimDetails, setClaimDetails] = useState<Record<string, ClaimReceiptDetail>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [reportMonth, setReportMonth] = useState("");
+  const [reportCompany, setReportCompany] = useState<ReportCompanyFilter>("All");
   const [decision, setDecision] = useState<FinanceDecision | null>(null);
   const [decisionRemarks, setDecisionRemarks] = useState("");
   const [decisionError, setDecisionError] = useState("");
   const [editingLine, setEditingLine] = useState<{ claimId: string; lineItemId: string; expenseHead: string; amount: string } | null>(null);
+  const [bucket, setBucket] = useState<FinanceBucket>("All");
   const decisionDialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
@@ -101,6 +117,11 @@ export function FinanceQueue() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const claimId = searchParams.get("claim");
+    if (claimId) setWorkspaceClaimId(claimId);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!decision) return;
@@ -204,6 +225,16 @@ export function FinanceQueue() {
     }
   }
 
+  async function handleReceiptGate(item: FinanceItem) {
+    if (!claimDetails[item.claimId]) {
+      await toggleReceipts(item.claimId);
+      setMessage("Review and accept every voucher line, then send the pack to Audit.");
+      return;
+    }
+
+    await confirmReceipt(item.claimId);
+  }
+
   async function releasePayment(claimId: string) {
     setBusyAction(`release:${claimId}`);
     setMessage("Releasing payment...");
@@ -252,6 +283,39 @@ export function FinanceQueue() {
       const errorMessage = error instanceof Error ? error.message : "Line review failed.";
       if (lineDecision === "Rejected") setDecisionError(errorMessage);
       else setMessage(errorMessage);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function correctExpenseHead(claimId: string, lineItemId: string, currentExpenseHead: string | null) {
+    const expenseHead = window.prompt("Correct expense head", currentExpenseHead ?? "");
+    if (!expenseHead) return;
+
+    setBusyAction(`expense-head:${lineItemId}`);
+    setMessage("Correcting expense head...");
+    try {
+      const response = await fetch(`/api/v1/finance/${claimId}/line-items/${lineItemId}/expense-head`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expenseHead })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(getProblemMessage(data, "Expense head correction failed."));
+      setClaimDetails((current) => ({
+        ...current,
+        [claimId]: {
+          ...current[claimId],
+          lineItems: (current[claimId]?.lineItems ?? []).map((line) =>
+            line.lineItemId === lineItemId
+              ? { ...line, expenseHead: data.lineItem.expenseHead }
+              : line
+          )
+        }
+      }));
+      setMessage(data.message ?? "Expense head corrected.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Expense head correction failed.");
     } finally {
       setBusyAction(null);
     }
@@ -337,6 +401,10 @@ export function FinanceQueue() {
     return details.lineItems.length > 0 && details.lineItems.every((line) => line.financeReviewStatus === "Accepted");
   }
 
+  function hasLoadedReceiptLines(item: FinanceItem) {
+    return Boolean(claimDetails[item.claimId]);
+  }
+
   function beneficiaryReady(item: FinanceItem) {
     return item.finalPayableAmount <= 0 || Boolean(
       item.bankAccountHolderName && item.bankAccountNumber && item.bankIfsc && item.bankName
@@ -384,7 +452,24 @@ export function FinanceQueue() {
     return item.claimKind === "Advance" || item.status === "FinanceConfirmed";
   }
 
-  const reportQuery = reportMonth ? `?month=${encodeURIComponent(reportMonth)}` : "";
+  const reportParams = new URLSearchParams();
+  if (reportMonth) reportParams.set("month", reportMonth);
+  if (reportCompany !== "All") reportParams.set("company", reportCompany);
+  const reportQuery = reportParams.toString() ? `?${reportParams.toString()}` : "";
+  const recordSearch = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const filteredItems = items.filter((item) => (
+    matchesFinanceBucket(item, bucket, claimDetails[item.claimId]) &&
+    matchesFinanceSearch(item, recordSearch, claimDetails[item.claimId])
+  ));
+  const filteredAdvances = advances.filter((advance) => matchesText(recordSearch, [
+    advance.ticketId,
+    advance.company,
+    advance.submittedBy,
+    advance.siteName,
+    advance.settlementStatusLabel,
+    String(advance.advanceAmount),
+    String(advance.advanceBalance)
+  ]));
 
   return (
     <div className="grid" style={{ gap: 16 }}>
@@ -392,7 +477,17 @@ export function FinanceQueue() {
         <div className="topbar" style={{ marginBottom: 12 }}>
           <h2>Finance Queue</h2>
           <div className="actions">
+            {recordSearch ? <span className="badge success">Search: {recordSearch}</span> : null}
+            <select aria-label="Report company" value={reportCompany} onChange={(event) => setReportCompany(event.target.value as ReportCompanyFilter)}>
+              <option value="All">All companies</option>
+              <option value="Nimbus">Nimbus</option>
+              <option value="Striker">Striker</option>
+            </select>
             <input aria-label="Report month" type="month" value={reportMonth} onChange={(event) => setReportMonth(event.target.value)} />
+            <a className="button secondary" href={`/api/v1/finance/reports/company-expenses${reportQuery}`}>
+              <Download size={16} />
+              Company CSV
+            </a>
             <a className="button secondary" href={`/api/v1/finance/reports/imprest${reportQuery}`}>
               <Download size={16} />
               Imprest CSV
@@ -402,6 +497,20 @@ export function FinanceQueue() {
               Billable CSV
             </a>
           </div>
+        </div>
+        <div aria-label="Finance action buckets" className="queue-tabs">
+          {financeBuckets(items, claimDetails).map((item) => (
+            <button
+              aria-pressed={bucket === item.bucket}
+              className={`queue-tab ${bucket === item.bucket ? "active" : ""}`}
+              key={item.bucket}
+              onClick={() => setBucket(item.bucket)}
+              type="button"
+            >
+              <strong>{item.count}</strong>
+              <span>{item.label}</span>
+            </button>
+          ))}
         </div>
         <ActionFeedback message={message} onDismiss={() => setMessage("")} />
         <table className="table">
@@ -426,13 +535,15 @@ export function FinanceQueue() {
               </td>
             </tr>
           ) : null}
-          {!isLoading && items.map((item) => (
-            <>
+          {!isLoading && filteredItems.map((item) => (
+            <Fragment key={item.claimId}>
               <tr key={item.claimId}>
                 <td>
                   <strong>{item.ticketId ?? item.claimId.slice(0, 8)}</strong>
                   <br />
-                  <span className="muted">{item.claimKind} · {item.submittedBy}</span>
+                  <span className="muted">{item.company} · {item.claimKind} · {item.submittedBy}</span>
+                  <br />
+                  <SlaChip days={item.daysPending} />
                 </td>
                 <td>
                   <strong>
@@ -464,15 +575,25 @@ export function FinanceQueue() {
                       {busyAction === `receipts:${item.claimId}` ? <Loader2 size={16} /> : <Eye size={16} />}
                       {expandedClaimId === item.claimId ? "Hide receipts" : "View receipts"}
                     </button>
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => setWorkspaceClaimId(item.claimId)} type="button">
+                      <Eye size={16} />
+                      Open workspace
+                    </button>
                     <button
                       className="button secondary"
-                      disabled={!item.physicalReceiptRequired || item.physicalReceiptConfirmed || !allLinesAccepted(item) || busyAction === `confirm:${item.claimId}`}
-                      onClick={() => void confirmReceipt(item.claimId)}
+                      disabled={
+                        !item.physicalReceiptRequired ||
+                        item.physicalReceiptConfirmed ||
+                        (hasLoadedReceiptLines(item) && !allLinesAccepted(item)) ||
+                        busyAction === `confirm:${item.claimId}` ||
+                        busyAction === `receipts:${item.claimId}`
+                      }
+                      onClick={() => void handleReceiptGate(item)}
                       type="button"
-                      title={!allLinesAccepted(item) ? "Accept every voucher line before confirming the complete pack" : "Confirm the complete voucher pack and send it to Audit"}
+                      title={!hasLoadedReceiptLines(item) ? "Open voucher review first" : !allLinesAccepted(item) ? "Accept every voucher line before sending to Audit" : "Confirm the complete voucher pack and send it to Audit"}
                     >
-                      {busyAction === `confirm:${item.claimId}` ? <Loader2 size={16} /> : <ClipboardCheck size={16} />}
-                      {!item.physicalReceiptRequired ? "No receipt gate" : item.physicalReceiptConfirmed ? "Sent to Audit" : !allLinesAccepted(item) ? "Review all vouchers" : "Confirm pack and send to Audit"}
+                      {busyAction === `confirm:${item.claimId}` || busyAction === `receipts:${item.claimId}` ? <Loader2 size={16} /> : <ClipboardCheck size={16} />}
+                      {!item.physicalReceiptRequired ? "No receipt gate" : item.physicalReceiptConfirmed ? "Sent to Audit" : !hasLoadedReceiptLines(item) ? "Review vouchers" : !allLinesAccepted(item) ? "Accept all lines" : "Send to Audit"}
                     </button>
                     <button
                       className="button"
@@ -504,6 +625,7 @@ export function FinanceQueue() {
                       {busyAction === `audit:${item.claimId}` ? <Loader2 size={16} /> : <Download size={16} />}
                       Audit CSV
                     </button>
+                    <ClaimSummaryActions claimId={item.claimId} onError={setMessage} ticketId={item.ticketId} />
                   </div>
                 </td>
               </tr>
@@ -542,8 +664,18 @@ export function FinanceQueue() {
                                 <Pencil size={16} /> Edit head / amount
                               </button>
                             )}
-                            <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void reviewLine(item.claimId, line.lineItemId, "Accepted")} type="button">
-                              Accept
+                            <button
+                              className={line.financeReviewStatus === "Accepted" ? "button accepted" : "button secondary"}
+                              disabled={Boolean(busyAction) || line.financeReviewStatus === "Accepted"}
+                              onClick={() => void reviewLine(item.claimId, line.lineItemId, "Accepted")}
+                              type="button"
+                            >
+                              {line.financeReviewStatus === "Accepted" ? <ClipboardCheck size={16} /> : null}
+                              {line.financeReviewStatus === "Accepted" ? "Accepted" : "Accept"}
+                            </button>
+                            <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => void correctExpenseHead(item.claimId, line.lineItemId, line.expenseHead)} type="button">
+                              {busyAction === `expense-head:${line.lineItemId}` ? <Loader2 size={16} /> : null}
+                              Correct head
                             </button>
                             <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => openDecision({ kind: "reject-line", claimId: item.claimId, lineItemId: line.lineItemId, title: line.description })} type="button">
                               Reject
@@ -567,11 +699,16 @@ export function FinanceQueue() {
                   </td>
                 </tr>
               ) : null}
-            </>
+            </Fragment>
           ))}
-          {!isLoading && items.length === 0 ? (
+          {!isLoading && filteredItems.length === 0 ? (
             <tr>
-              <td colSpan={6}>No finance items pending.</td>
+              <td colSpan={6}>
+                <div className="table-empty-state">
+                  <strong>{recordSearch ? "No finance items match this search" : "No voucher packs pending"}</strong>
+                  <span>{recordSearch ? "Clear the search or try ticket, claimant, site, amount, or bank reference." : "Finance has no claims waiting for voucher review, Audit handoff, or payment release."}</span>
+                </div>
+              </td>
             </tr>
           ) : null}
         </tbody>
@@ -585,6 +722,7 @@ export function FinanceQueue() {
             <tr>
               <th>Advance</th>
               <th>Claimant</th>
+              <th>Company</th>
               <th>Site</th>
               <th>Advance</th>
               <th>Settled</th>
@@ -595,7 +733,7 @@ export function FinanceQueue() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <span className="loading-inline">
                     <Loader2 size={16} />
                     Loading advances...
@@ -603,14 +741,15 @@ export function FinanceQueue() {
                 </td>
               </tr>
             ) : null}
-            {!isLoading && advances.map((advance) => (
+            {!isLoading && filteredAdvances.map((advance) => (
               <tr key={advance.claimId}>
                 <td>
                   <strong>{advance.ticketId}</strong>
                   <br />
-                  <span className="muted">{advance.ageDays} days open</span>
+                  <SlaChip days={advance.ageDays} />
                 </td>
                 <td>{advance.submittedBy}</td>
+                <td>{advance.company}</td>
                 <td>{advance.siteName ?? "No site linked"}</td>
                 <td>Rs {advance.advanceAmount.toLocaleString("en-IN")}</td>
                 <td>Rs {advance.settledAmount.toLocaleString("en-IN")}</td>
@@ -624,9 +763,14 @@ export function FinanceQueue() {
                 </td>
               </tr>
             ))}
-            {!isLoading && advances.length === 0 ? (
+            {!isLoading && filteredAdvances.length === 0 ? (
               <tr>
-                <td colSpan={7}>No paid advances with an open balance.</td>
+                <td colSpan={8}>
+                  <div className="table-empty-state">
+                    <strong>{recordSearch ? "No advances match this search" : "No open advance balances"}</strong>
+                    <span>{recordSearch ? "Try searching by ticket, claimant, site, amount, or settlement status." : "All paid advances are fully settled or no paid advances are currently open."}</span>
+                  </div>
+                </td>
               </tr>
             ) : null}
           </tbody>
@@ -686,6 +830,7 @@ export function FinanceQueue() {
           </div>
         </div>
       ) : null}
+      <UniversalClaimDrawer claimId={workspaceClaimId} isOpen={Boolean(workspaceClaimId)} onClose={() => setWorkspaceClaimId(null)} onError={setMessage} />
     </div>
   );
 }
@@ -693,4 +838,60 @@ export function FinanceQueue() {
 function maskAccount(value: string) {
   if (value.length <= 4) return value;
   return `****${value.slice(-4)}`;
+}
+
+function matchesFinanceSearch(item: FinanceItem, query: string, detail?: ClaimReceiptDetail) {
+  return matchesText(query, [
+    item.claimId,
+    item.ticketId,
+    item.company,
+    item.claimKind,
+    item.status,
+    item.submittedBy,
+    item.siteName,
+    item.bankAccountHolderName,
+    item.bankAccountNumber,
+    item.bankIfsc,
+    item.bankName,
+    String(item.totalAmount),
+    String(item.finalPayableAmount),
+    ...(detail?.lineItems.flatMap((line) => [
+      line.description,
+      String(line.amount),
+      line.financeReviewStatus,
+      line.financeReviewRemarks,
+      ...line.attachments.map((attachment) => attachment.originalFileName)
+    ]) ?? [])
+  ]);
+}
+
+function financeBuckets(items: FinanceItem[], details: Record<string, ClaimReceiptDetail>) {
+  return [
+    { bucket: "All" as const, label: "All finance work", count: items.length },
+    { bucket: "ReviewVouchers" as const, label: "Voucher review", count: items.filter((item) => matchesFinanceBucket(item, "ReviewVouchers", details[item.claimId])).length },
+    { bucket: "ReadyForAudit" as const, label: "Audit-ready packs", count: items.filter((item) => matchesFinanceBucket(item, "ReadyForAudit", details[item.claimId])).length },
+    { bucket: "SentToAudit" as const, label: "Audit-sent packs", count: items.filter((item) => matchesFinanceBucket(item, "SentToAudit", details[item.claimId])).length },
+    { bucket: "PaymentReady" as const, label: "Payment ready", count: items.filter((item) => matchesFinanceBucket(item, "PaymentReady", details[item.claimId])).length }
+  ];
+}
+
+function matchesFinanceBucket(item: FinanceItem, bucket: FinanceBucket, detail?: ClaimReceiptDetail) {
+  if (bucket === "All") return true;
+  if (bucket === "PaymentReady") return item.status === "FinanceConfirmed";
+  if (bucket === "SentToAudit") return item.physicalReceiptConfirmed && item.status !== "FinanceConfirmed";
+  if (bucket === "ReadyForAudit") {
+    return item.physicalReceiptRequired &&
+      !item.physicalReceiptConfirmed &&
+      Boolean(detail?.lineItems.length) &&
+      Boolean(detail?.lineItems.every((line) => line.financeReviewStatus === "Accepted"));
+  }
+  if (bucket === "ReviewVouchers") return item.physicalReceiptRequired && !item.physicalReceiptConfirmed;
+  return true;
+}
+
+function matchesText(query: string, values: Array<string | number | null | undefined>) {
+  if (!query) return true;
+  return values
+    .filter((value): value is string | number => value !== null && value !== undefined)
+    .some((value) => String(value).toLowerCase().includes(query));
 }

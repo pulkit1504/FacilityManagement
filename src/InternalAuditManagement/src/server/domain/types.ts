@@ -4,6 +4,9 @@ export type SubmissionMode = (typeof submissionModes)[number];
 export const claimKinds = ["Advance", "Reimbursement"] as const;
 export type ClaimKind = (typeof claimKinds)[number];
 
+export const operatingCompanies = ["Nimbus", "Striker"] as const;
+export type OperatingCompany = (typeof operatingCompanies)[number];
+
 export const paymentModes = ["Cash", "UPI"] as const;
 export type PaymentMode = (typeof paymentModes)[number];
 
@@ -52,12 +55,16 @@ export const auditActionTypes = [
   "FINANCE_LINE_ACCEPT",
   "FINANCE_LINE_REJECT",
   "FINANCE_LINE_UPDATE",
+  "EXPENSE_HEAD_CORRECTED",
   "PHYSICAL_RECEIPT_CONFIRM",
   "AUDITOR_VOUCHERS_RECEIVED",
+  "AUDIT_LINE_APPROVE",
+  "AUDIT_LINE_REJECT",
   "AUDIT_APPROVE",
   "AUDIT_REJECT",
   "AUDIT_INFO_REQUEST",
   "PAYMENT_RELEASE",
+  "CLAIM_COMMENT",
   "REJECT",
   "BILLABLE_TAG_CHANGE",
   "FRAUD_FLAG",
@@ -87,6 +94,8 @@ export type Employee = {
   bankAccountNumber: string | null;
   bankIfsc: string | null;
   bankName: string | null;
+  passwordResetRequired?: boolean;
+  passwordUpdatedAt?: string | null;
   isActive: boolean;
 };
 
@@ -94,6 +103,15 @@ export type Holiday = {
   holidayDate: string;
   holidayName: string;
   isNational: boolean;
+};
+
+export type ExpenseHead = {
+  expenseHeadId: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type Site = {
@@ -106,6 +124,7 @@ export type Site = {
   contractDescription: string | null;
   clusterHeadEmployeeId: string | null;
   clusterHeadName: string | null;
+  isActive?: boolean;
 };
 
 export type ClientContract = {
@@ -121,6 +140,7 @@ export type ExpenseClaim = {
   claimId: string;
   ticketId: string;
   submitterEmployeeId: string;
+  company: OperatingCompany;
   claimKind: ClaimKind;
   submissionMode: SubmissionMode;
   proformaPeriodStart: string | null;
@@ -161,6 +181,11 @@ export type ExpenseLineItem = {
   invoiceValidationStatus: "Valid" | "Invalid" | "NotApplicable" | "PendingErpValidation";
   financeReviewStatus: "Pending" | "Accepted" | "Rejected";
   financeReviewRemarks: string | null;
+  auditReviewStatus: "Pending" | "Approved" | "Rejected";
+  auditApprovedAmount: number | null;
+  auditReviewRemarks: string | null;
+  auditReviewedBy: string | null;
+  auditReviewedAt: string | null;
   billingAlertCreated: boolean;
   siteId: string | null;
   missingReceiptFlag: boolean;
@@ -198,6 +223,8 @@ export type ClaimDetail = ExpenseClaim & {
 
 export type ApprovalQueueItem = {
   claimId: string;
+  ticketId: string;
+  company: OperatingCompany;
   submittedBy: string;
   submittedByRole: UserRole;
   siteName: string | null;
@@ -229,6 +256,7 @@ export type FinanceQueueItem = ApprovalQueueItem & {
 export type PendingAdvanceItem = {
   claimId: string;
   ticketId: string;
+  company: OperatingCompany;
   submittedBy: string;
   siteId: string | null;
   siteName: string | null;
@@ -335,6 +363,25 @@ export type AuditQueueItem = FinanceQueueItem & {
   auditDecisionRequired: boolean;
 };
 
+export type AuditImprestRegisterItem = {
+  claimId: string;
+  ticketId: string;
+  company: OperatingCompany;
+  claimKind: ClaimKind;
+  status: ClaimStatus;
+  statusLabel: string;
+  submittedBy: string;
+  siteName: string | null;
+  totalAmount: number;
+  advanceAmount: number;
+  settledAmount: number;
+  advanceBalance: number;
+  advanceAdjustmentAmount: number;
+  finalPayableAmount: number;
+  updatedAt: string;
+  ageDays: number;
+};
+
 export type OverviewMetrics = {
   pendingApprovals: number;
   financeQueueCount: number;
@@ -363,6 +410,7 @@ export type MisDashboardMetrics = {
 
 export type ImprestLedgerReportRow = {
   ticketId: string;
+  company: OperatingCompany;
   claimantName: string;
   siteName: string | null;
   advanceAmount: number;
@@ -374,6 +422,7 @@ export type ImprestLedgerReportRow = {
 
 export type BillableClaimReportRow = {
   ticketId: string;
+  company: OperatingCompany;
   claimantName: string;
   siteName: string | null;
   expenseHead: string | null;
@@ -382,8 +431,41 @@ export type BillableClaimReportRow = {
   billableAmount: number;
   expenseTag: ExpenseTag;
   invoiceNumber: string | null;
+  paymentMode: PaymentMode | null;
+  vendorName: string | null;
+  vendorInvoiceNumber: string | null;
+  siteOrDepartment: string | null;
   recoveryStatus: "Billed" | "B2C - Pending Billing" | "Non Billable";
   transactionDate: string;
+};
+
+export type CompanyExpenseReportRow = {
+  ticketId: string;
+  company: OperatingCompany;
+  claimKind: ClaimKind;
+  status: ClaimStatus;
+  claimantName: string;
+  siteName: string | null;
+  expenseHead: string | null;
+  description: string;
+  amount: number;
+  billableAmount: number;
+  nonBillableAmount: number;
+  ctcAmount: number;
+  contractualPartAmount: number;
+  expenseTag: ExpenseTag;
+  clientInvoiceNumber: string | null;
+  vendorName: string | null;
+  vendorInvoiceNumber: string | null;
+  transactionDate: string;
+  paymentMode: PaymentMode | null;
+  financeReviewStatus: ExpenseLineItem["financeReviewStatus"];
+  auditReviewStatus: ExpenseLineItem["auditReviewStatus"];
+  auditApprovedAmount: number | null;
+  advanceAmount: number;
+  advanceAdjustmentAmount: number;
+  finalPayableAmount: number;
+  updatedAt: string;
 };
 
 export type NotificationOutboxInput = {

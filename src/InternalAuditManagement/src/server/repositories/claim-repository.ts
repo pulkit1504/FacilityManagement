@@ -2,11 +2,13 @@ import type {
   ApprovalStep,
   ApprovalQueueItem,
   AuditActionType,
+  AuditImprestRegisterItem,
   AuditLogEntry,
   AuditQueueItem,
   BillingAlert,
   BillingAlertQueueItem,
   BillableClaimReportRow,
+  CompanyExpenseReportRow,
   ClaimDetail,
   ClaimStatus,
   ClientContract,
@@ -14,6 +16,7 @@ import type {
   FinanceQueueItem,
   ExpenseClaim,
   ExpenseAttachment,
+  ExpenseHead,
   ExpenseLineItem,
   FraudFlag,
   FraudFlagQueueItem,
@@ -30,7 +33,7 @@ import type {
   SubmissionMode
 } from "../domain/types";
 import type { CreateClaimInput, CreateLineItemInput } from "../validation/claim.schemas";
-import type { CreateContractInput, CreateEmployeeInput, CreateHolidayInput, CreateSiteInput, UpdateBankDetailsInput } from "../validation/claim.schemas";
+import type { ChangePasswordInput, CreateContractInput, CreateEmployeeInput, CreateExpenseHeadInput, CreateHolidayInput, CreateSiteInput, ResetEmployeePasswordInput, UpdateBankDetailsInput, UpdateExpenseHeadInput, UpdateSiteInput } from "../validation/claim.schemas";
 
 export type CreateClaimRecord = CreateClaimInput & {
   submitterEmployeeId: string;
@@ -77,9 +80,11 @@ export type CleanupResult = {
 export interface ClaimRepository {
   listClaimsForUser(userId: string, role: string): Promise<ExpenseClaim[]>;
   listActiveSites(): Promise<Site[]>;
+  listSites(includeInactive?: boolean): Promise<Site[]>;
   listContracts(): Promise<ClientContract[]>;
   createContract(input: CreateContractInput): Promise<ClientContract>;
   createSite(input: CreateSiteInput): Promise<Site>;
+  updateSite(siteId: string, input: UpdateSiteInput): Promise<Site>;
   assignSiteClusterHead(siteId: string, clusterHeadEmployeeId: string): Promise<Site>;
   deactivateSite(siteId: string): Promise<Site>;
   listEmployees(): Promise<Employee[]>;
@@ -88,12 +93,25 @@ export interface ClaimRepository {
   listHolidays(): Promise<Holiday[]>;
   createHoliday(input: CreateHolidayInput): Promise<Holiday>;
   deleteHoliday(holidayDate: string): Promise<void>;
+  listExpenseHeads(includeInactive?: boolean): Promise<ExpenseHead[]>;
+  createExpenseHead(input: CreateExpenseHeadInput): Promise<ExpenseHead>;
+  updateExpenseHead(expenseHeadId: string, input: UpdateExpenseHeadInput): Promise<ExpenseHead>;
+  deactivateExpenseHead(expenseHeadId: string): Promise<ExpenseHead>;
+  resetEmployeePassword(employeeId: string, input: ResetEmployeePasswordInput): Promise<Employee>;
+  changeEmployeePassword(employeeId: string, input: ChangePasswordInput): Promise<Employee | null>;
   getClaimDetail(claimId: string): Promise<ClaimDetail | null>;
   createClaim(input: CreateClaimRecord): Promise<ExpenseClaim>;
   addLineItem(claimId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
   updateLineItem(claimId: string, lineItemId: string, input: CreateLineItemInput): Promise<ExpenseLineItem>;
+  updateLineItemExpenseHead(claimId: string, lineItemId: string, expenseHead: string): Promise<ExpenseLineItem>;
   reviewLineItem(claimId: string, lineItemId: string, decision: "Accepted" | "Rejected", remarks?: string | null): Promise<ExpenseLineItem>;
   updateFinanceLineItem(claimId: string, lineItemId: string, expenseHead: string, amount: number): Promise<ExpenseLineItem>;
+  reviewAuditLineItem(claimId: string, lineItemId: string, input: {
+    decision: "Approved" | "Rejected";
+    approvedAmount: number | null;
+    remarks?: string | null;
+    reviewedByUserId: string;
+  }): Promise<ExpenseLineItem>;
   deleteLineItem(claimId: string, lineItemId: string): Promise<void>;
   invoiceReferenceExists(
     invoiceNumber: string,
@@ -122,6 +140,7 @@ export interface ClaimRepository {
   listApprovalQueue(userId: string, role: string): Promise<ApprovalQueueItem[]>;
   listFinanceQueue(): Promise<FinanceQueueItem[]>;
   listAuditQueue(): Promise<AuditQueueItem[]>;
+  listAuditImprestRegister(): Promise<AuditImprestRegisterItem[]>;
   listPendingAdvances(userId: string, role: string): Promise<PendingAdvanceItem[]>;
   activeSettlementExists(advanceClaimId: string, excludingClaimId: string): Promise<boolean>;
   findActiveAdvanceAdjustment(advanceClaimId: string, excludingClaimId: string): Promise<ExpenseClaim | null>;
@@ -149,11 +168,12 @@ export interface ClaimRepository {
   getMisDashboardMetrics(): Promise<MisDashboardMetrics>;
   listImprestLedgerReport(): Promise<ImprestLedgerReportRow[]>;
   listBillableClaimReport(): Promise<BillableClaimReportRow[]>;
+  listCompanyExpenseReport(): Promise<CompanyExpenseReportRow[]>;
 }
 
 export type ClaimSummary = Pick<
   ExpenseClaim,
-  "claimId" | "submissionMode" | "status" | "totalAmount" | "siteId" | "createdAt" | "updatedAt"
+  "claimId" | "company" | "submissionMode" | "status" | "totalAmount" | "siteId" | "createdAt" | "updatedAt"
 > & {
   ticketId: string;
   claimKind: ExpenseClaim["claimKind"];
@@ -177,6 +197,7 @@ export function defaultClaimRecord(
     claimId,
     ticketId: `${ticketPrefix}-${ticketDate}-${ticketSuffix}`,
     submitterEmployeeId: input.submitterEmployeeId,
+    company: input.company ?? "Nimbus",
     claimKind: input.claimKind ?? "Reimbursement",
     submissionMode: input.submissionMode as SubmissionMode,
     proformaPeriodStart: input.proformaPeriodStart ?? null,

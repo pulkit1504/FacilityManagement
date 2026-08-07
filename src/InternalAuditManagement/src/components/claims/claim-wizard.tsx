@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Check, Download, Loader2, Paperclip, Pencil, Plus, RotateCcw, Send, Trash2, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { expenseTagLabel } from "@/shared/expense-tags";
 import { calculateSelectedSettlementAmounts } from "@/shared/settlement";
@@ -32,6 +32,12 @@ type SiteOption = {
   serviceType: string;
 };
 
+type ExpenseHeadOption = {
+  expenseHeadId: string;
+  name: string;
+  isActive: boolean;
+};
+
 type SavedLineItem = {
   lineItemId: string;
   expenseHead: string | null;
@@ -52,6 +58,7 @@ type SavedLineItem = {
 
 type LoadedClaim = {
   claimId: string;
+  company: OperatingCompany;
   claimKind: "Advance" | "Reimbursement";
   advanceClaimId: string | null;
   submissionMode: "SingleVoucher" | "Proforma";
@@ -65,6 +72,8 @@ type LoadedClaim = {
   advanceAdjustmentAmount: number;
   lineItems: Array<SavedLineItem & { attachments: Array<{ contentHash: string }> }>;
 };
+
+type OperatingCompany = "Nimbus" | "Striker";
 
 type PendingAdvance = {
   claimId: string;
@@ -117,7 +126,7 @@ const emptyLineItem: LineItemDraft = {
   siteId: ""
 };
 
-const expenseHeadOptions = [
+const fallbackExpenseHeadOptions = [
   "Housekeeping Consumables",
   "Cleaning Chemicals",
   "Pantry and Refreshments",
@@ -146,10 +155,13 @@ export function ClaimWizard({
   const [pendingAdvances, setPendingAdvances] = useState<PendingAdvance[]>([]);
   const [pendingAdvancesLoaded, setPendingAdvancesLoaded] = useState(false);
   const [claimStatus, setClaimStatus] = useState<string | null>(null);
+  const [company, setCompany] = useState<OperatingCompany>("Nimbus");
+  const [claimKind, setClaimKind] = useState<"Advance" | "Reimbursement">("Reimbursement");
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [submissionMode, setSubmissionMode] = useState<"SingleVoucher" | "Proforma">("SingleVoucher");
   const [claimPeriodMonth, setClaimPeriodMonth] = useState(new Date().toISOString().slice(0, 7));
   const [sites, setSites] = useState<SiteOption[]>([]);
+  const [expenseHeadOptions, setExpenseHeadOptions] = useState<string[]>(fallbackExpenseHeadOptions);
   const [siteId, setSiteId] = useState("");
   const [proformaPeriodStart, setProformaPeriodStart] = useState("");
   const [proformaPeriodEnd, setProformaPeriodEnd] = useState("");
@@ -165,11 +177,12 @@ export function ClaimWizard({
   const [isPreparingCorrection, setIsPreparingCorrection] = useState(false);
   const [autoReopenAttemptedClaimId, setAutoReopenAttemptedClaimId] = useState<string | null>(null);
   const [correctionBlocker, setCorrectionBlocker] = useState<CorrectionBlocker | null>(null);
+  const lineItemSectionRef = useRef<HTMLElement>(null);
 
   const requiresSite = lineItem.expenseTag === "ContractPartCost";
   const requiresInvoice = lineItem.expenseTag === "AlreadyBilled";
   const requiresBillableAmount = lineItem.expenseTag === "PendingBilling";
-  const requiresSiteOrDepartment = lineItem.expenseTag === "ContractPartCost" || lineItem.expenseTag === "BackendCTC";
+  const requiresSiteOrDepartment = lineItem.expenseTag === "BackendCTC";
   const requiresProformaPeriod = submissionMode === "Proforma";
   const today = new Date().toISOString().slice(0, 10);
   const claimMonthStart = `${claimPeriodMonth}-01`;
@@ -256,6 +269,28 @@ export function ClaimWizard({
   }, []);
 
   useEffect(() => {
+    async function loadExpenseHeads() {
+      try {
+        const response = await fetch("/api/v1/expense-heads", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) return;
+
+        const loadedHeads = ((data.items ?? []) as ExpenseHeadOption[])
+          .filter((head) => head.isActive !== false)
+          .map((head) => head.name)
+          .filter(Boolean);
+        if (loadedHeads.length > 0) {
+          setExpenseHeadOptions(loadedHeads);
+        }
+      } catch {
+        setExpenseHeadOptions(fallbackExpenseHeadOptions);
+      }
+    }
+
+    void loadExpenseHeads();
+  }, []);
+
+  useEffect(() => {
     async function loadPendingAdvances() {
       try {
         const response = await fetch("/api/v1/claims/advances", { cache: "no-store" });
@@ -276,6 +311,8 @@ export function ClaimWizard({
 
   const applyLoadedClaim = useCallback((data: LoadedClaim) => {
     setClaimId(data.claimId);
+    setCompany(data.company ?? "Nimbus");
+    setClaimKind(data.claimKind);
     setClaimStatus(data.status);
     setCorrectionBlocker(null);
     setAdvanceClaimId(data.advanceClaimId ?? "");
@@ -351,6 +388,7 @@ export function ClaimWizard({
         body: JSON.stringify({
           submissionMode,
           claimKind: "Reimbursement",
+          company,
           siteId,
           claimPeriodMonth: `${claimPeriodMonth}-01`,
           advanceClaimId: null,
@@ -380,6 +418,8 @@ export function ClaimWizard({
   function resetDraft() {
     setClaimId(null);
     setClaimStatus(null);
+    setCompany("Nimbus");
+    setClaimKind("Reimbursement");
     setRejectionReason(null);
     setLineItem(emptyLineItem);
     setEditingLineItemId(null);
@@ -501,6 +541,17 @@ export function ClaimWizard({
     setEditingLineItemId(null);
     setLineItem(emptyLineItem);
     setMessage("");
+  }
+
+  function prepareAnotherLineItem() {
+    setEditingLineItemId(null);
+    setLineItem({
+      ...emptyLineItem,
+      transactionDate: lineDateMax
+    });
+    setMessage("Add the next expense line, then save it before submitting the claim.");
+    lineItemSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    lineItemSectionRef.current?.focus({ preventScroll: true });
   }
 
   async function deleteLineItem(lineItemId: string) {
@@ -642,6 +693,27 @@ export function ClaimWizard({
     }
   }
 
+  async function downloadClaimSummary() {
+    if (!claimId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/v1/claims/${claimId}/summary/export`);
+      if (!response.ok) {
+        const data = await response.json();
+        setErrorMessages(getProblemMessages(data, "Could not download claim summary."));
+        return;
+      }
+
+      await downloadResponse(response, `claim-${claimId}-summary.csv`);
+      setMessage("Claim summary downloaded.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not download claim summary.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const reopenReturnedClaim = useCallback(async (options: { automatic?: boolean } = {}) => {
     if (!claimId) return;
     setBusy(true);
@@ -699,9 +771,16 @@ export function ClaimWizard({
         <h2>Claim Details</h2>
         <div className="grid cols-3">
           <div>
-            <span className="muted">Claim type</span>
-            <p><strong>Reimbursement</strong></p>
+            <span className="muted">Request type</span>
+            <p><strong>{claimKind === "Advance" ? "Advance" : "Reimbursement"}</strong></p>
           </div>
+          <label>
+            <span className="muted">Company</span>
+            <select disabled={Boolean(claimId)} value={company} onChange={(event) => setCompany(event.target.value as OperatingCompany)}>
+              <option value="Nimbus">Nimbus</option>
+              <option value="Striker">Striker</option>
+            </select>
+          </label>
           <label>
             <span className="muted">Claim month</span>
             <input disabled={Boolean(claimId)} type="month" value={claimPeriodMonth} onChange={(event) => setClaimPeriodMonth(event.target.value)} />
@@ -751,7 +830,7 @@ export function ClaimWizard({
           <div className="actions" style={{ alignItems: "end" }}>
             <button className="button" disabled={busy || Boolean(claimId) || !canCreateDraft} onClick={createDraft} type="button">
               <Check size={18} />
-              {claimId ? (isDraft ? "Draft ready" : "Claim loaded") : "Create draft"}
+              {claimId ? (isDraft ? "Draft ready" : `${claimKind === "Advance" ? "Advance" : "Claim"} loaded`) : "Create draft"}
             </button>
             {claimId && !submissionResult && !initialClaimId ? (
               <button className="button secondary" disabled={busy} onClick={resetDraft} type="button">
@@ -766,7 +845,7 @@ export function ClaimWizard({
             Select a valid proforma period before creating the draft.
           </p>
         ) : null}
-        {claimId ? <p className="muted" style={{ marginTop: 12 }}>{isDraft ? "Draft" : "Claim"} ID: {claimId}</p> : null}
+        {claimId ? <p className="muted" style={{ marginTop: 12 }}>{isDraft ? "Draft" : claimKind === "Advance" ? "Advance" : "Claim"} ID: {claimId}</p> : null}
         {selectedAdvance ? (
           <div className="settlement-summary" style={{ marginTop: 12 }}>
             <div>
@@ -862,15 +941,19 @@ export function ClaimWizard({
                 <Check size={22} />
               </div>
               <div>
-                <h2>Claim Submitted</h2>
+                <h2>{claimKind === "Advance" ? "Advance Submitted" : "Claim Submitted"}</h2>
                 <p>{submissionResult.message}</p>
-                <p className="muted">Assigned to {submissionResult.assignedTo}. This claim is locked while it is under approval.</p>
+                <p className="muted">Assigned to {submissionResult.assignedTo}. This {claimKind === "Advance" ? "advance" : "claim"} is locked while it is under approval.</p>
+                <button className="button secondary" disabled={busy} onClick={() => void downloadClaimSummary()} type="button">
+                  {busy ? <Loader2 size={18} /> : <Download size={18} />}
+                  Download claim summary
+                </button>
               </div>
             </section>
           ) : null}
 
           {!submissionResult && isDraft ? (
-          <section className="panel">
+          <section aria-label="Line item editor" className="panel" ref={lineItemSectionRef} tabIndex={-1}>
             <h2>{editingLineItemId ? "Edit Line Item" : "Add Line Item"}</h2>
             <div className="grid cols-3">
               <label>
@@ -1003,10 +1086,18 @@ export function ClaimWizard({
               </div>
               {!submissionResult && isDraft ? (
                 <div className="grid" style={{ gap: 8, justifyItems: "end" }}>
-                  <button className="button" disabled={busy || !canSubmitClaim} onClick={requestSubmitClaim} type="button">
-                    <Send size={18} />
-                    Submit claim
-                  </button>
+                  <div className="actions">
+                    {savedLineItems.length > 0 ? (
+                      <button className="button secondary" disabled={busy} onClick={prepareAnotherLineItem} type="button">
+                        <Plus size={18} />
+                        Add another line item
+                      </button>
+                    ) : null}
+                    <button className="button" disabled={busy || !canSubmitClaim} onClick={requestSubmitClaim} type="button">
+                      <Send size={18} />
+                      Submit {claimKind === "Advance" ? "advance" : "claim"}
+                    </button>
+                  </div>
                   {submitGateMessages.length > 0 ? (
                     <p className="muted" style={{ margin: 0, maxWidth: 360, textAlign: "right" }}>
                       {submitGateMessages[0]}
@@ -1202,6 +1293,20 @@ function addUtcDays(dateValue: string, days: number) {
   const date = new Date(`${dateValue}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+async function downloadResponse(response: Response, fallbackFileName: string) {
+  const blob = await response.blob();
+  const contentDisposition = response.headers.get("Content-Disposition") ?? "";
+  const fileName = contentDisposition.match(/filename="([^"]+)"/)?.[1] ?? fallbackFileName;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function endOfMonth(monthValue: string) {

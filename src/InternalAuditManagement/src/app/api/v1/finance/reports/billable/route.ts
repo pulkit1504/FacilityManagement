@@ -9,7 +9,8 @@ export async function GET(request: Request) {
     const csv = await getFinanceService().exportBillableClaims(user, {
       site: url.searchParams.get("site"),
       claimant: url.searchParams.get("claimant"),
-      month: url.searchParams.get("month")
+      month: url.searchParams.get("month"),
+      company: parseCompany(url.searchParams.get("company"))
     });
     return new Response(csv, {
       headers: {
@@ -20,4 +21,8 @@ export async function GET(request: Request) {
   } catch (error) {
     return toProblemResponse(error, user.correlationId);
   }
+}
+
+function parseCompany(value: string | null) {
+  return value === "Nimbus" || value === "Striker" ? value : "All";
 }

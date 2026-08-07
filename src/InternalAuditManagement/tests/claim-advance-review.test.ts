@@ -15,6 +15,7 @@ function claim(overrides: Partial<ClaimDetail>): ClaimDetail {
     claimId: "claim-1",
     ticketId: "EXP-001",
     submitterEmployeeId: user.userId,
+    company: "Nimbus",
     claimKind: "Reimbursement",
     submissionMode: "SingleVoucher",
     proformaPeriodStart: null,

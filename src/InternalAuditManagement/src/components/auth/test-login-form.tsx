@@ -5,6 +5,7 @@ import { LogIn } from "lucide-react";
 import type { TestUser } from "@/server/auth/test-users";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
+import { CompanyLogo } from "@/components/layout/company-logo";
 
 export function TestLoginForm({ users }: Readonly<{ users: TestUser[] }>) {
   const [selected, setSelected] = useState(`${users[0]?.userId}:${users[0]?.role}`);
@@ -38,6 +39,7 @@ export function TestLoginForm({ users }: Readonly<{ users: TestUser[] }>) {
 
   return (
     <section className="panel login-panel">
+      <CompanyLogo compact />
       <h1>Tester Access</h1>
       <p className="muted">Choose a test profile to explore the workflow.</p>
       <label>

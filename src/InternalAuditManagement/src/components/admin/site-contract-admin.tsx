@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Building2, CalendarPlus, Download, Loader2, MailCheck, Pencil, Plus, PowerOff, Save, Trash2, Upload, UserPlus, X } from "lucide-react";
+import type { ReactNode } from "react";
+import { Building2, CalendarPlus, Download, KeyRound, Loader2, MailCheck, Pencil, Plus, PowerOff, RotateCcw, Save, Trash2, Upload, UserPlus, X } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
 
@@ -24,6 +25,7 @@ type Site = {
   contractDescription: string | null;
   clusterHeadEmployeeId: string | null;
   clusterHeadName: string | null;
+  isActive: boolean;
 };
 
 type Employee = {
@@ -39,7 +41,18 @@ type Employee = {
   bankAccountNumber: string | null;
   bankIfsc: string | null;
   bankName: string | null;
+  passwordResetRequired: boolean;
+  passwordUpdatedAt: string | null;
   isActive: boolean;
+};
+
+type ExpenseHead = {
+  expenseHeadId: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type Holiday = {
@@ -62,9 +75,18 @@ type NotificationItem = {
   sentAt: string | null;
 };
 
+type DeliveryHealth = {
+  apiKeyConfigured: boolean;
+  fromEmailConfigured: boolean;
+  fromEmail: string | null;
+  status: "Ready" | "Restricted" | "Invalid" | "NotConfigured";
+  guidance: string;
+};
+
 const today = new Date().toISOString().slice(0, 10);
 const roles: Employee["role"][] = ["Claimant", "ClusterHead", "HOD", "MD", "Finance", "BillingTeam", "Auditor", "Admin"];
 type BulkUploadKind = "contracts" | "employees" | "sites" | "holidays";
+type AdminSection = "setup" | "people" | "sites" | "notifications" | "retention";
 
 const bulkTemplates: Record<BulkUploadKind, string> = {
   contracts: `clientName,description,startDate,endDate\nAcme Facilities,Annual facilities contract,2026-04-01,2027-03-31`,
@@ -73,16 +95,29 @@ const bulkTemplates: Record<BulkUploadKind, string> = {
   holidays: `holidayDate,holidayName,isNational\n2026-08-15,Independence Day,true`
 };
 
+const adminSections: Array<{ id: AdminSection; label: string; description: string }> = [
+  { id: "setup", label: "Setup", description: "Bulk upload, expense heads, and holidays" },
+  { id: "people", label: "People", description: "Employees, roles, passwords, and bank data" },
+  { id: "sites", label: "Sites", description: "Contracts, site status, and Cluster Head mapping" },
+  { id: "notifications", label: "Mail Delivery", description: "Email health, retries, and history" },
+  { id: "retention", label: "Retention", description: "Controlled cleanup for stale records" }
+];
+
 export function SiteContractAdmin() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [expenseHeads, setExpenseHeads] = useState<ExpenseHead[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<AdminSection>("setup");
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+  const [editingSiteId, setEditingSiteId] = useState<string | null>(null);
+  const [editingExpenseHeadId, setEditingExpenseHeadId] = useState<string | null>(null);
+  const [deliveryHealth, setDeliveryHealth] = useState<DeliveryHealth | null>(null);
   const [cleanupDays, setCleanupDays] = useState(90);
   const [cleanupConfirmed, setCleanupConfirmed] = useState(false);
   const [contractDraft, setContractDraft] = useState({
@@ -96,7 +131,8 @@ export function SiteContractAdmin() {
     siteAddress: "",
     serviceType: "Both" as Site["serviceType"],
     contractId: "",
-    clusterHeadEmployeeId: ""
+    clusterHeadEmployeeId: "",
+    isActive: true
   });
   const [employeeDraft, setEmployeeDraft] = useState({
     employeeId: "",
@@ -118,6 +154,16 @@ export function SiteContractAdmin() {
     holidayName: "",
     isNational: true
   });
+  const [expenseHeadDraft, setExpenseHeadDraft] = useState({
+    name: "",
+    description: "",
+    isActive: true
+  });
+  const [passwordResetDraft, setPasswordResetDraft] = useState({
+    employeeId: "",
+    temporaryPassword: "",
+    requirePasswordReset: true
+  });
 
   const managerOptions = useMemo(
     () => employees.filter((employee) => ["ClusterHead", "HOD", "MD", "Finance", "Auditor"].includes(employee.role)),
@@ -131,17 +177,15 @@ export function SiteContractAdmin() {
     () => new Map(employees.map((employee) => [employee.employeeId, employee.fullName])),
     [employees]
   );
-  const sitesWithoutClusterHead = sites.filter((site) => !site.clusterHeadEmployeeId);
+  const activeSites = sites.filter((site) => site.isActive !== false);
+  const inactiveSites = sites.filter((site) => site.isActive === false);
+  const sitesWithoutClusterHead = activeSites.filter((site) => !site.clusterHeadEmployeeId);
   const payableEmployeesWithoutBank = employees.filter(
     (employee) =>
       ["Claimant", "ClusterHead", "HOD"].includes(employee.role) &&
       !(employee.bankAccountHolderName && employee.bankAccountNumber && employee.bankIfsc && employee.bankName)
   );
   const failedNotifications = notifications.filter((item) => item.status === "Failed");
-  const employeeBankReady =
-    !["Claimant", "ClusterHead", "HOD"].includes(employeeDraft.role) ||
-    Boolean(employeeDraft.bankAccountHolderName && employeeDraft.bankAccountNumber && employeeDraft.bankIfsc && employeeDraft.bankName);
-
   async function load() {
     try {
       const [response, notificationsResponse] = await Promise.all([
@@ -158,12 +202,15 @@ export function SiteContractAdmin() {
       setSites(data.sites ?? []);
       setEmployees(data.employees ?? []);
       setHolidays(data.holidays ?? []);
+      setExpenseHeads(data.expenseHeads ?? []);
       if (notificationsResponse.ok) {
         setNotifications(notificationData.items ?? []);
+        setDeliveryHealth(notificationData.deliveryHealth ?? null);
       } else {
         setMessage(getProblemMessage(notificationData, "Master data loaded, but notification history could not be loaded."));
       }
       setSiteDraft((current) => ({ ...current, contractId: current.contractId || data.contracts?.[0]?.contractId || "" }));
+      setPasswordResetDraft((current) => ({ ...current, employeeId: current.employeeId || data.employees?.[0]?.employeeId || "" }));
     } catch {
       setMessage("Could not load Admin data. Check your connection and access, then try again.");
     } finally {
@@ -181,6 +228,29 @@ export function SiteContractAdmin() {
     try {
       const response = await fetch(path, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      setMessage(data.message ?? getProblemMessage(data, fallback));
+      if (response.ok) {
+        await load();
+      }
+      return response.ok;
+    } catch {
+      setMessage("Could not complete the update. Check your connection and try again.");
+      return false;
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function putJson(path: string, payload: unknown, action: string, fallback: string) {
+    setBusyAction(action);
+    setMessage("");
+    try {
+      const response = await fetch(path, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
@@ -216,15 +286,19 @@ export function SiteContractAdmin() {
       let imported = 0;
 
       for (const [index, row] of rows.entries()) {
-        const payload = bulkPayload(kind, row, contracts);
-        const response = await fetch(endpoints[kind], {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const data = await response.json();
-        if (response.ok) imported += 1;
-        else errors.push(`Row ${index + 2}: ${getProblemMessage(data, "Import failed.")}`);
+        try {
+          const payload = bulkPayload(kind, row, contracts);
+          const response = await fetch(endpoints[kind], {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await response.json();
+          if (response.ok) imported += 1;
+          else errors.push(`Row ${index + 2}: ${getProblemMessage(data, "Import failed.")}`);
+        } catch (error) {
+          errors.push(`Row ${index + 2}: ${error instanceof Error ? error.message : "CSV row could not be read."}`);
+        }
       }
 
       await load();
@@ -255,19 +329,32 @@ export function SiteContractAdmin() {
     }
   }
 
-  async function createSite() {
-    const saved = await postJson(
-      "/api/v1/admin/sites",
-      {
-        ...siteDraft,
-        clusterHeadEmployeeId: siteDraft.clusterHeadEmployeeId || null
-      },
-      "site:create",
-      "Site saved."
-    );
+  async function saveSite() {
+    const payload = {
+      ...siteDraft,
+      clusterHeadEmployeeId: siteDraft.clusterHeadEmployeeId || null
+    };
+    const saved = editingSiteId
+      ? await putJson(
+        `/api/v1/admin/sites/${editingSiteId}`,
+        payload,
+        "site:update",
+        "Site saved."
+      )
+      : await postJson(
+        "/api/v1/admin/sites",
+        payload,
+        "site:create",
+        "Site saved."
+      );
     if (saved) {
-      setSiteDraft((current) => ({ siteName: "", siteAddress: "", serviceType: "Both", contractId: current.contractId, clusterHeadEmployeeId: current.clusterHeadEmployeeId }));
+      resetSiteDraft();
     }
+  }
+
+  async function reactivateSite(site: Site) {
+    if (!window.confirm(`Mark ${site.siteName} active and make it available for new claims?`)) return;
+    await mutate(`/api/v1/admin/sites/${site.siteId}/reactivate`, "POST", `site:${site.siteId}:reactivate`, "Site marked active.");
   }
 
   async function createEmployee() {
@@ -295,6 +382,37 @@ export function SiteContractAdmin() {
     const saved = await postJson("/api/v1/admin/holidays", holidayDraft, "holiday:create", "Holiday saved.");
     if (saved) {
       setHolidayDraft({ holidayDate: today, holidayName: "", isNational: true });
+    }
+  }
+
+  async function saveExpenseHead() {
+    const payload = {
+      name: expenseHeadDraft.name,
+      description: expenseHeadDraft.description || null,
+      isActive: expenseHeadDraft.isActive
+    };
+    const saved = editingExpenseHeadId
+      ? await putJson(`/api/v1/admin/expense-heads/${editingExpenseHeadId}`, payload, "expense-head:update", "Expense head updated.")
+      : await postJson("/api/v1/admin/expense-heads", payload, "expense-head:create", "Expense head saved.");
+    if (saved) {
+      resetExpenseHeadDraft();
+    }
+  }
+
+  async function resetEmployeePassword() {
+    const employee = employees.find((item) => item.employeeId === passwordResetDraft.employeeId);
+    if (!employee || !window.confirm(`Set a temporary password for ${employee.fullName}?`)) return;
+    const saved = await postJson(
+      `/api/v1/admin/employees/${passwordResetDraft.employeeId}/password`,
+      {
+        temporaryPassword: passwordResetDraft.temporaryPassword,
+        requirePasswordReset: passwordResetDraft.requirePasswordReset
+      },
+      "employee:password-reset",
+      "Password reset."
+    );
+    if (saved) {
+      setPasswordResetDraft((current) => ({ ...current, temporaryPassword: "", requirePasswordReset: true }));
     }
   }
 
@@ -395,6 +513,48 @@ export function SiteContractAdmin() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function editSite(site: Site) {
+    setEditingSiteId(site.siteId);
+    setSiteDraft({
+      siteName: site.siteName,
+      siteAddress: site.siteAddress ?? "",
+      serviceType: site.serviceType,
+      contractId: site.contractId ?? "",
+      clusterHeadEmployeeId: site.clusterHeadEmployeeId ?? "",
+      isActive: site.isActive !== false
+    });
+    setActiveSection("sites");
+    setMessage(`Editing ${site.siteName}. Update the site details and select Save site.`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function resetSiteDraft() {
+    setEditingSiteId(null);
+    setSiteDraft((current) => ({
+      siteName: "",
+      siteAddress: "",
+      serviceType: "Both",
+      contractId: contracts[0]?.contractId ?? current.contractId,
+      clusterHeadEmployeeId: current.clusterHeadEmployeeId,
+      isActive: true
+    }));
+  }
+
+  function editExpenseHead(expenseHead: ExpenseHead) {
+    setEditingExpenseHeadId(expenseHead.expenseHeadId);
+    setExpenseHeadDraft({
+      name: expenseHead.name,
+      description: expenseHead.description ?? "",
+      isActive: expenseHead.isActive
+    });
+    setMessage(`Editing expense head ${expenseHead.name}.`);
+  }
+
+  function resetExpenseHeadDraft() {
+    setEditingExpenseHeadId(null);
+    setExpenseHeadDraft({ name: "", description: "", isActive: true });
+  }
+
   function resetEmployeeDraft() {
     setEditingEmployeeId(null);
     setEmployeeDraft({
@@ -430,12 +590,31 @@ export function SiteContractAdmin() {
       <ActionFeedback message={message} onDismiss={() => setMessage("")} />
 
       <section className="panel admin-summary" aria-label="Admin setup summary">
-        <div><strong>{employees.length}</strong><span>Active people</span></div>
-        <div><strong>{sites.length}</strong><span>Active sites</span></div>
-        <div><strong>{contracts.length}</strong><span>Contracts</span></div>
-        <div><strong>{notifications.filter((item) => item.status === "Queued").length}</strong><span>Queued notifications</span></div>
+        <button onClick={() => setActiveSection("people")} type="button"><strong>{employees.length}</strong><span>Active people</span></button>
+        <button onClick={() => setActiveSection("sites")} type="button"><strong>{activeSites.length}</strong><span>Active sites</span></button>
+        <button onClick={() => setActiveSection("sites")} type="button"><strong>{inactiveSites.length}</strong><span>Inactive sites</span></button>
+        <button onClick={() => setActiveSection("sites")} type="button"><strong>{contracts.length}</strong><span>Contracts</span></button>
+        <button onClick={() => setActiveSection("setup")} type="button"><strong>{expenseHeads.filter((head) => head.isActive).length}</strong><span>Expense heads</span></button>
+        <button onClick={() => setActiveSection("notifications")} type="button"><strong>{notifications.filter((item) => item.status === "Queued").length}</strong><span>Queued notifications</span></button>
       </section>
 
+      <section className="panel admin-workspace-nav" aria-label="Admin workspaces">
+        {adminSections.map((section) => (
+          <button
+            aria-pressed={activeSection === section.id}
+            className={activeSection === section.id ? "active" : ""}
+            key={section.id}
+            onClick={() => setActiveSection(section.id)}
+            type="button"
+          >
+            <strong>{section.label}</strong>
+            <span>{section.description}</span>
+          </button>
+        ))}
+      </section>
+
+      {activeSection === "setup" ? (
+        <>
       <section className="panel" aria-label="Bulk master data upload">
         <div className="section-heading">
           <div>
@@ -466,6 +645,89 @@ export function SiteContractAdmin() {
         </div>
       </section>
 
+      <div className="grid cols-2">
+        <section className="panel">
+          <div className="section-heading">
+            <div>
+              <h2>{editingExpenseHeadId ? "Edit Expense Head" : "Add Expense Head"}</h2>
+              <p className="muted">Controls the expense-head dropdown used while creating claim line items.</p>
+            </div>
+            {editingExpenseHeadId ? (
+              <button className="button secondary" disabled={busyAction !== null} onClick={resetExpenseHeadDraft} type="button">
+                <X size={16} />
+                Cancel edit
+              </button>
+            ) : null}
+          </div>
+          <div className="grid">
+            <label>
+              <span className="muted">Expense head name</span>
+              <input value={expenseHeadDraft.name} onChange={(event) => setExpenseHeadDraft({ ...expenseHeadDraft, name: event.target.value })} />
+            </label>
+            <label>
+              <span className="muted">Description</span>
+              <input value={expenseHeadDraft.description} onChange={(event) => setExpenseHeadDraft({ ...expenseHeadDraft, description: event.target.value })} />
+            </label>
+            <label className="checkbox-row">
+              <input checked={expenseHeadDraft.isActive} onChange={(event) => setExpenseHeadDraft({ ...expenseHeadDraft, isActive: event.target.checked })} type="checkbox" />
+              Active for new claims
+            </label>
+            <button className="button" disabled={busyAction !== null || !expenseHeadDraft.name.trim()} onClick={() => void saveExpenseHead()} type="button">
+              {busyAction === "expense-head:create" || busyAction === "expense-head:update" ? <Loader2 size={18} /> : <Save size={18} />}
+              {editingExpenseHeadId ? "Save expense head" : "Add expense head"}
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <section aria-label="Expense heads table" className="panel" tabIndex={0}>
+        <h2>Expense Heads</h2>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Status</th>
+              <th>Updated</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {expenseHeads.map((expenseHead) => (
+              <tr className={editingExpenseHeadId === expenseHead.expenseHeadId ? "editing-row" : undefined} key={expenseHead.expenseHeadId}>
+                <td><strong>{expenseHead.name}</strong></td>
+                <td>{expenseHead.description ?? "No description"}</td>
+                <td>
+                  <span className={`badge ${expenseHead.isActive ? "success" : "warning"}`}>
+                    {expenseHead.isActive ? "Active" : "Inactive"}
+                  </span>
+                </td>
+                <td>{new Date(expenseHead.updatedAt).toLocaleString("en-IN")}</td>
+                <td>
+                  <div className="actions">
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => editExpenseHead(expenseHead)} type="button">
+                      <Pencil size={18} />
+                      Edit
+                    </button>
+                    {expenseHead.isActive ? (
+                      <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/expense-heads/${expenseHead.expenseHeadId}/deactivate`, "POST", `expense-head:${expenseHead.expenseHeadId}`, "Expense head deactivated.", `Deactivate ${expenseHead.name}? Existing claims keep their saved text, but new claims will not show it.`)} type="button">
+                        {busyAction === `expense-head:${expenseHead.expenseHeadId}` ? <Loader2 size={18} /> : <PowerOff size={18} />}
+                        Deactivate
+                      </button>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {expenseHeads.length === 0 ? (
+              <tr>
+                <td colSpan={5}>No expense heads configured.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </section>
+
       {(sitesWithoutClusterHead.length > 0 || payableEmployeesWithoutBank.length > 0 || failedNotifications.length > 0) ? (
         <section className="panel">
           <h2>Setup actions required</h2>
@@ -491,7 +753,11 @@ export function SiteContractAdmin() {
           </div>
         </section>
       ) : null}
+        </>
+      ) : null}
 
+      {activeSection === "sites" ? (
+        <>
       <div className="grid cols-2">
         <section className="panel">
           <h2>Add Contract</h2>
@@ -522,7 +788,18 @@ export function SiteContractAdmin() {
         </section>
 
         <section className="panel">
-          <h2>Add Site</h2>
+          <div className="section-heading">
+            <div>
+              <h2>{editingSiteId ? "Edit Site" : "Add Site"}</h2>
+              <p className="muted">{editingSiteId ? `Updating ${siteDraft.siteName}` : "Create a site and map its operating owner."}</p>
+            </div>
+            {editingSiteId ? (
+              <button className="button secondary" disabled={busyAction !== null} onClick={resetSiteDraft} type="button">
+                <X size={16} />
+                Cancel edit
+              </button>
+            ) : null}
+          </div>
           <div className="grid">
             <label>
               <span className="muted">Site name</span>
@@ -565,13 +842,55 @@ export function SiteContractAdmin() {
                 </select>
               </label>
             </div>
-            <button className="button" disabled={busyAction !== null || !siteDraft.siteName || !siteDraft.contractId || !siteDraft.clusterHeadEmployeeId} onClick={() => void createSite()} type="button">
-              {busyAction === "site:create" ? <Loader2 size={18} /> : <Building2 size={18} />}
-              Add site
+            <label className="checkbox-row">
+              <input checked={siteDraft.isActive} onChange={(event) => setSiteDraft({ ...siteDraft, isActive: event.target.checked })} type="checkbox" />
+              Active for new claims
+            </label>
+            <button className="button" disabled={busyAction !== null || !siteDraft.siteName || !siteDraft.contractId || !siteDraft.clusterHeadEmployeeId} onClick={() => void saveSite()} type="button">
+              {busyAction === "site:create" || busyAction === "site:update" ? <Loader2 size={18} /> : editingSiteId ? <Save size={18} /> : <Building2 size={18} />}
+              {editingSiteId ? "Save site" : "Add site"}
             </button>
           </div>
         </section>
       </div>
+        </>
+      ) : null}
+
+      {activeSection === "people" ? (
+        <>
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <h2>User Login Access</h2>
+            <p className="muted">Enable email login by setting or resetting an employee&apos;s temporary password.</p>
+          </div>
+        </div>
+        <div className="grid cols-2">
+          <label>
+            <span className="muted">User</span>
+            <select value={passwordResetDraft.employeeId} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, employeeId: event.target.value })}>
+              <option value="">Select user</option>
+              {employees.map((employee) => (
+                <option key={employee.employeeId} value={employee.employeeId}>
+                  {employee.fullName} - {employee.email}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="muted">Temporary password</span>
+            <input autoComplete="new-password" type="password" value={passwordResetDraft.temporaryPassword} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, temporaryPassword: event.target.value })} />
+          </label>
+          <label className="checkbox-row">
+            <input checked={passwordResetDraft.requirePasswordReset} onChange={(event) => setPasswordResetDraft({ ...passwordResetDraft, requirePasswordReset: event.target.checked })} type="checkbox" />
+            Require password reset on next login
+          </label>
+          <button className="button" disabled={busyAction !== null || !passwordResetDraft.employeeId || passwordResetDraft.temporaryPassword.length < 8} onClick={() => void resetEmployeePassword()} type="button">
+            {busyAction === "employee:password-reset" ? <Loader2 size={18} /> : <KeyRound size={18} />}
+            Reset password
+          </button>
+        </div>
+      </section>
 
       <div className="grid cols-2">
         <section className="panel">
@@ -590,12 +909,12 @@ export function SiteContractAdmin() {
           <div className="grid">
             <div className="grid cols-2">
               <label>
-                <span className="muted">Employee ID</span>
-                <input disabled={Boolean(editingEmployeeId)} value={employeeDraft.employeeId} onChange={(event) => setEmployeeDraft({ ...employeeDraft, employeeId: event.target.value })} />
+                <RequiredLabel>Employee ID</RequiredLabel>
+                <input aria-required="true" disabled={Boolean(editingEmployeeId)} required value={employeeDraft.employeeId} onChange={(event) => setEmployeeDraft({ ...employeeDraft, employeeId: event.target.value })} />
               </label>
               <label>
-                <span className="muted">Role</span>
-                <select value={employeeDraft.role} onChange={(event) => setEmployeeDraft({ ...employeeDraft, role: event.target.value as Employee["role"] })}>
+                <RequiredLabel>Role</RequiredLabel>
+                <select aria-required="true" required value={employeeDraft.role} onChange={(event) => setEmployeeDraft({ ...employeeDraft, role: event.target.value as Employee["role"] })}>
                   {roles.map((role) => (
                     <option key={role} value={role}>
                       {role}
@@ -605,12 +924,12 @@ export function SiteContractAdmin() {
               </label>
             </div>
             <label>
-              <span className="muted">Full name</span>
-              <input value={employeeDraft.fullName} onChange={(event) => setEmployeeDraft({ ...employeeDraft, fullName: event.target.value })} />
+              <RequiredLabel>Full name</RequiredLabel>
+              <input aria-required="true" required value={employeeDraft.fullName} onChange={(event) => setEmployeeDraft({ ...employeeDraft, fullName: event.target.value })} />
             </label>
             <label>
-              <span className="muted">Email</span>
-              <input type="email" value={employeeDraft.email} onChange={(event) => setEmployeeDraft({ ...employeeDraft, email: event.target.value })} />
+              <RequiredLabel>Email</RequiredLabel>
+              <input aria-required="true" required type="email" value={employeeDraft.email} onChange={(event) => setEmployeeDraft({ ...employeeDraft, email: event.target.value })} />
             </label>
             <label>
               <span className="muted">Temporary password</span>
@@ -659,7 +978,7 @@ export function SiteContractAdmin() {
               <input type="checkbox" checked={employeeDraft.isHod || employeeDraft.role === "HOD"} onChange={(event) => setEmployeeDraft({ ...employeeDraft, isHod: event.target.checked })} />
               HOD approver
             </label>
-            <button className="button" disabled={busyAction !== null || !employeeDraft.employeeId || !employeeDraft.fullName || !employeeDraft.email || !employeeBankReady} onClick={() => void createEmployee()} type="button">
+            <button className="button" disabled={busyAction !== null || !employeeDraft.employeeId || !employeeDraft.fullName || !employeeDraft.email} onClick={() => void createEmployee()} type="button">
               {busyAction === "employee:create" ? <Loader2 size={18} /> : editingEmployeeId ? <Save size={18} /> : <UserPlus size={18} />}
               {editingEmployeeId ? "Save changes" : "Create employee"}
             </button>
@@ -699,6 +1018,7 @@ export function SiteContractAdmin() {
               <th>Manager</th>
               <th>Threshold</th>
               <th>Imprest Limit</th>
+              <th>Login</th>
               <th>Bank</th>
               <th>Action</th>
             </tr>
@@ -715,6 +1035,13 @@ export function SiteContractAdmin() {
                 <td>{employee.directManagerId ? employeeNames.get(employee.directManagerId) ?? employee.directManagerId : "No manager"}</td>
                 <td>{employee.approvalThresholdAmount.toLocaleString()}</td>
                 <td>{employee.imprestAdvanceLimit.toLocaleString()}</td>
+                <td>
+                  <span className={`badge ${employee.passwordResetRequired ? "warning" : employee.passwordUpdatedAt ? "success" : "warning"}`}>
+                    {employee.passwordResetRequired ? "Reset required" : employee.passwordUpdatedAt ? "Login enabled" : "No password set"}
+                  </span>
+                  <br />
+                  <span className="muted">{employee.passwordUpdatedAt ? new Date(employee.passwordUpdatedAt).toLocaleDateString("en-IN") : "Set a temporary password"}</span>
+                </td>
                 <td>
                   {employee.bankName ?? "Not captured"}
                   <br />
@@ -736,7 +1063,7 @@ export function SiteContractAdmin() {
             ))}
             {employees.length === 0 ? (
               <tr>
-                <td colSpan={7}>No active employees found.</td>
+                <td colSpan={8}>No active employees found.</td>
               </tr>
             ) : null}
           </tbody>
@@ -776,7 +1103,10 @@ export function SiteContractAdmin() {
           </tbody>
         </table>
       </section>
+        </>
+      ) : null}
 
+      {activeSection === "notifications" ? (
       <section aria-label="Notification delivery table" className="panel" tabIndex={0}>
         <div className="topbar" style={{ marginBottom: 12 }}>
           <h2>Notification Delivery</h2>
@@ -784,6 +1114,29 @@ export function SiteContractAdmin() {
             {busyAction === "notifications:deliver" ? <Loader2 size={18} /> : <MailCheck size={18} />}
             Deliver queued
           </button>
+        </div>
+        <div className="admin-health-grid">
+          <div className="admin-health-card">
+            <span className={`badge ${deliveryHealth?.apiKeyConfigured ? "success" : "danger"}`}>
+              {deliveryHealth?.apiKeyConfigured ? "API key configured" : "API key missing"}
+            </span>
+            <strong>Resend API key</strong>
+            <span className="muted">Secret: Resend-ApiKey</span>
+          </div>
+          <div className="admin-health-card">
+            <span className={`badge ${deliveryHealth?.fromEmailConfigured ? "success" : "danger"}`}>
+              {deliveryHealth?.fromEmailConfigured ? "Sender configured" : "Sender missing"}
+            </span>
+            <strong>From address</strong>
+            <span className="muted">{deliveryHealth?.fromEmail ?? "Secret: Notification-FromEmail"}</span>
+          </div>
+          <div className="admin-health-card wide">
+            <span className={`badge ${deliveryHealth?.status === "Ready" ? "success" : "danger"}`}>
+              {deliveryHealth?.status ?? "Unknown"}
+            </span>
+            <strong>Delivery guidance</strong>
+            <span className="muted">{deliveryHealth?.guidance ?? "Load notification history to inspect email delivery health."}</span>
+          </div>
         </div>
         <table className="table">
           <thead>
@@ -827,7 +1180,9 @@ export function SiteContractAdmin() {
           </tbody>
         </table>
       </section>
+      ) : null}
 
+      {activeSection === "retention" ? (
       <section className="panel">
         <div className="section-heading">
           <div>
@@ -859,9 +1214,11 @@ export function SiteContractAdmin() {
           </div>
         </div>
       </section>
+      ) : null}
 
-      <section aria-label="Active sites table" className="panel" tabIndex={0}>
-        <h2>Active Sites</h2>
+      {activeSection === "sites" ? (
+      <section aria-label="Sites table" className="panel" tabIndex={0}>
+        <h2>Sites</h2>
         <table className="table">
           <thead>
             <tr>
@@ -875,7 +1232,7 @@ export function SiteContractAdmin() {
           </thead>
           <tbody>
             {sites.map((site) => (
-              <tr key={site.siteId}>
+              <tr className={editingSiteId === site.siteId ? "editing-row" : undefined} key={site.siteId}>
                 <td>
                   <strong>{site.siteName}</strong>
                   <br />
@@ -900,24 +1257,51 @@ export function SiteContractAdmin() {
                     ))}
                   </select>
                 </td>
-                <td><span className="badge success">Active</span></td>
                 <td>
-                  <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/sites/${site.siteId}/deactivate`, "POST", `site:${site.siteId}`, "Site updated.", `Mark ${site.siteName} inactive? It will no longer be available for new claims.`)} type="button">
-                    {busyAction === `site:${site.siteId}` ? <Loader2 size={18} /> : <PowerOff size={18} />}
-                    Mark inactive
-                  </button>
+                  <span className={`badge ${site.isActive !== false ? "success" : "warning"}`}>
+                    {site.isActive !== false ? "Active" : "Inactive"}
+                  </span>
+                </td>
+                <td>
+                  <div className="actions">
+                    <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => editSite(site)} type="button">
+                      <Pencil size={18} />
+                      Edit
+                    </button>
+                    {site.isActive !== false ? (
+                      <button className="button danger" disabled={Boolean(busyAction)} onClick={() => void mutate(`/api/v1/admin/sites/${site.siteId}/deactivate`, "POST", `site:${site.siteId}`, "Site updated.", `Mark ${site.siteName} inactive? It will no longer be available for new claims.`)} type="button">
+                        {busyAction === `site:${site.siteId}` ? <Loader2 size={18} /> : <PowerOff size={18} />}
+                        Mark inactive
+                      </button>
+                    ) : (
+                      <button className="button" disabled={Boolean(busyAction) || !site.contractId || !site.clusterHeadEmployeeId} onClick={() => void reactivateSite(site)} title={!site.contractId || !site.clusterHeadEmployeeId ? "Add a contract and Cluster Head before reactivating" : "Mark site active"} type="button">
+                        {busyAction === `site:${site.siteId}:reactivate` ? <Loader2 size={18} /> : <RotateCcw size={18} />}
+                        Mark active
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
             {sites.length === 0 ? (
               <tr>
-                <td colSpan={6}>No active sites found.</td>
+                <td colSpan={6}>No sites found.</td>
               </tr>
             ) : null}
           </tbody>
         </table>
       </section>
+      ) : null}
     </div>
+  );
+}
+
+function RequiredLabel({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <span className="muted">
+      {children}
+      <span aria-hidden="true" className="required-mark"> *</span>
+    </span>
   );
 }
 
@@ -933,49 +1317,106 @@ function formatBulkKind(kind: BulkUploadKind) {
 function bulkPayload(kind: BulkUploadKind, row: Record<string, string>, contracts: Contract[]) {
   if (kind === "contracts") {
     return {
-      clientName: row.clientName,
-      description: row.description || null,
-      startDate: row.startDate,
-      endDate: row.endDate || null
+      clientName: cell(row, "clientName", "client name", "client", "customer name"),
+      description: optionalCell(row, "description", "contract description", "details"),
+      startDate: toIsoDate(cell(row, "startDate", "start date", "contract start date"), "startDate"),
+      endDate: optionalDate(row, "endDate", "end date", "contract end date")
     };
   }
   if (kind === "sites") {
-    const contract = contracts.find((item) => item.clientName.trim().toLowerCase() === row.contractClientName?.trim().toLowerCase());
-    if (!contract) throw new Error(`Contract client "${row.contractClientName}" was not found. Upload contracts first.`);
+    const contractClientName = cell(row, "contractClientName", "contract client name", "clientName", "client name", "client");
+    const contract = contracts.find((item) => item.clientName.trim().toLowerCase() === contractClientName.trim().toLowerCase());
+    if (!contract) throw new Error(`Contract client "${contractClientName}" was not found. Upload contracts first.`);
     return {
-      siteName: row.siteName,
-      siteAddress: row.siteAddress || null,
-      serviceType: row.serviceType,
+      siteName: cell(row, "siteName", "site name", "site"),
+      siteAddress: optionalCell(row, "siteAddress", "site address", "address"),
+      serviceType: cell(row, "serviceType", "service type"),
       contractId: contract.contractId,
-      clusterHeadEmployeeId: row.clusterHeadEmployeeId
+      clusterHeadEmployeeId: cell(row, "clusterHeadEmployeeId", "cluster head employee id", "cluster head id")
     };
   }
   if (kind === "holidays") {
     return {
-      holidayDate: row.holidayDate,
-      holidayName: row.holidayName,
-      isNational: toBoolean(row.isNational)
+      holidayDate: toIsoDate(cell(row, "holidayDate", "holiday date", "date"), "holidayDate"),
+      holidayName: cell(row, "holidayName", "holiday name", "name"),
+      isNational: toBoolean(optionalCell(row, "isNational", "is national", "national") ?? "")
     };
   }
   return {
-    employeeId: row.employeeId,
-    fullName: row.fullName,
-    email: row.email,
-    role: row.role,
-    directManagerId: row.directManagerId || null,
-    isHod: toBoolean(row.isHod),
-    approvalThresholdAmount: Number(row.approvalThresholdAmount || 0),
-    imprestAdvanceLimit: Number(row.imprestAdvanceLimit || 0),
-    bankAccountHolderName: row.bankAccountHolderName || null,
-    bankAccountNumber: row.bankAccountNumber || null,
-    bankIfsc: row.bankIfsc || null,
-    bankName: row.bankName || null,
-    temporaryPassword: row.temporaryPassword || null
+    employeeId: cell(row, "employeeId", "employee id"),
+    fullName: cell(row, "fullName", "full name", "name"),
+    email: cell(row, "email", "email address"),
+    role: cell(row, "role"),
+    directManagerId: optionalCell(row, "directManagerId", "direct manager id", "manager id"),
+    isHod: toBoolean(optionalCell(row, "isHod", "is hod", "hod") ?? ""),
+    approvalThresholdAmount: Number(optionalCell(row, "approvalThresholdAmount", "approval threshold amount", "threshold") || 0),
+    imprestAdvanceLimit: Number(optionalCell(row, "imprestAdvanceLimit", "imprest advance limit", "advance limit") || 0),
+    bankAccountHolderName: optionalCell(row, "bankAccountHolderName", "bank account holder name", "account holder"),
+    bankAccountNumber: optionalCell(row, "bankAccountNumber", "bank account number", "account number"),
+    bankIfsc: optionalCell(row, "bankIfsc", "bank ifsc", "ifsc"),
+    bankName: optionalCell(row, "bankName", "bank name"),
+    temporaryPassword: optionalCell(row, "temporaryPassword", "temporary password")
   };
 }
 
 function toBoolean(value: string) {
   return ["true", "yes", "1"].includes(value.trim().toLowerCase());
+}
+
+function cell(row: Record<string, string>, ...names: string[]) {
+  const value = optionalCell(row, ...names);
+  if (value) return value;
+  throw new Error(`Missing required column value: ${names[0]}.`);
+}
+
+function optionalCell(row: Record<string, string>, ...names: string[]) {
+  const normalized = new Map(Object.entries(row).map(([key, value]) => [normalizeColumn(key), value.trim()]));
+  for (const name of names) {
+    const value = normalized.get(normalizeColumn(name));
+    if (value) return value;
+  }
+  return null;
+}
+
+function normalizeColumn(value: string) {
+  return value.replace(/^\uFEFF/, "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function optionalDate(row: Record<string, string>, ...names: string[]) {
+  const value = optionalCell(row, ...names);
+  return value ? toIsoDate(value, names[0]) : null;
+}
+
+function toIsoDate(value: string, fieldName: string) {
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const separated = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (separated) {
+    const [, first, second, year] = separated;
+    const firstNumber = Number(first);
+    const secondNumber = Number(second);
+    const dayFirst = secondNumber <= 12 || firstNumber > 12;
+    const day = dayFirst ? firstNumber : secondNumber;
+    const month = dayFirst ? secondNumber : firstNumber;
+    return formatIsoDate(Number(year), month, day, fieldName);
+  }
+
+  if (/^\d{5,6}$/.test(trimmed)) {
+    const excelEpoch = Date.UTC(1899, 11, 30);
+    const date = new Date(excelEpoch + Number(trimmed) * 24 * 60 * 60 * 1000);
+    return formatIsoDate(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), fieldName);
+  }
+
+  throw new Error(`Invalid ${fieldName}. Use YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY, or an Excel date serial.`);
+}
+
+function formatIsoDate(year: number, month: number, day: number, fieldName: string) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    throw new Error(`Invalid ${fieldName}. Check the day and month values.`);
+  }
+  return `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
 }
 
 function parseCsv(csv: string) {
@@ -1006,10 +1447,27 @@ function parseCsv(csv: string) {
       cell += character;
     }
   }
+  if (quoted) throw new Error("CSV format error: a quoted value is not closed. Check quotation marks in the uploaded file.");
   row.push(cell.trim());
   if (row.some(Boolean)) rows.push(row);
 
-  const headers = (rows.shift() ?? []).map((header) => header.replace(/^\uFEFF/, ""));
+  const headers = (rows.shift() ?? []).map((header) => header.replace(/^\uFEFF/, "").trim());
   if (headers.length === 0) throw new Error("CSV header row is missing.");
+  const blankHeaderIndex = headers.findIndex((header) => !header);
+  if (blankHeaderIndex >= 0) {
+    throw new Error(`CSV format error: column ${blankHeaderIndex + 1} has a blank header.`);
+  }
+  const seenHeaders = new Set<string>();
+  for (const header of headers) {
+    const normalized = normalizeColumn(header);
+    if (seenHeaders.has(normalized)) {
+      throw new Error(`CSV format error: duplicate column "${header}".`);
+    }
+    seenHeaders.add(normalized);
+  }
+  const invalidRow = rows.findIndex((values) => values.length > headers.length);
+  if (invalidRow >= 0) {
+    throw new Error(`CSV format error: row ${invalidRow + 2} has more values than the header row. Check extra commas or quotes.`);
+  }
   return rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
 }

@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Link2, Loader2, RefreshCw } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Eye, Link2, Loader2, RefreshCw } from "lucide-react";
 import { ActionFeedback } from "@/components/ui/action-feedback";
 import { getProblemMessage } from "@/components/ui/problem-message";
+import { UniversalClaimDrawer } from "@/components/claims/universal-claim-drawer";
+import { SlaChip } from "@/components/ui/sla-chip";
 
 type BillingAlertItem = {
   alertId: string;
@@ -21,7 +24,9 @@ type BillingAlertItem = {
 };
 
 export function BillingAlerts() {
+  const searchParams = useSearchParams();
   const [items, setItems] = useState<BillingAlertItem[]>([]);
+  const [workspaceClaimId, setWorkspaceClaimId] = useState<string | null>(null);
   const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -46,6 +51,23 @@ export function BillingAlerts() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    const claimId = searchParams.get("claim");
+    if (claimId) setWorkspaceClaimId(claimId);
+  }, [searchParams]);
+
+  const recordSearch = (searchParams.get("q") ?? "").trim().toLowerCase();
+  const filteredItems = items.filter((item) => matchesText(recordSearch, [
+    item.alertId,
+    item.claimId,
+    item.lineItemDescription,
+    item.claimantName,
+    item.siteName,
+    item.urgencyLabel,
+    String(item.amount),
+    String(item.billableAmount)
+  ]));
 
   async function linkInvoice(alertId: string) {
     const clientInvoiceNumber = invoiceNumbers[alertId]?.trim();
@@ -82,6 +104,7 @@ export function BillingAlerts() {
           <h2>B2C - Pending Billing Alerts</h2>
           <p className="muted">Link client invoices to stop revenue leakage reminders.</p>
         </div>
+        {recordSearch ? <span className="badge success">Search: {recordSearch}</span> : null}
         <button className="button secondary" disabled={isLoading} onClick={() => void load()} type="button">
           {isLoading ? <Loader2 size={16} /> : <RefreshCw size={16} />}
           {isLoading ? "Loading..." : "Refresh"}
@@ -110,7 +133,7 @@ export function BillingAlerts() {
               </td>
             </tr>
           ) : null}
-          {!isLoading && items.map((item) => (
+          {!isLoading && filteredItems.map((item) => (
             <tr key={item.alertId}>
               <td>
                 <strong>{item.claimId.slice(0, 8)}</strong>
@@ -124,9 +147,9 @@ export function BillingAlerts() {
                 <span className="muted">Bill Rs {item.billableAmount.toLocaleString("en-IN")}</span>
               </td>
               <td>
-                <span className={`badge ${item.daysOpen >= 7 ? "danger" : item.daysOpen >= 2 ? "warning" : "success"}`}>
-                  {item.urgencyLabel}
-                </span>
+                <SlaChip days={item.daysOpen} />
+                <br />
+                <span className="muted">{item.urgencyLabel}</span>
               </td>
               <td>
                 <input
@@ -142,20 +165,39 @@ export function BillingAlerts() {
                 />
               </td>
               <td>
-                <button className="button" disabled={Boolean(busyAction)} onClick={() => void linkInvoice(item.alertId)} type="button">
-                  {busyAction === `link:${item.alertId}` ? <Loader2 size={16} /> : <Link2 size={16} />}
-                  {busyAction === `link:${item.alertId}` ? "Linking..." : "Link"}
-                </button>
+                <div className="actions">
+                  <button className="button secondary" disabled={Boolean(busyAction)} onClick={() => setWorkspaceClaimId(item.claimId)} type="button">
+                    <Eye size={16} />
+                    Open workspace
+                  </button>
+                  <button className="button" disabled={Boolean(busyAction)} onClick={() => void linkInvoice(item.alertId)} type="button">
+                    {busyAction === `link:${item.alertId}` ? <Loader2 size={16} /> : <Link2 size={16} />}
+                    {busyAction === `link:${item.alertId}` ? "Linking..." : "Link"}
+                  </button>
+                </div>
               </td>
             </tr>
           ))}
-          {!isLoading && items.length === 0 ? (
+          {!isLoading && filteredItems.length === 0 ? (
             <tr>
-              <td colSpan={6}>No active billing alerts.</td>
+              <td colSpan={6}>
+                <div className="table-empty-state">
+                  <strong>{recordSearch ? "No billing alerts match this search" : "No billing alerts open"}</strong>
+                  <span>{recordSearch ? "Try searching by claim, claimant, site, line item, amount, or billable value." : "All B2C pending billing items are linked or there are no active billable exceptions."}</span>
+                </div>
+              </td>
             </tr>
           ) : null}
         </tbody>
       </table>
+      <UniversalClaimDrawer claimId={workspaceClaimId} isOpen={Boolean(workspaceClaimId)} onClose={() => setWorkspaceClaimId(null)} onError={setMessage} />
     </section>
   );
+}
+
+function matchesText(query: string, values: Array<string | number | null | undefined>) {
+  if (!query) return true;
+  return values
+    .filter((value): value is string | number => value !== null && value !== undefined)
+    .some((value) => String(value).toLowerCase().includes(query));
 }

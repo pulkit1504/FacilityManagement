@@ -1,9 +1,9 @@
 import { conflict, forbidden, notFound } from "../errors/application-error";
-import type { ClaimDetail, ExpenseClaim, UserContext } from "../domain/types";
+import type { AuditLogEntry, ClaimDetail, ExpenseClaim, NotificationOutboxItem, UserContext } from "../domain/types";
 import { statusLabel } from "../domain/types";
 import type { ClaimRepository } from "../repositories/claim-repository";
 import type { NotificationService } from "./notification-service";
-import type { CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput, UpdateBankDetailsInput, UpdateSettlementAdjustmentInput } from "../validation/claim.schemas";
+import type { ChangePasswordInput, CreateAdvanceRequestInput, CreateClaimInput, CreateLineItemInput, UpdateBankDetailsInput, UpdateSettlementAdjustmentInput } from "../validation/claim.schemas";
 import { claimNotificationBody } from "./claim-notification-details";
 
 export class ClaimService {
@@ -23,6 +23,7 @@ export class ClaimService {
       items: claims.map((claim) => ({
         claimId: claim.claimId,
         ticketId: claim.ticketId,
+        company: claim.company,
         claimKind: claim.claimKind,
         submissionMode: claim.submissionMode,
         status: claim.status,
@@ -63,6 +64,7 @@ export class ClaimService {
     return {
       claimId: claim.claimId,
       ticketId: claim.ticketId,
+      company: claim.company,
       status: claim.status,
       statusLabel: statusLabel(claim.status),
       createdAt: claim.createdAt
@@ -80,6 +82,208 @@ export class ClaimService {
     return {
       ...claim,
       statusLabel: statusLabel(claim.status)
+    };
+  }
+
+  async getClaimWorkspace(claimId: string, user: UserContext) {
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) {
+      throw notFound("Claim was not found.");
+    }
+
+    await this.assertCanView(claim, user);
+
+    const [auditTrail, notifications, employees] = await Promise.all([
+      this.claims.listAuditLogForClaim(claimId),
+      this.claims.listNotifications("All"),
+      this.claims.listEmployees()
+    ]);
+    const employeeNames = new Map(employees.map((employee) => [employee.employeeId, employee.fullName]));
+    const relatedNotifications = notifications.filter((item) => item.relatedClaimId === claimId);
+    const hashCounts = countBy(claim.lineItems.flatMap((line) => line.attachments.map((attachment) => attachment.contentHash)));
+
+    return {
+      claim: {
+        ...claim,
+        statusLabel: statusLabel(claim.status),
+        lineItems: claim.lineItems.map((line) => ({
+          ...line,
+          attachments: line.attachments.map((attachment) => ({
+            ...attachment,
+            uploadedByName: employeeNames.get(attachment.uploadedByUserId) ?? attachment.uploadedByUserId,
+            duplicateContentHash: (hashCounts.get(attachment.contentHash) ?? 0) > 1
+          }))
+        }))
+      },
+      auditTrail,
+      comments: buildCommentThread(claim, auditTrail, relatedNotifications),
+      notifications: relatedNotifications,
+      receiptQuality: buildReceiptQuality(claim),
+      availableActions: availableClaimActions(claim, user),
+      userRole: user.role
+    };
+  }
+
+  async addClaimComment(claimId: string, message: string, user: UserContext) {
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) {
+      throw notFound("Claim was not found.");
+    }
+    await this.assertCanView(claim, user);
+
+    const trimmed = message.trim();
+    if (trimmed.length < 3) {
+      throw conflict("Enter a comment of at least 3 characters.");
+    }
+
+    await this.claims.appendAuditLog({
+      claimId,
+      actorUserId: user.userId,
+      actionType: "CLAIM_COMMENT",
+      preActionStatus: claim.status,
+      postActionStatus: claim.status,
+      auditRemarks: trimmed,
+      correlationId: user.correlationId
+    });
+
+    return {
+      claimId,
+      message: "Comment added to the claim thread."
+    };
+  }
+
+  async searchRecords(query: string, user: UserContext) {
+    const normalized = query.trim().toLowerCase();
+    if (normalized.length < 2) {
+      return emptySearchResults();
+    }
+
+    const [claims, approvals, finance, audit, billing, flags, employees] = await Promise.all([
+      this.claims.listClaimsForUser(user.userId, user.role).catch(() => []),
+      ["ClusterHead", "HOD", "MD"].includes(user.role) ? this.claims.listApprovalQueue(user.userId, user.role).catch(() => []) : Promise.resolve([]),
+      user.role === "Finance" ? this.claims.listFinanceQueue().catch(() => []) : Promise.resolve([]),
+      ["Auditor", "MD"].includes(user.role) ? this.claims.listAuditQueue().catch(() => []) : Promise.resolve([]),
+      ["BillingTeam", "Finance"].includes(user.role) ? this.claims.listBillingAlerts(false).catch(() => []) : Promise.resolve([]),
+      ["Auditor", "MD"].includes(user.role) ? this.claims.listFraudFlags("Open").catch(() => []) : Promise.resolve([]),
+      user.role === "Admin" ? this.claims.listEmployees().catch(() => []) : Promise.resolve([])
+    ]);
+
+    const claimResults = [
+      ...claims.map((claim) => ({
+        id: claim.claimId,
+        title: claim.ticketId,
+        subtitle: `${statusLabel(claim.status)} | Rs ${claim.totalAmount.toLocaleString("en-IN")}`,
+        href: "/claims",
+        claimId: claim.claimId,
+        searchable: [
+          claim.claimId,
+          claim.ticketId,
+          claim.status,
+          claim.claimKind,
+          claim.submissionMode,
+          claim.totalAmount
+        ]
+      })),
+      ...approvals.map((item) => ({
+        id: item.claimId,
+        title: item.ticketId ?? item.claimId.slice(0, 8),
+        subtitle: `${item.submittedBy} | ${item.siteName ?? "No site"} | ${item.daysPending} days`,
+        href: "/approvals",
+        claimId: item.claimId,
+        searchable: [item.claimId, item.ticketId, item.submittedBy, item.siteName, item.totalAmount, item.finalPayableAmount]
+      })),
+      ...finance.map((item) => ({
+        id: item.claimId,
+        title: item.ticketId,
+        subtitle: `${item.submittedBy} | ${item.siteName ?? "No site"} | Finance`,
+        href: "/finance",
+        claimId: item.claimId,
+        searchable: [item.claimId, item.ticketId, item.submittedBy, item.siteName, item.totalAmount, item.finalPayableAmount, item.bankAccountNumber]
+      })),
+      ...audit.map((item) => ({
+        id: item.claimId,
+        title: item.ticketId,
+        subtitle: `${item.submittedBy} | Audit review | ${item.daysPending} days`,
+        href: "/audit",
+        claimId: item.claimId,
+        searchable: [item.claimId, item.ticketId, item.submittedBy, item.siteName, item.totalAmount, item.finalPayableAmount]
+      }))
+    ];
+
+    return {
+      groups: [
+        {
+          key: "claims",
+          label: "Claims",
+          items: uniqueById(claimResults.filter((item) => matchesSearch(normalized, item.searchable))).slice(0, 8)
+        },
+        {
+          key: "billing",
+          label: "Billing Alerts",
+          items: billing
+            .map((item) => ({
+              id: item.alertId,
+              title: item.claimId.slice(0, 8),
+              subtitle: `${item.claimantName} | ${item.lineItemDescription} | Rs ${item.billableAmount.toLocaleString("en-IN")}`,
+              href: "/billing",
+              claimId: item.claimId,
+              searchable: [item.alertId, item.claimId, item.claimantName, item.siteName, item.lineItemDescription, item.amount, item.billableAmount]
+            }))
+            .filter((item) => matchesSearch(normalized, item.searchable))
+            .slice(0, 8)
+        },
+        {
+          key: "audit",
+          label: "Audit Flags",
+          items: flags
+            .map((item) => ({
+              id: item.flagId,
+              title: item.ticketId,
+              subtitle: `${item.ruleLabel} | ${item.employeeName} | ${item.daysOpen} days`,
+              href: "/audit",
+              claimId: item.primaryClaimId,
+              searchable: [
+                item.flagId,
+                item.primaryClaimId,
+                item.ticketId,
+                item.employeeName,
+                item.siteName,
+                item.ruleName,
+                item.ruleLabel,
+                item.flaggedLineItems.map((line) => [line.vendorName, line.vendorInvoiceNumber, line.clientInvoiceNumber, line.amount].join(" ")).join(" ")
+              ]
+            }))
+            .filter((item) => matchesSearch(normalized, item.searchable))
+            .slice(0, 8)
+        },
+        {
+          key: "employees",
+          label: "Employees",
+          items: employees
+            .map((item) => ({
+              id: item.employeeId,
+              title: item.fullName,
+              subtitle: `${item.role} | ${item.email}`,
+              href: "/admin",
+              searchable: [item.employeeId, item.fullName, item.email, item.role]
+            }))
+            .filter((item) => matchesSearch(normalized, item.searchable))
+            .slice(0, 8)
+        }
+      ]
+    };
+  }
+
+  async listUserNotifications(user: UserContext) {
+    const items = await this.claims.listNotifications("All");
+    const filtered = user.role === "Admin"
+      ? items
+      : items.filter((item) => item.recipientEmployeeId === user.userId);
+
+    return {
+      items: filtered.slice(0, 25),
+      unreadCount: filtered.filter((item) => item.status !== "Sent").length,
+      totalCount: filtered.length
     };
   }
 
@@ -135,6 +339,7 @@ export class ClaimService {
     const claim = await this.claims.createClaim({
       submitterEmployeeId: user.userId,
       claimKind: "Advance",
+      company: input.company,
       submissionMode: "SingleVoucher",
       siteId: input.siteId,
       claimPeriodMonth: input.claimPeriodMonth ?? null,
@@ -358,6 +563,12 @@ export class ClaimService {
       }
     };
 
+    if (submitter.isHod && claim.claimKind !== "Advance") {
+      const md = await this.claims.findManagingDirector();
+      if (md) addStep("MD", md);
+      return steps;
+    }
+
     const sites = await this.claims.listActiveSites();
     const site = claim.siteId ? sites.find((item) => item.siteId === claim.siteId) : null;
     if (site?.clusterHeadEmployeeId) {
@@ -502,6 +713,7 @@ export class ClaimService {
     await this.assertCanView(claim, user);
 
     const auditEntries = await this.claims.listAuditLogForClaim(claimId);
+    const lineLabels = new Map(claim.lineItems.map((line) => [line.lineItemId, line.description]));
     const approvalActors = await Promise.all(
       claim.approvalSteps.map((step) => step.assignedApproverId ? this.claims.getEmployee(step.assignedApproverId) : null)
     );
@@ -510,12 +722,12 @@ export class ClaimService {
         timestamp: entry.actionTimestamp,
         actor: entry.actorName ?? "",
         actorId: entry.actorUserId,
-        action: entry.actionType,
+        action: auditActionLabel(entry.actionType),
         approvalRole: "",
         decision: "",
-        fromStatus: entry.preActionStatus ?? "",
-        toStatus: entry.postActionStatus,
-        remarks: entry.auditRemarks ?? "",
+        fromStatus: entry.preActionStatus ? humanizeToken(entry.preActionStatus) : "",
+        toStatus: humanizeToken(entry.postActionStatus),
+        remarks: formatAuditRemarks(entry, lineLabels),
         correlationId: entry.correlationId
       })),
       ...claim.approvalSteps
@@ -523,7 +735,7 @@ export class ClaimService {
           timestamp: step.decisionAt!,
           actor: approvalActors[index]?.fullName ?? "",
           actorId: step.assignedApproverId ?? "",
-          action: "APPROVAL_DECISION",
+          action: "Approval decision",
           approvalRole: step.requiredApproverRole,
           decision: step.decision,
           fromStatus: "",
@@ -552,10 +764,60 @@ export class ClaimService {
     );
   }
 
-  async getProfile(user: UserContext) {
-    if (!["Claimant", "ClusterHead", "HOD"].includes(user.role)) {
-      throw forbidden("Profile self-service is available to Claimant, Cluster Head, and HOD users.");
+  async exportClaimSummary(claimId: string, user: UserContext) {
+    const claim = await this.claims.getClaimDetail(claimId);
+    if (!claim) {
+      throw notFound("Claim was not found.");
     }
+
+    await this.assertCanView(claim, user);
+
+    return {
+      ticketId: claim.ticketId,
+      csv: toCsv(
+        [
+          "Ticket",
+          "Status",
+          "Claim Type",
+          "Entry Method",
+          "Expense Month",
+          "Total Amount",
+          "Line Number",
+          "Expense Head",
+          "Description",
+          "Expense Date",
+          "Payment Mode",
+          "Expense Tag",
+          "Vendor",
+          "Vendor Invoice",
+          "Client Invoice",
+          "Line Amount",
+          "Receipt Status"
+        ],
+        claim.lineItems.map((line, index) => [
+          claim.ticketId,
+          statusLabel(claim.status),
+          claim.claimKind,
+          claim.submissionMode === "Proforma" ? "Periodic Proforma" : "Single Voucher",
+          claim.claimPeriodMonth ?? "",
+          claim.totalAmount,
+          index + 1,
+          line.expenseHead ?? "",
+          line.description,
+          line.transactionDate,
+          line.paymentMode ?? "",
+          line.expenseTag,
+          line.vendorName ?? "",
+          line.vendorInvoiceNumber ?? "",
+          line.clientInvoiceNumber ?? "",
+          line.amount,
+          line.missingReceiptFlag ? "Missing" : "Attached"
+        ])
+      )
+    };
+  }
+
+  async getProfile(user: UserContext) {
     const [employee, employees, sites, claims] = await Promise.all([
       this.claims.getEmployee(user.userId),
       this.claims.listEmployees(),
@@ -597,6 +859,18 @@ export class ClaimService {
     };
   }
 
+  async changeProfilePassword(input: ChangePasswordInput, user: UserContext) {
+    const employee = await this.claims.changeEmployeePassword(user.userId, input);
+    if (!employee) {
+      throw conflict("Current password is incorrect.");
+    }
+
+    return {
+      employee,
+      message: "Password changed. Use the new password the next time you sign in."
+    };
+  }
+
   async updateProfileBankDetails(input: UpdateBankDetailsInput, user: UserContext) {
     if (!["Claimant", "ClusterHead", "HOD"].includes(user.role)) {
       throw forbidden("You cannot update bank details from this profile.");
@@ -608,7 +882,7 @@ export class ClaimService {
   }
 
   private async assertCanView(claim: ClaimDetail, user: UserContext) {
-    if (["Finance", "MD"].includes(user.role)) {
+    if (["Finance", "Auditor", "MD"].includes(user.role)) {
       return;
     }
 
@@ -803,6 +1077,151 @@ function isUniqueConstraintError(error: unknown) {
       "code" in error &&
       (error as { code?: unknown }).code === "23505"
   );
+}
+
+function buildCommentThread(claim: ClaimDetail, auditTrail: AuditLogEntry[], notifications: NotificationOutboxItem[]) {
+  return [
+    ...claim.approvalSteps
+      .filter((step) => Boolean(step.remarks))
+      .map((step) => ({
+        id: `approval:${step.stepId}`,
+        author: step.requiredApproverRole,
+        body: step.remarks!,
+        source: "Approval remark",
+        timestamp: step.decisionAt ?? claim.updatedAt
+      })),
+    ...auditTrail
+      .filter((entry) => Boolean(entry.auditRemarks))
+      .map((entry) => ({
+        id: `audit:${entry.auditId}`,
+        author: entry.actorName ?? entry.actorUserId,
+        body: entry.auditRemarks!,
+        source: entry.actionType === "CLAIM_COMMENT" ? "Comment" : "Audit remark",
+        timestamp: entry.actionTimestamp
+      })),
+    ...notifications.map((notification) => ({
+      id: `notification:${notification.notificationId}`,
+      author: "System notification",
+      body: `${notification.subject}: ${notification.body}`,
+      source: "Notification",
+      timestamp: notification.sentAt ?? notification.createdAt
+    }))
+  ].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+}
+
+function buildReceiptQuality(claim: ClaimDetail) {
+  const allAttachments = claim.lineItems.flatMap((line) => line.attachments);
+  const hashCounts = countBy(allAttachments.map((attachment) => attachment.contentHash));
+
+  return {
+    totalLines: claim.lineItems.length,
+    linesMissingReceipts: claim.lineItems.filter((line) => line.missingReceiptFlag || line.attachments.length === 0).length,
+    totalReceipts: allAttachments.length,
+    duplicateReceiptHashes: [...hashCounts.values()].filter((count) => count > 1).length
+  };
+}
+
+function availableClaimActions(claim: ClaimDetail, user: UserContext) {
+  const actions: string[] = [];
+  if (claim.submitterEmployeeId === user.userId && claim.status === "Draft") actions.push("Continue draft");
+  if (claim.submitterEmployeeId === user.userId && claim.status === "Rejected") actions.push("Correct returned claim");
+  if (["ClusterHead", "HOD", "MD"].includes(user.role) && claim.approvalSteps.some((step) => step.requiredApproverRole === user.role && step.decision === "Pending")) {
+    actions.push("Approve claim", "Return for correction");
+  }
+  if (user.role === "Finance") {
+    if (["HodApproved", "MdApproved"].includes(claim.status)) actions.push("Review vouchers", "Send to Audit");
+    if (claim.status === "FinanceConfirmed") actions.push("Release payment");
+  }
+  if (user.role === "Auditor" && claim.status === "AuditPending") actions.push("Mark vouchers received", "Approve", "Reject", "Request information");
+  if (user.role === "BillingTeam") actions.push("Link client invoice");
+  actions.push("Download summary", "Export audit trail", "Add comment");
+  return [...new Set(actions)];
+}
+
+function countBy(values: string[]) {
+  return values.reduce<Map<string, number>>((counts, value) => {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+}
+
+function auditActionLabel(actionType: string) {
+  const labels: Record<string, string> = {
+    DRAFT_SAVED: "Draft saved",
+    RECEIPT_UPLOADED: "Receipt uploaded",
+    BILLING_ALERT_CREATED: "Billing alert created",
+    INVOICE_LINKED: "Client invoice linked",
+    SUBMIT: "Claim submitted",
+    CLUSTER_HEAD_APPROVE: "Cluster Head approved",
+    HOD_APPROVE: "HOD approved",
+    MD_APPROVE: "MD approved",
+    FINANCE_CONFIRM: "Finance confirmed",
+    FINANCE_LINE_ACCEPT: "Finance accepted line",
+    FINANCE_LINE_REJECT: "Finance rejected line",
+    EXPENSE_HEAD_CORRECTED: "Expense head corrected",
+    PHYSICAL_RECEIPT_CONFIRM: "Physical receipts confirmed",
+    AUDITOR_VOUCHERS_RECEIVED: "Auditor received vouchers",
+    AUDIT_APPROVE: "Audit approved",
+    AUDIT_REJECT: "Audit rejected",
+    AUDIT_INFO_REQUEST: "Audit requested information",
+    PAYMENT_RELEASE: "Payment released",
+    CLAIM_COMMENT: "Claim comment",
+    REJECT: "Returned for correction",
+    BILLABLE_TAG_CHANGE: "Billing tag changed",
+    FRAUD_FLAG: "Audit flag created",
+    FRAUD_CLEAR: "Audit flag cleared",
+    FRAUD_ESCALATE: "Audit flag escalated"
+  };
+  return labels[actionType] ?? humanizeToken(actionType);
+}
+
+function formatAuditRemarks(entry: AuditLogEntry, lineLabels: Map<string, string>) {
+  const remarks = entry.auditRemarks?.trim();
+  if (remarks) return replaceLineReferences(remarks, lineLabels);
+  const fromStatus = entry.preActionStatus ? humanizeToken(entry.preActionStatus) : "New claim";
+  return `${fromStatus} -> ${humanizeToken(entry.postActionStatus)}`;
+}
+
+function replaceLineReferences(text: string, lineLabels: Map<string, string>) {
+  let nextText = text;
+  for (const [lineItemId, description] of lineLabels) {
+    nextText = nextText.replaceAll(lineItemId, `"${description}"`);
+  }
+  return nextText;
+}
+
+function humanizeToken(value: string) {
+  return value
+    .replace(/_/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function emptySearchResults() {
+  return {
+    groups: [
+      { key: "claims", label: "Claims", items: [] },
+      { key: "billing", label: "Billing Alerts", items: [] },
+      { key: "audit", label: "Audit Flags", items: [] },
+      { key: "employees", label: "Employees", items: [] }
+    ]
+  };
+}
+
+function matchesSearch(query: string, values: Array<string | number | null | undefined>) {
+  return values
+    .filter((value): value is string | number => value !== null && value !== undefined)
+    .some((value) => String(value).toLowerCase().includes(query));
+}
+
+function uniqueById<T extends { id: string }>(items: T[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 
 function toCsv(headers: string[], rows: Array<Array<string | number>>) {

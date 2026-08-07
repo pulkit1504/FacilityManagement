@@ -15,6 +15,7 @@ function advanceClaim(): ClaimDetail {
     claimId: "claim-1",
     ticketId: "ADV-TEST",
     submitterEmployeeId: "claimant-1",
+    company: "Nimbus",
     claimKind: "Advance",
     submissionMode: "SingleVoucher",
     proformaPeriodStart: null,
@@ -69,6 +70,11 @@ function approvedReimbursementClaim(): ClaimDetail {
       invoiceValidationStatus: "NotApplicable",
       financeReviewStatus: "Accepted",
       financeReviewRemarks: null,
+      auditReviewStatus: "Approved",
+      auditApprovedAmount: 1_500,
+      auditReviewRemarks: null,
+      auditReviewedBy: "emp-auditor-001",
+      auditReviewedAt: "2026-06-06T12:00:00.000Z",
       billingAlertCreated: false,
       siteId: "site-1",
       missingReceiptFlag: false,
@@ -192,6 +198,26 @@ describe("Finance payment release", () => {
 
     expect(claims.confirmPhysicalReceipt).not.toHaveBeenCalled();
     expect(claims.createAuditorApprovalStep).not.toHaveBeenCalled();
+  });
+
+  it("lets Finance correct a line expense head after operational approval", async () => {
+    const claim = approvedReimbursementClaim();
+    const updatedLine = { ...claim.lineItems[0], expenseHead: "Repairs and Maintenance" };
+    const claims = {
+      getClaimDetail: vi.fn().mockResolvedValue(claim),
+      updateLineItemExpenseHead: vi.fn().mockResolvedValue(updatedLine),
+      appendAuditLog: vi.fn()
+    } as unknown as ClaimRepository;
+
+    const result = await new FinanceService(claims, { enqueueAndSend: vi.fn() } as unknown as NotificationService)
+      .correctLineItemExpenseHead(claim.claimId, "line-1", { expenseHead: "Repairs and Maintenance" }, financeUser);
+
+    expect(result.lineItem.expenseHead).toBe("Repairs and Maintenance");
+    expect(claims.updateLineItemExpenseHead).toHaveBeenCalledWith(claim.claimId, "line-1", "Repairs and Maintenance");
+    expect(claims.appendAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      actionType: "EXPENSE_HEAD_CORRECTED",
+      auditRemarks: expect.stringContaining("Accounts corrected expense head")
+    }));
   });
 
   it("requires Auditor approval before releasing reimbursement payment", async () => {

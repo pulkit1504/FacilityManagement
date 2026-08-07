@@ -63,6 +63,7 @@ async function getSecret(name) {
 }
 
 async function removeDemoRecords(db) {
+  await must(db.from("notification_outbox").delete().in("related_claim_id", [ids.returnedClaim, ids.financeClaim]), "delete demo notifications");
   await must(db.from("billing_alerts").delete().eq("alert_id", ids.billingAlert), "delete demo billing alert");
   await must(db.from("fraud_flags").delete().eq("flag_id", ids.fraudFlag), "delete demo fraud flag");
   await must(db.from("expense_attachments").delete().eq("attachment_id", ids.financeAttachment), "delete demo attachment");
@@ -385,9 +386,15 @@ async function seedAuditAndBillingQueues(db) {
 }
 
 async function must(builder, action) {
-  const { error } = await builder;
-  if (error) {
-    throw new Error(`${action} failed: ${error.message}`);
+  try {
+    const { error } = await builder;
+    if (error) {
+      throw new Error(`${action} failed: ${error.message}`);
+    }
+  } catch (error) {
+    const cause = error?.cause ? ` Cause: ${error.cause.message ?? String(error.cause)}` : "";
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`${action} failed: ${message}${cause}`);
   }
 }
 

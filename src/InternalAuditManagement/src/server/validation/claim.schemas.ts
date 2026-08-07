@@ -1,10 +1,11 @@
 import { z } from "zod";
-import { expenseTags, paymentModes, submissionModes, userRoles } from "../domain/types";
+import { expenseTags, operatingCompanies, paymentModes, submissionModes, userRoles } from "../domain/types";
 
 export const createClaimSchema = z
   .object({
     submissionMode: z.enum(submissionModes),
     claimKind: z.enum(["Reimbursement", "Advance"]).default("Reimbursement"),
+    company: z.enum(operatingCompanies).default("Nimbus"),
     siteId: z.string().trim().min(1).nullable().optional(),
     claimPeriodMonth: z.string().date().nullable().optional(),
     advanceClaimId: z.string().uuid().nullable().optional(),
@@ -91,11 +92,11 @@ export const createLineItemSchema = z
       });
     }
 
-    if (["ContractPartCost", "BackendCTC"].includes(value.expenseTag) && !value.siteOrDepartment) {
+    if (value.expenseTag === "BackendCTC" && !value.siteOrDepartment) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["siteOrDepartment"],
-        message: "This expense tag requires a site or department reference."
+        message: "Backend CTC items require a site or department reference."
       });
     }
 
@@ -114,6 +115,7 @@ export const financeLineUpdateSchema = z.object({
 });
 
 export const createAdvanceRequestSchema = z.object({
+  company: z.enum(operatingCompanies).default("Nimbus"),
   siteId: z.string().trim().min(1),
   amount: z.coerce.number().positive(),
   description: z.string().trim().min(3).max(500),
@@ -155,6 +157,32 @@ export const financeLineReviewSchema = z.object({
   }
 });
 
+export const lineExpenseHeadCorrectionSchema = z.object({
+  expenseHead: z.string().trim().min(1, "Expense head is required.").max(120)
+});
+
+export const auditLineReviewSchema = z.object({
+  decision: z.enum(["Approved", "Rejected"]),
+  approvedAmount: z.coerce.number().nonnegative().nullable().optional(),
+  remarks: z.string().trim().max(1000).nullable().optional()
+}).superRefine((value, ctx) => {
+  if (value.decision === "Approved" && (value.approvedAmount === null || value.approvedAmount === undefined)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["approvedAmount"],
+      message: "Approved amount is required when approving a line item."
+    });
+  }
+
+  if (value.decision === "Rejected" && !value.remarks) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["remarks"],
+      message: "Remarks are required when rejecting an audit line item."
+    });
+  }
+});
+
 export const confirmPhysicalReceiptSchema = z.object({
   physicalReceiptDate: z.string().date(),
   physicalReceiptTime: z.string().regex(/^\d{2}:\d{2}$/),
@@ -189,6 +217,10 @@ export const createSiteSchema = z.object({
   clusterHeadEmployeeId: z.string().trim().min(1, "Select a Cluster Head.")
 });
 
+export const updateSiteSchema = createSiteSchema.extend({
+  isActive: z.boolean().default(true)
+});
+
 export const assignSiteClusterHeadSchema = z.object({
   clusterHeadEmployeeId: z.string().trim().min(1, "Select a Cluster Head.")
 });
@@ -207,24 +239,6 @@ export const createEmployeeSchema = z.object({
   bankIfsc: z.string().trim().min(4).max(20).nullable().optional(),
   bankName: z.string().trim().min(2).max(120).nullable().optional(),
   temporaryPassword: z.string().min(8).max(128).nullable().optional()
-}).superRefine((value, ctx) => {
-  if (!["Claimant", "ClusterHead", "HOD"].includes(value.role)) return;
-
-  const bankFields = [
-    ["bankAccountHolderName", value.bankAccountHolderName],
-    ["bankAccountNumber", value.bankAccountNumber],
-    ["bankIfsc", value.bankIfsc],
-    ["bankName", value.bankName]
-  ] as const;
-  for (const [field, fieldValue] of bankFields) {
-    if (!fieldValue) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [field],
-        message: "Required for employees who can submit payable claims."
-      });
-    }
-  }
 });
 
 export const createHolidaySchema = z.object({
@@ -232,6 +246,44 @@ export const createHolidaySchema = z.object({
   holidayName: z.string().trim().min(2).max(200),
   isNational: z.boolean().default(true)
 });
+
+export const createExpenseHeadSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  description: z.string().trim().max(500).nullable().optional()
+});
+
+export const updateExpenseHeadSchema = createExpenseHeadSchema.extend({
+  isActive: z.boolean().default(true)
+});
+
+export const resetEmployeePasswordSchema = z.object({
+  temporaryPassword: z.string().min(8).max(128),
+  requirePasswordReset: z.boolean().default(true)
+});
+
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Enter your current password."),
+    newPassword: z.string().min(8, "New password must be at least 8 characters.").max(128),
+    confirmPassword: z.string().min(1, "Confirm your new password.")
+  })
+  .superRefine((value, ctx) => {
+    if (value.newPassword !== value.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmPassword"],
+        message: "New password and confirmation do not match."
+      });
+    }
+
+    if (value.currentPassword === value.newPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["newPassword"],
+        message: "New password must be different from your current password."
+      });
+    }
+  });
 
 export const cleanupStaleRecordsSchema = z.object({
   olderThanDays: z.coerce.number().int().min(30).max(365).default(90)
@@ -247,6 +299,8 @@ export const updateBankDetailsSchema = z.object({
 export type ApproveClaimInput = z.infer<typeof approveClaimSchema>;
 export type RejectClaimInput = z.infer<typeof rejectClaimSchema>;
 export type FinanceLineReviewInput = z.infer<typeof financeLineReviewSchema>;
+export type LineExpenseHeadCorrectionInput = z.infer<typeof lineExpenseHeadCorrectionSchema>;
+export type AuditLineReviewInput = z.infer<typeof auditLineReviewSchema>;
 export type ConfirmPhysicalReceiptInput = z.infer<typeof confirmPhysicalReceiptSchema>;
 export type LinkInvoiceInput = z.infer<typeof linkInvoiceSchema>;
 export type ReviewFraudFlagInput = z.infer<typeof reviewFraudFlagSchema>;
@@ -254,8 +308,13 @@ export type AuditClaimDecisionInput = z.infer<typeof auditClaimDecisionSchema>;
 export type FinanceLineUpdateInput = z.infer<typeof financeLineUpdateSchema>;
 export type CreateContractInput = z.infer<typeof createContractSchema>;
 export type CreateSiteInput = z.infer<typeof createSiteSchema>;
+export type UpdateSiteInput = z.infer<typeof updateSiteSchema>;
 export type AssignSiteClusterHeadInput = z.infer<typeof assignSiteClusterHeadSchema>;
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;
 export type CreateHolidayInput = z.infer<typeof createHolidaySchema>;
+export type CreateExpenseHeadInput = z.infer<typeof createExpenseHeadSchema>;
+export type UpdateExpenseHeadInput = z.infer<typeof updateExpenseHeadSchema>;
+export type ResetEmployeePasswordInput = z.infer<typeof resetEmployeePasswordSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type CleanupStaleRecordsInput = z.infer<typeof cleanupStaleRecordsSchema>;
 export type UpdateBankDetailsInput = z.infer<typeof updateBankDetailsSchema>;

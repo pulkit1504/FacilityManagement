@@ -1,14 +1,17 @@
 import type { UserRole } from "@/server/domain/types";
 import { PrimaryNav } from "./primary-nav";
+import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { CurrentTestUser } from "@/components/auth/current-test-user";
+import { CompanyLogo } from "@/components/layout/company-logo";
+import { GlobalRecordSearch } from "@/components/layout/global-record-search";
 import { authSessionCookieName, parseSessionCookie } from "@/server/auth/session";
 import { parseTestUserCookie, testUserCookieName } from "@/server/auth/test-users";
 
 type NavLink = {
   href: string;
   label: string;
-  icon: "BarChart3" | "ClipboardCheck" | "FileText" | "Link2" | "ReceiptText" | "ShieldCheck" | "Settings" | "UserRound";
+  icon: "BarChart3" | "CircleHelp" | "ClipboardCheck" | "FileText" | "Link2" | "ReceiptText" | "ShieldCheck" | "Settings" | "UserRound";
   exact?: boolean;
   allowedRoles?: UserRole[];
 };
@@ -19,12 +22,13 @@ const links: NavLink[] = [
   { href: "/claims", label: "My Claims", icon: "FileText", exact: true, allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
   { href: "/claims/new", label: "New Claim", icon: "ReceiptText", allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
   { href: "/imprest", label: "Imprest", icon: "ReceiptText", allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
-  { href: "/profile", label: "My Profile", icon: "UserRound", allowedRoles: ["Claimant", "ClusterHead", "HOD"] satisfies UserRole[] },
+  { href: "/profile", label: "My Profile", icon: "UserRound" },
   { href: "/approvals", label: "Approvals", icon: "ClipboardCheck", allowedRoles: ["ClusterHead", "HOD", "MD"] satisfies UserRole[] },
   { href: "/finance", label: "Finance Queue", icon: "FileText", allowedRoles: ["Finance"] satisfies UserRole[] },
   { href: "/billing", label: "Billing Alerts", icon: "Link2", allowedRoles: ["BillingTeam", "Finance"] satisfies UserRole[] },
   { href: "/audit", label: "Audit Review", icon: "ShieldCheck", allowedRoles: ["Auditor", "MD"] satisfies UserRole[] },
-  { href: "/admin", label: "Admin", icon: "Settings", allowedRoles: ["Admin"] satisfies UserRole[] }
+  { href: "/admin", label: "Admin", icon: "Settings", allowedRoles: ["Admin"] satisfies UserRole[] },
+  { href: "/help", label: "Help & Tutorial", icon: "CircleHelp" }
 ];
 
 export async function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -40,12 +44,15 @@ export async function AppShell({ children }: Readonly<{ children: React.ReactNod
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">
-          <strong>Facility Control</strong>
-          <span>Expense, billing, and audit workflow</span>
-        </div>
+        <CompanyLogo />
+        <Suspense fallback={null}>
+          <GlobalRecordSearch />
+        </Suspense>
         <CurrentTestUser name={currentName} role={currentRole} />
         <PrimaryNav links={visibleLinks} />
+        <a className="designer-credit" href="https://ai.dhanvistar.in" rel="noopener noreferrer" target="_blank">
+          Designed by DVC
+        </a>
       </aside>
       <main className="main">{children}</main>
     </div>

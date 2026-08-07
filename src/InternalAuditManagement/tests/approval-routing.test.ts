@@ -30,6 +30,7 @@ function draft(overrides: Partial<ClaimDetail> = {}): ClaimDetail {
     claimId: "claim-1",
     ticketId: "EXP-000001",
     submitterEmployeeId: "claimant-1",
+    company: "Nimbus",
     claimKind: "Reimbursement",
     submissionMode: "SingleVoucher",
     proformaPeriodStart: null,
@@ -68,6 +69,11 @@ function draft(overrides: Partial<ClaimDetail> = {}): ClaimDetail {
       invoiceValidationStatus: "NotApplicable",
       financeReviewStatus: "Pending",
       financeReviewRemarks: null,
+      auditReviewStatus: "Pending",
+      auditApprovedAmount: null,
+      auditReviewRemarks: null,
+      auditReviewedBy: null,
+      auditReviewedAt: null,
       billingAlertCreated: false,
       siteId: null,
       missingReceiptFlag: false,
@@ -163,6 +169,32 @@ describe("approval routing rules", () => {
       expect.objectContaining({ requiredApproverRole: "ClusterHead" }),
       expect.objectContaining({ requiredApproverRole: "HOD" })
     ]);
+  });
+
+  it("routes HOD reimbursement claims directly to MD even when site and manager routing are configured", async () => {
+    const claim = draft({
+      submitterEmployeeId: "hod-1",
+      totalAmount: 5_000,
+      lineItems: [{ ...draft().lineItems[0], amount: 5_000, paymentMode: "UPI" }]
+    });
+    const hodUser: UserContext = { ...claimantUser, userId: "hod-1", role: "HOD" };
+    const claims = repository(claim, [
+      employee("cluster-1", "ClusterHead", "hod-1"),
+      employee("hod-1", "HOD", "md-1", true),
+      employee("md-1", "MD")
+    ]);
+
+    await new ClaimService(claims, notifications).submitClaim(claim.claimId, hodUser, true);
+
+    expect(claims.createApprovalSteps).toHaveBeenCalledWith([
+      expect.objectContaining({ stepOrder: 1, requiredApproverRole: "MD", assignedApproverId: "md-1", lineItemId: null })
+    ]);
+    expect(claims.createApprovalSteps).not.toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ requiredApproverRole: "ClusterHead" }),
+        expect.objectContaining({ requiredApproverRole: "HOD" })
+      ])
+    );
   });
 
   it("routes final MD approval to Finance instead of payment processing", async () => {

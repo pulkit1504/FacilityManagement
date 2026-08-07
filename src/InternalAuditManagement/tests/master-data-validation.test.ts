@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assignSiteClusterHeadSchema, createClaimSchema, createEmployeeSchema, createSiteSchema } from "../src/server/validation/claim.schemas";
+import { assignSiteClusterHeadSchema, changePasswordSchema, createClaimSchema, createEmployeeSchema, createExpenseHeadSchema, createSiteSchema, resetEmployeePasswordSchema } from "../src/server/validation/claim.schemas";
 
 describe("GA master-data validation", () => {
   it("only permits Reimbursement through the expense claim intake", () => {
@@ -21,7 +21,37 @@ describe("GA master-data validation", () => {
     expect(assignSiteClusterHeadSchema.safeParse({ clusterHeadEmployeeId: "" }).success).toBe(false);
   });
 
-  it("requires complete beneficiary details for payable employees", () => {
+  it("validates expense head and password reset admin inputs", () => {
+    expect(createExpenseHeadSchema.safeParse({ name: "Repairs", description: null }).success).toBe(true);
+    expect(createExpenseHeadSchema.safeParse({ name: "" }).success).toBe(false);
+    expect(resetEmployeePasswordSchema.safeParse({ temporaryPassword: "ChangeMe123!", requirePasswordReset: true }).success).toBe(true);
+    expect(resetEmployeePasswordSchema.safeParse({ temporaryPassword: "short" }).success).toBe(false);
+  });
+
+  it("validates employee self-service password changes", () => {
+    expect(changePasswordSchema.safeParse({
+      currentPassword: "OldPassword123!",
+      newPassword: "NewPassword123!",
+      confirmPassword: "NewPassword123!"
+    }).success).toBe(true);
+    expect(changePasswordSchema.safeParse({
+      currentPassword: "OldPassword123!",
+      newPassword: "short",
+      confirmPassword: "short"
+    }).success).toBe(false);
+    expect(changePasswordSchema.safeParse({
+      currentPassword: "OldPassword123!",
+      newPassword: "NewPassword123!",
+      confirmPassword: "DifferentPassword123!"
+    }).success).toBe(false);
+    expect(changePasswordSchema.safeParse({
+      currentPassword: "SamePassword123!",
+      newPassword: "SamePassword123!",
+      confirmPassword: "SamePassword123!"
+    }).success).toBe(false);
+  });
+
+  it("allows employee creation without beneficiary bank details", () => {
     const result = createEmployeeSchema.safeParse({
       employeeId: "ga-user",
       fullName: "GA User",
@@ -33,11 +63,6 @@ describe("GA master-data validation", () => {
       imprestAdvanceLimit: 0
     });
 
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(Object.keys(result.error.flatten().fieldErrors)).toEqual(
-        expect.arrayContaining(["bankAccountHolderName", "bankAccountNumber", "bankIfsc", "bankName"])
-      );
-    }
+    expect(result.success).toBe(true);
   });
 });

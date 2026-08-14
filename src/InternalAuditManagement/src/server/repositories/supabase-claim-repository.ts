@@ -32,6 +32,7 @@ import type {
   Site
 } from "../domain/types";
 import { statusLabel } from "../domain/types";
+import { currentAuditCycleVoucherReceipt } from "../domain/audit-cycle";
 import type {
   AuditLogInput,
   ClaimRepository,
@@ -1518,17 +1519,27 @@ export class SupabaseClaimRepository implements ClaimRepository {
     if (error) throw error;
     const claims = data ?? [];
     const claimIds = claims.map((claim) => String(claim.claim_id));
-    const { data: voucherReceiptLogs, error: voucherReceiptLogsError } = claimIds.length
+    const { data: auditCycleLogs, error: auditCycleLogsError } = claimIds.length
       ? await db
           .from("audit_log")
-          .select("claim_id,action_timestamp")
+          .select("claim_id,action_type,action_timestamp")
           .in("claim_id", claimIds)
-          .eq("action_type", "AUDITOR_VOUCHERS_RECEIVED")
+          .in("action_type", ["AUDITOR_VOUCHERS_RECEIVED", "AUDIT_INFO_REQUEST", "AUDIT_REJECT"])
           .order("action_timestamp", { ascending: true })
       : { data: [], error: null };
-    if (voucherReceiptLogsError) throw voucherReceiptLogsError;
+    if (auditCycleLogsError) throw auditCycleLogsError;
+    const auditCycleLogsByClaim = new Map<string, Array<{ actionType: string; actionTimestamp: string }>>();
+    for (const entry of auditCycleLogs ?? []) {
+      const claimId = String(entry.claim_id);
+      const entries = auditCycleLogsByClaim.get(claimId) ?? [];
+      entries.push({ actionType: String(entry.action_type), actionTimestamp: String(entry.action_timestamp) });
+      auditCycleLogsByClaim.set(claimId, entries);
+    }
     const auditorVoucherReceivedAtByClaim = new Map(
-      (voucherReceiptLogs ?? []).map((entry) => [String(entry.claim_id), String(entry.action_timestamp)])
+      claimIds.map((claimId) => [
+        claimId,
+        currentAuditCycleVoucherReceipt(auditCycleLogsByClaim.get(claimId) ?? [])?.actionTimestamp ?? null
+      ])
     );
     const lineStats = await this.getQueueLineStats(claims.map((row) => String(row.claim_id)));
     const employeesById = new Map(employees.map((employee) => [employee.employeeId, employee]));

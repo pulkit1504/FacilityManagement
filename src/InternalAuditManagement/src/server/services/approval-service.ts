@@ -92,14 +92,9 @@ export class ApprovalService {
       };
     }
 
-    const [updated] = await Promise.all([
-      this.claims.submitClaim(claimId, newStatus),
-      this.claims.decideApprovalStep(step.stepId, "Approved", input.remarks ?? null)
-    ]);
+    const updated = await this.claims.completeOperationalApproval(claimId, step.stepId, newStatus, input.remarks ?? null);
 
-    await Promise.all([
-      this.claims.createFinanceApprovalStep(claimId),
-      this.claims.appendAuditLog({
+    await this.claims.appendAuditLog({
         claimId,
         actorUserId: user.userId,
         actionType: approvalActionType(user.role),
@@ -107,8 +102,7 @@ export class ApprovalService {
         postActionStatus: updated.status,
         auditRemarks: input.remarks ?? (scopeText.trim() || null),
         correlationId: user.correlationId
-      })
-    ]);
+      });
 
     const employees = await this.claims.listEmployees();
     const financeRecipients = employees.filter((employee) => employee.role === "Finance");

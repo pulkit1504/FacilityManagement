@@ -1054,6 +1054,27 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return mapClaim(data as ClaimRow);
   }
 
+  async submitClaimWithApprovalSteps(
+    claimId: string,
+    nextStatus: "Submitted" | "HodApproved",
+    steps: Omit<ApprovalStep, "stepId" | "decision" | "decisionAt" | "remarks">[]
+  ): Promise<ExpenseClaim> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db.rpc("submit_claim_with_approval_steps", {
+      claim_id_input: claimId,
+      next_status_input: nextStatus,
+      approval_steps_input: steps.map((step) => ({
+        line_item_id: step.lineItemId ?? null,
+        step_order: step.stepOrder,
+        required_approver_role: step.requiredApproverRole,
+        assigned_approver_id: step.assignedApproverId
+      }))
+    });
+
+    if (error) throw error;
+    return mapClaim(data as ClaimRow);
+  }
+
   async updateClaimTotal(claimId: string): Promise<void> {
     const db = await getSupabaseAdminClient();
     const { data, error } = await db
@@ -1764,6 +1785,24 @@ export class SupabaseClaimRepository implements ClaimRepository {
       .eq("step_id", stepId);
 
     if (error) throw error;
+  }
+
+  async completeOperationalApproval(
+    claimId: string,
+    stepId: string,
+    nextStatus: "HodApproved" | "MdApproved",
+    remarks?: string | null
+  ): Promise<ExpenseClaim> {
+    const db = await getSupabaseAdminClient();
+    const { data, error } = await db.rpc("complete_operational_approval", {
+      claim_id_input: claimId,
+      step_id_input: stepId,
+      next_status_input: nextStatus,
+      remarks_input: remarks ?? null
+    });
+
+    if (error) throw error;
+    return mapClaim(data as ClaimRow);
   }
 
   async rejectClaim(claimId: string, reason: string): Promise<ExpenseClaim> {

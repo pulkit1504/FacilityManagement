@@ -122,6 +122,11 @@ export interface ClaimRepository {
     }
   ): Promise<boolean>;
   submitClaim(claimId: string, nextStatus: ClaimStatus): Promise<ExpenseClaim>;
+  submitClaimWithApprovalSteps(
+    claimId: string,
+    nextStatus: "Submitted" | "HodApproved",
+    steps: Omit<ApprovalStep, "stepId" | "decision" | "decisionAt" | "remarks">[]
+  ): Promise<ExpenseClaim>;
   updateClaimTotal(claimId: string): Promise<void>;
   updateSettlementAdjustment(claimId: string, advanceClaimId: string, totalAmount: number, openAdvanceBalance: number, adjustmentAmount: number): Promise<ExpenseClaim>;
   createApprovalSteps(steps: Omit<ApprovalStep, "stepId" | "decision" | "decisionAt" | "remarks">[]): Promise<void>;
@@ -147,6 +152,7 @@ export interface ClaimRepository {
   releasePaymentAtomically(claimId: string, actorUserId: string, correlationId: string): Promise<ExpenseClaim>;
   getPendingApprovalStep(claimId: string): Promise<ApprovalStep | null>;
   decideApprovalStep(stepId: string, decision: "Approved" | "Rejected", remarks?: string | null): Promise<void>;
+  completeOperationalApproval(claimId: string, stepId: string, nextStatus: "HodApproved" | "MdApproved", remarks?: string | null): Promise<ExpenseClaim>;
   rejectClaim(claimId: string, reason: string): Promise<ExpenseClaim>;
   reopenRejectedClaim(claimId: string): Promise<ExpenseClaim>;
   confirmPhysicalReceipt(claimId: string, confirmedAt: string, confirmedBy: string): Promise<ExpenseClaim>;

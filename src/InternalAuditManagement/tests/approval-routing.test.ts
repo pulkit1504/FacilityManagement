@@ -107,6 +107,7 @@ function repository(claim: ClaimDetail, employees: Employee[], sites: Site[] = [
     listActiveSites: vi.fn().mockResolvedValue(sites),
     findManagingDirector: vi.fn().mockResolvedValue(employees.find((item) => item.role === "MD") ?? null),
     submitClaim: vi.fn().mockImplementation(async (_id: string, status: ClaimDetail["status"]) => ({ ...claim, status })),
+    submitClaimWithApprovalSteps: vi.fn().mockImplementation(async (_id: string, status: ClaimDetail["status"]) => ({ ...claim, status })),
     createApprovalSteps: vi.fn().mockResolvedValue(undefined),
     createFinanceApprovalStep: vi.fn().mockResolvedValue(undefined),
     appendAuditLog: vi.fn().mockResolvedValue(undefined),
@@ -128,7 +129,7 @@ describe("approval routing rules", () => {
 
     await new ClaimService(claims, notifications).submitClaim(claim.claimId, claimantUser, true);
 
-    expect(claims.createApprovalSteps).toHaveBeenCalledWith([
+    expect(claims.submitClaimWithApprovalSteps).toHaveBeenCalledWith(claim.claimId, "Submitted", [
       expect.objectContaining({ stepOrder: 1, requiredApproverRole: "ClusterHead", assignedApproverId: "cluster-1" }),
       expect.objectContaining({ stepOrder: 2, requiredApproverRole: "HOD", assignedApproverId: "hod-1" })
     ]);
@@ -145,7 +146,7 @@ describe("approval routing rules", () => {
 
     await new ClaimService(claims, notifications).submitClaim(claim.claimId, claimantUser, true);
 
-    expect(claims.createApprovalSteps).toHaveBeenCalledWith([
+    expect(claims.submitClaimWithApprovalSteps).toHaveBeenCalledWith(claim.claimId, "Submitted", [
       expect.objectContaining({ stepOrder: 1, requiredApproverRole: "ClusterHead", assignedApproverId: "cluster-1", lineItemId: null }),
       expect.objectContaining({ stepOrder: 2, requiredApproverRole: "HOD", assignedApproverId: "hod-1", lineItemId: null }),
       expect.objectContaining({ stepOrder: 3, requiredApproverRole: "MD", assignedApproverId: "md-1", lineItemId: "line-1" })
@@ -165,7 +166,7 @@ describe("approval routing rules", () => {
 
     await new ClaimService(claims, notifications).submitClaim(claim.claimId, claimantUser, true);
 
-    expect(claims.createApprovalSteps).toHaveBeenCalledWith([
+    expect(claims.submitClaimWithApprovalSteps).toHaveBeenCalledWith(claim.claimId, "Submitted", [
       expect.objectContaining({ requiredApproverRole: "ClusterHead" }),
       expect.objectContaining({ requiredApproverRole: "HOD" })
     ]);
@@ -186,10 +187,12 @@ describe("approval routing rules", () => {
 
     await new ClaimService(claims, notifications).submitClaim(claim.claimId, hodUser, true);
 
-    expect(claims.createApprovalSteps).toHaveBeenCalledWith([
+    expect(claims.submitClaimWithApprovalSteps).toHaveBeenCalledWith(claim.claimId, "Submitted", [
       expect.objectContaining({ stepOrder: 1, requiredApproverRole: "MD", assignedApproverId: "md-1", lineItemId: null })
     ]);
-    expect(claims.createApprovalSteps).not.toHaveBeenCalledWith(
+    expect(claims.submitClaimWithApprovalSteps).not.toHaveBeenCalledWith(
+      claim.claimId,
+      "Submitted",
       expect.arrayContaining([
         expect.objectContaining({ requiredApproverRole: "ClusterHead" }),
         expect.objectContaining({ requiredApproverRole: "HOD" })
@@ -217,6 +220,7 @@ describe("approval routing rules", () => {
       getClaimDetail: vi.fn().mockResolvedValue(claim),
       decideApprovalStep: vi.fn(),
       submitClaim: vi.fn().mockResolvedValue({ ...claim, status: "MdApproved" }),
+      completeOperationalApproval: vi.fn().mockResolvedValue({ ...claim, status: "MdApproved" }),
       createFinanceApprovalStep: vi.fn(),
       appendAuditLog: vi.fn(),
       getEmployee: vi.fn().mockResolvedValue(employee("claimant-1", "Claimant")),
@@ -226,8 +230,7 @@ describe("approval routing rules", () => {
 
     const result = await new ApprovalService(claims, notifications).approveClaim(claim.claimId, {}, mdUser);
 
-    expect(claims.submitClaim).toHaveBeenCalledWith(claim.claimId, "MdApproved");
-    expect(claims.createFinanceApprovalStep).toHaveBeenCalledWith(claim.claimId);
+    expect(claims.completeOperationalApproval).toHaveBeenCalledWith(claim.claimId, "md-step", "MdApproved", null);
     expect(result.nextAction).toBe("Routed to Finance team");
   });
 
@@ -238,8 +241,7 @@ describe("approval routing rules", () => {
 
     const result = await new ClaimService(claims, notifications).submitClaim(claim.claimId, hodUser, true);
 
-    expect(claims.createApprovalSteps).not.toHaveBeenCalled();
-    expect(claims.createFinanceApprovalStep).toHaveBeenCalledWith(claim.claimId);
+    expect(claims.submitClaimWithApprovalSteps).toHaveBeenCalledWith(claim.claimId, "HodApproved", []);
     expect(result.assignedTo).toBe("Finance team");
   });
 
@@ -250,7 +252,7 @@ describe("approval routing rules", () => {
 
     await new ClaimService(claims, notifications).submitClaim(claim.claimId, hodUser, true);
 
-    expect(claims.createApprovalSteps).toHaveBeenCalledWith([
+    expect(claims.submitClaimWithApprovalSteps).toHaveBeenCalledWith(claim.claimId, "Submitted", [
       expect.objectContaining({ requiredApproverRole: "MD", assignedApproverId: "md-1" })
     ]);
   });

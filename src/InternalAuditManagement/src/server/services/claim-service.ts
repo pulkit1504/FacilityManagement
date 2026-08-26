@@ -479,10 +479,8 @@ export class ClaimService {
     const approvalSteps = await this.buildOperationalApprovalSteps(claim, submitter, user);
     const firstApprover = approvalSteps[0]?.approver;
     if (!firstApprover && claim.claimKind === "Advance") {
-      const updatedClaim = await this.claims.submitClaim(claimId, "HodApproved");
-      await Promise.all([
-        this.claims.createFinanceApprovalStep(claimId),
-        this.claims.appendAuditLog({
+      const updatedClaim = await this.claims.submitClaimWithApprovalSteps(claimId, "HodApproved", []);
+      await this.claims.appendAuditLog({
           claimId,
           actorUserId: user.userId,
           actionType: "SUBMIT",
@@ -490,8 +488,7 @@ export class ClaimService {
           postActionStatus: updatedClaim.status,
           auditRemarks: "Advance routed directly to Finance because no operational approval is required.",
           correlationId: user.correlationId
-        })
-      ]);
+        });
       await this.notifyFinanceTeam(claim, claimId);
       return {
         status: updatedClaim.status,
@@ -505,27 +502,23 @@ export class ClaimService {
     }
 
     const nextStatus = "Submitted";
-    const updatedClaim = await this.claims.submitClaim(claimId, nextStatus);
+    const persistedSteps = approvalSteps.map((step, index) => ({
+      claimId,
+      lineItemId: step.lineItemId ?? null,
+      stepOrder: index + 1,
+      requiredApproverRole: step.role,
+      assignedApproverId: step.approver.employeeId
+    }));
+    const updatedClaim = await this.claims.submitClaimWithApprovalSteps(claimId, nextStatus, persistedSteps);
 
-    await Promise.all([
-      this.claims.createApprovalSteps(
-        approvalSteps.map((step, index) => ({
-          claimId,
-          lineItemId: step.lineItemId ?? null,
-          stepOrder: index + 1,
-          requiredApproverRole: step.role,
-          assignedApproverId: step.approver.employeeId
-        }))
-      ),
-      this.claims.appendAuditLog({
+    await this.claims.appendAuditLog({
         claimId,
         actorUserId: user.userId,
         actionType: "SUBMIT",
         preActionStatus: claim.status,
         postActionStatus: updatedClaim.status,
         correlationId: user.correlationId
-      })
-    ]);
+    });
 
     await this.notifyEmployee(
       firstApprover,

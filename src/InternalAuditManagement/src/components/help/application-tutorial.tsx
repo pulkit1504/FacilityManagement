@@ -68,7 +68,7 @@ const roleJourneys: Record<DemoRole, {
     actions: [
       "Start from New Claim and choose the correct expense month and site.",
       "Add every voucher as a separate line item with vendor invoice first, then expense tag.",
-      "Attach receipts before submitting and download the claim summary after submission.",
+      "Optionally attach receipts, then submit and download the claim summary after submission.",
       "Use My Claims to see pending location, returned reasons, and payment status."
     ]
   },
@@ -103,7 +103,7 @@ const roleJourneys: Record<DemoRole, {
     href: "/audit",
     actions: [
       "Use Open Risk Summary to drill into high-risk claims, aging exceptions, and pending actions.",
-      "Review duplicate invoices, old expense dates, missing receipts, split bills, and manual overrides.",
+      "Review duplicate invoices, old expense dates, optional receipt evidence, split bills, and manual overrides.",
       "Receive voucher packs, approve, reject, or request pending information with clear remarks.",
       "Export audit evidence when a review needs to be shared."
     ]

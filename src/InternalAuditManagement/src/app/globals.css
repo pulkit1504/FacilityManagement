@@ -698,6 +698,11 @@ h1 {
   padding: 4px 9px;
 }
 
+.badge.neutral {
+  background: var(--surface-muted);
+  color: var(--muted);
+}
+
 .badge.warning {
   background: #fff7ed;
   color: var(--warning);

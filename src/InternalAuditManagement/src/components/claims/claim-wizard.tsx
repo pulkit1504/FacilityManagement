@@ -510,7 +510,7 @@ export function ClaimWizard({
       }
       setEditingLineItemId(null);
       setLineItem(emptyLineItem);
-      setMessage(editingLineItemId ? "Line item updated." : "Line item saved. Attach a receipt from the saved line below.");
+      setMessage(editingLineItemId ? "Line item updated." : "Line item saved. You may optionally attach a receipt below.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save line item.");
     } finally {
@@ -1081,7 +1081,7 @@ export function ClaimWizard({
               <div>
                 <h2>Saved Line Items</h2>
                 <p className="muted">
-                  {submissionResult ? "Submitted line items are locked for approval." : "Attach receipts to each saved line before submitting."}
+                  {submissionResult ? "Submitted line items are locked for approval." : "Receipt attachments are optional. You can submit without them."}
                 </p>
               </div>
               {!submissionResult && isDraft ? (
@@ -1125,8 +1125,8 @@ export function ClaimWizard({
                     <td>{expenseTagLabel(item.expenseTag)}</td>
                     <td>{item.paymentMode ?? "Not set"}</td>
                     <td>
-                      <span className={`badge ${item.missingReceiptFlag ? "warning" : "success"}`}>
-                        {item.missingReceiptFlag ? "Missing" : `Attached ${item.attachmentHash ?? ""}`}
+                      <span className={`badge ${item.missingReceiptFlag ? "neutral" : "success"}`}>
+                        {item.missingReceiptFlag ? "Not attached (optional)" : `Attached ${item.attachmentHash ?? ""}`}
                       </span>
                     </td>
                     <td>
@@ -1146,7 +1146,7 @@ export function ClaimWizard({
                           </button>
                           <label className={`button secondary ${busy ? "disabled-label" : ""}`}>
                             <Paperclip size={18} />
-                            {item.missingReceiptFlag ? "Attach" : "Replace"}
+                            {item.missingReceiptFlag ? "Attach (optional)" : "Replace"}
                             <input
                               accept="image/jpeg,image/png,image/heic,application/pdf"
                               capture="environment"

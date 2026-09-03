@@ -189,8 +189,8 @@ export function ClaimSummaryActions({ claimId, ticketId, onError }: Readonly<Cla
                         <span className="muted">Vendor: {line.vendorInvoiceNumber ?? "Not provided"} | Client: {line.clientInvoiceNumber ?? "Not applicable"}</span>
                       </td>
                       <td>
-                        <span className={`badge ${line.missingReceiptFlag ? "danger" : "success"}`}>
-                          {line.missingReceiptFlag ? "Receipt missing" : "Receipt attached"}
+                        <span className={`badge ${line.missingReceiptFlag ? "neutral" : "success"}`}>
+                          {line.missingReceiptFlag ? "Not attached (optional)" : "Receipt attached"}
                         </span>
                         <br />
                         <span className="muted">Finance review: {line.financeReviewStatus}</span>

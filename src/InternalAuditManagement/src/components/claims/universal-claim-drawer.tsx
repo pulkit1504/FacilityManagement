@@ -251,7 +251,7 @@ function WorkspaceSummary({ workspace }: { workspace: WorkspaceData }) {
       <div className="receipt-quality-grid">
         <QualityChip label="Lines" tone="success" value={String(receiptQuality.totalLines)} />
         <QualityChip label="Receipts" tone={receiptQuality.totalReceipts > 0 ? "success" : "warning"} value={String(receiptQuality.totalReceipts)} />
-        <QualityChip label="Missing receipt" tone={receiptQuality.linesMissingReceipts > 0 ? "warning" : "success"} value={String(receiptQuality.linesMissingReceipts)} />
+        <QualityChip label="Without optional receipt" tone="success" value={String(receiptQuality.linesMissingReceipts)} />
         <QualityChip label="Duplicate hash" tone={receiptQuality.duplicateReceiptHashes > 0 ? "danger" : "success"} value={String(receiptQuality.duplicateReceiptHashes)} />
       </div>
       {claim.rejectionReason ? <p className="field-error">{claim.rejectionReason}</p> : null}
@@ -306,8 +306,8 @@ function LineItemsSection({
               <strong>Rs {line.amount.toLocaleString("en-IN")}</strong>
               <p className="muted">{line.paymentMode ?? "No payment mode"} | Finance: {line.financeReviewStatus}</p>
             </div>
-            <span className={`badge ${line.missingReceiptFlag || line.attachments.length === 0 ? "warning" : "success"}`}>
-              {line.missingReceiptFlag || line.attachments.length === 0 ? "Missing receipt" : `${line.attachments.length} receipt(s)`}
+            <span className={`badge ${line.missingReceiptFlag || line.attachments.length === 0 ? "neutral" : "success"}`}>
+              {line.missingReceiptFlag || line.attachments.length === 0 ? "Not attached (optional)" : `${line.attachments.length} receipt(s)`}
             </span>
             <div className="receipt-evidence-list">
               {line.attachments.map((attachment) => (

@@ -244,10 +244,6 @@ export function FraudReview() {
   const agedFlags = enrichedFlags.filter((flag) => flag.daysOpen >= 3);
   const overdueFlags = enrichedFlags.filter((flag) => flag.daysOpen > 7);
   const evidenceLineCount = enrichedFlags.reduce((sum, flag) => sum + flag.flaggedLineItems.length, 0);
-  const missingReceiptCount = enrichedFlags.reduce(
-    (sum, flag) => sum + flag.flaggedLineItems.filter((line) => line.missingReceiptFlag).length,
-    0
-  );
   const totalExposure = enrichedFlags.reduce((sum, flag) => sum + flag.totalAmount, 0);
   const correctionFlags = enrichedFlags.filter((flag) => flag.claimStatus === "Rejected");
   const repeatCorrections = correctionFlags.filter((flag) => (flag.approvalTrail ?? []).filter((step) => step.decision === "Rejected").length > 1);
@@ -584,7 +580,7 @@ export function FraudReview() {
           <MetricCard label="Aging exceptions" value={String(agedFlags.length)} tone={agedFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "Aging"} onClick={() => openSummaryList("Aging")} />
           <MetricCard label="Pending audit actions" value={String(auditItems.length + filteredFlags.length)} tone={auditItems.length + filteredFlags.length > 0 ? "warning" : "success"} active={summaryFilter === "PendingActions"} onClick={() => openSummaryList("PendingActions")} />
           <MetricCard label="Exposure under audit" value={formatCurrency(totalExposure)} tone={totalExposure > 0 ? "warning" : "success"} active={summaryFilter === "Exposure"} onClick={() => openSummaryList("Exposure")} />
-          <MetricCard label="Evidence lines" value={String(evidenceLineCount)} tone={missingReceiptCount > 0 ? "danger" : evidenceLineCount > 0 ? "warning" : "success"} active={summaryFilter === "Evidence"} onClick={() => openSummaryList("Evidence")} />
+          <MetricCard label="Evidence lines" value={String(evidenceLineCount)} tone={evidenceLineCount > 0 ? "warning" : "success"} active={summaryFilter === "Evidence"} onClick={() => openSummaryList("Evidence")} />
         </div>
       </section>
 
@@ -626,8 +622,8 @@ export function FraudReview() {
                     <span className="muted">{item.siteName ?? "No site linked"}</span>
                   </td>
                   <td>
-                    <span className={`badge ${item.missingReceiptCount > 0 ? "warning" : "success"}`}>
-                      {item.missingReceiptCount > 0 ? `${item.missingReceiptCount} missing` : "Receipts present"}
+                    <span className={`badge ${item.missingReceiptCount > 0 ? "neutral" : "success"}`}>
+                      {item.missingReceiptCount > 0 ? `${item.missingReceiptCount} without optional receipt` : "Receipts present"}
                     </span>
                     <br />
                     <span className="muted">{item.lineItemCount} lines | receipt {item.receiptConfirmedAt ? "confirmed" : "not confirmed"}</span>
@@ -798,7 +794,7 @@ export function FraudReview() {
         <div className="section-heading">
           <div>
             <h2>Risk Score Per Claim</h2>
-            <p className="muted">Scores include duplicate invoices, old or out-of-month dates, weekend claims, split bills, missing receipts, repeated vendor use, manual overrides, and advance-limit signals.</p>
+            <p className="muted">Scores include duplicate invoices, old or out-of-month dates, weekend claims, split bills, repeated vendor use, manual overrides, and advance-limit signals. Receipt attachments are optional.</p>
           </div>
         </div>
         <div className="grid cols-3">
@@ -1091,8 +1087,8 @@ function EvidencePanel({ flag, owner }: { flag: ReturnType<typeof enrichFlag>; o
             <br />
             <span className="muted">{invoiceReferenceLabel(line.clientInvoiceNumber, line.vendorInvoiceNumber)}</span>
           </div>
-          <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
-            {line.missingReceiptFlag ? "Missing receipt" : `${line.receiptAttachmentCount ?? 0} receipt attachments`}
+          <span className={`badge ${line.missingReceiptFlag ? "neutral" : "success"}`}>
+            {line.missingReceiptFlag ? "Not attached (optional)" : `${line.receiptAttachmentCount ?? 0} receipt attachments`}
           </span>
         </div>
       ))}
@@ -1177,8 +1173,8 @@ function AuditReceiptPanel({
             />
           </label>
           <div className="actions">
-            <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
-              {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
+            <span className={`badge ${line.missingReceiptFlag ? "neutral" : "success"}`}>
+              {line.missingReceiptFlag ? "Not attached (optional)" : "Receipt attached"}
             </span>
             <button
               className={line.auditReviewStatus === "Approved" ? "button accepted" : "button secondary"}
@@ -1344,7 +1340,6 @@ function enrichFlag(flag: FraudFlagItem) {
     (baseByRule[flag.ruleName] ?? 30) +
       Math.min(flag.daysOpen * 4, 28) +
       Math.min(flag.relatedClaimCount * 6, 12) +
-      Math.min(missingReceipts * 6, 12) +
       Math.min(oldExpenseDates * 5, 10) +
       Math.min(weekendClaims * 4, 8) +
       Math.min(repeatedVendors * 4, 8) +
@@ -1354,7 +1349,6 @@ function enrichFlag(flag: FraudFlagItem) {
 
   const riskReasons = [
     flag.ruleLabel,
-    missingReceipts > 0 ? "Missing receipts" : null,
     oldExpenseDates > 0 ? "Backdated expense" : null,
     weekendClaims > 0 ? "Weekend claim" : null,
     flag.ruleName === "ThresholdSplit" ? "Split bill pattern" : null,
@@ -1366,17 +1360,16 @@ function enrichFlag(flag: FraudFlagItem) {
 
   return {
     ...flag,
-    exceptionType: exceptionType(flag, missingReceipts, oldExpenseDates, outOfMonthExpenses, advanceSignals),
+    exceptionType: exceptionType(flag, oldExpenseDates, outOfMonthExpenses, advanceSignals),
     riskReasons,
     riskScore,
     priority: riskScore >= 80 ? "Critical" as const : riskScore >= 60 ? "High" as const : "Medium" as const
   };
 }
 
-function exceptionType(flag: FraudFlagItem, missingReceipts: number, oldExpenseDates: number, outOfMonthExpenses: number, advanceSignals: number) {
+function exceptionType(flag: FraudFlagItem, oldExpenseDates: number, outOfMonthExpenses: number, advanceSignals: number) {
   if (flag.ruleName === "DuplicateVoucher") return "Duplicate voucher";
   if (flag.ruleName === "ThresholdSplit") return "Threshold split";
-  if (missingReceipts > 0) return "Missing receipt";
   if (oldExpenseDates > 0) return "Backdated expense";
   if (outOfMonthExpenses > 0) return "Out-of-month expense";
   if (advanceSignals > 0) return "Advance-limit breach";
@@ -1487,7 +1480,7 @@ function buildCsv(flags: Array<ReturnType<typeof enrichFlag>>, owners: Record<st
         line.vendorInvoiceNumber ?? "",
         String(line.amount),
         line.transactionDate,
-        line.missingReceiptFlag ? "Missing receipt" : `${line.receiptAttachmentCount ?? 0} attachments`,
+        line.missingReceiptFlag ? "Not attached (optional)" : `${line.receiptAttachmentCount ?? 0} attachments`,
         (flag.approvalTrail ?? []).map((step) => `${step.role}:${step.decision}:${step.remarks ?? ""}`).join(" | "),
         flag.riskReasons.join(" | ")
       ])

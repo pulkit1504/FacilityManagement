@@ -820,7 +820,7 @@ export class ClaimService {
           line.vendorInvoiceNumber ?? "",
           line.clientInvoiceNumber ?? "",
           line.amount,
-          line.missingReceiptFlag ? "Missing" : "Attached"
+          line.missingReceiptFlag ? "Not attached (optional)" : "Attached"
         ])
       )
     };

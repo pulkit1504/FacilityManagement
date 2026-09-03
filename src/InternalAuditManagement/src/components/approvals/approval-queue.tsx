@@ -296,8 +296,8 @@ export function ApprovalQueue() {
                   </span>
                 </td>
                 <td>
-                  <span className={`badge ${item.missingReceiptCount > 0 ? "warning" : "success"}`}>
-                    {item.missingReceiptCount > 0 ? `${item.missingReceiptCount} missing` : "All attached"}
+                  <span className={`badge ${item.missingReceiptCount > 0 ? "neutral" : "success"}`}>
+                    {item.missingReceiptCount > 0 ? `${item.missingReceiptCount} without optional receipt` : "All attached"}
                   </span>
                 </td>
                 <td>
@@ -344,8 +344,8 @@ export function ApprovalQueue() {
                               {line.clientInvoiceNumber ? `Invoice ${line.clientInvoiceNumber}` : line.siteId ? `Site ${siteLabel(line.siteId)}` : "No extra reference"}
                             </span>
                           </div>
-                          <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
-                            {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
+                          <span className={`badge ${line.missingReceiptFlag ? "neutral" : "success"}`}>
+                            {line.missingReceiptFlag ? "Not attached (optional)" : "Receipt attached"}
                           </span>
                           {line.paymentMode === "Cash" && line.amount > 10_000 ? (
                             <span className="badge warning">MD cash exception</span>

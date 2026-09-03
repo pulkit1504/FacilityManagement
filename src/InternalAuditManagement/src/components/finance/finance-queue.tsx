@@ -647,8 +647,8 @@ export function FinanceQueue() {
                               <span className="muted">{line.expenseHead ?? "Expense head not set"} · Rs {line.amount.toLocaleString("en-IN")}</span>
                             )}
                           </div>
-                          <span className={`badge ${line.missingReceiptFlag ? "warning" : "success"}`}>
-                            {line.missingReceiptFlag ? "Missing receipt" : "Receipt attached"}
+                          <span className={`badge ${line.missingReceiptFlag ? "neutral" : "success"}`}>
+                            {line.missingReceiptFlag ? "Not attached (optional)" : "Receipt attached"}
                           </span>
                           <span className={`badge ${line.financeReviewStatus === "Accepted" ? "success" : line.financeReviewStatus === "Rejected" ? "danger" : "warning"}`}>
                             {line.financeReviewStatus}

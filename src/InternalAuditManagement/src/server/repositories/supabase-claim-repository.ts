@@ -700,7 +700,10 @@ export class SupabaseClaimRepository implements ClaimRepository {
       query = query.eq("submitter_employee_id", userId);
     }
 
-    const { data, error } = await query.limit(50);
+    // Do not limit before checking which approval is currently actionable.
+    // A busy HOD can have many future steps assigned to them; limiting here can
+    // exclude current HOD steps and make valid claims disappear from the queue.
+    const { data, error } = await query;
 
     if (error) {
       throw error;
@@ -1425,9 +1428,15 @@ export class SupabaseClaimRepository implements ClaimRepository {
 
     query = query.eq("assigned_approver_id", userId);
 
-    const { data, error } = await query.limit(50);
+    // Filter for the currently actionable step before applying the UI page
+    // limit. Otherwise future HOD steps can hide current approvals.
+    const { data, error } = await query;
     if (error) throw error;
-    const siteNames = await this.getSiteNameMap();
+    const [siteNames, employees] = await Promise.all([
+      this.getSiteNameMap(),
+      this.listEmployees()
+    ]);
+    const employeeNames = new Map(employees.map((employee) => [employee.employeeId, employee.fullName]));
 
     const details = await this.getClaimDetails((data ?? []).map((step) => String(step.claim_id)));
     const items = details
@@ -1437,9 +1446,9 @@ export class SupabaseClaimRepository implements ClaimRepository {
           .sort((a, b) => a.stepOrder - b.stepOrder)[0];
         return currentStep?.assignedApproverId === userId && currentStep.requiredApproverRole === role;
       })
-      .map((detail) => this.toApprovalQueueItem(detail, siteNames));
+      .map((detail) => this.toApprovalQueueItem(detail, siteNames, employeeNames));
 
-    return items.filter((item): item is ApprovalQueueItem => Boolean(item));
+    return items.filter((item): item is ApprovalQueueItem => Boolean(item)).slice(0, 50);
   }
 
   async listFinanceQueue(): Promise<FinanceQueueItem[]> {
@@ -2667,7 +2676,11 @@ export class SupabaseClaimRepository implements ClaimRepository {
     return stats;
   }
 
-  private toApprovalQueueItem(claim: ClaimDetail, siteNames: Map<string, string>): ApprovalQueueItem {
+  private toApprovalQueueItem(
+    claim: ClaimDetail,
+    siteNames: Map<string, string>,
+    employeeNames: Map<string, string>
+  ): ApprovalQueueItem {
     const submittedAt = claim.updatedAt ?? claim.createdAt;
     const daysPending = Math.max(
       0,
@@ -2678,7 +2691,7 @@ export class SupabaseClaimRepository implements ClaimRepository {
       claimId: claim.claimId,
       ticketId: claim.ticketId,
       company: claim.company,
-      submittedBy: claim.submitterEmployeeId,
+      submittedBy: employeeNames.get(claim.submitterEmployeeId) ?? claim.submitterEmployeeId,
       submittedByRole: "Claimant",
       siteName: claim.siteId ? siteNames.get(claim.siteId) ?? claim.siteId : null,
       totalAmount: claim.totalAmount,

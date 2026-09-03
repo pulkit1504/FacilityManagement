@@ -135,6 +135,39 @@ describe("approval routing rules", () => {
     ]);
   });
 
+  it("routes directly to the employee's HOD without forcing an unrelated site Cluster Head", async () => {
+    const claim = draft({ totalAmount: 5_000, lineItems: [{ ...draft().lineItems[0], amount: 5_000, paymentMode: "UPI" }] });
+    const claims = repository(claim, [
+      employee("claimant-1", "Claimant", "direct-hod"),
+      employee("site-cluster", "ClusterHead", "upstream-hod"),
+      employee("direct-hod", "HOD", "md-1", true),
+      employee("upstream-hod", "HOD", "md-1", true),
+      employee("md-1", "MD")
+    ], [{ ...site(), clusterHeadEmployeeId: "site-cluster", clusterHeadName: "site-cluster" }]);
+
+    await new ClaimService(claims, notifications).submitClaim(claim.claimId, claimantUser, true);
+
+    expect(claims.submitClaimWithApprovalSteps).toHaveBeenCalledWith(claim.claimId, "Submitted", [
+      expect.objectContaining({ stepOrder: 1, requiredApproverRole: "HOD", assignedApproverId: "direct-hod" })
+    ]);
+  });
+
+  it("stops routing at a direct manager flagged as HOD even when their login role is Cluster Head", async () => {
+    const claim = draft({ totalAmount: 5_000, lineItems: [{ ...draft().lineItems[0], amount: 5_000, paymentMode: "UPI" }] });
+    const claims = repository(claim, [
+      employee("claimant-1", "Claimant", "combined-manager"),
+      employee("combined-manager", "ClusterHead", "upstream-hod", true),
+      employee("upstream-hod", "HOD", "md-1", true),
+      employee("md-1", "MD")
+    ], [{ ...site(), clusterHeadEmployeeId: "combined-manager", clusterHeadName: "combined-manager" }]);
+
+    await new ClaimService(claims, notifications).submitClaim(claim.claimId, claimantUser, true);
+
+    expect(claims.submitClaimWithApprovalSteps).toHaveBeenCalledWith(claim.claimId, "Submitted", [
+      expect.objectContaining({ stepOrder: 1, requiredApproverRole: "ClusterHead", assignedApproverId: "combined-manager" })
+    ]);
+  });
+
   it("adds line-specific MD approval after Cluster Head and HOD for a cash line above Rs 10,000", async () => {
     const claim = draft();
     const claims = repository(claim, [

@@ -564,7 +564,15 @@ export class ClaimService {
 
     const sites = await this.claims.listActiveSites();
     const site = claim.siteId ? sites.find((item) => item.siteId === claim.siteId) : null;
-    if (site?.clusterHeadEmployeeId) {
+    const directManager = submitter.directManagerId
+      ? await this.claims.getEmployee(submitter.directManagerId)
+      : null;
+    const reportsDirectlyToHod = Boolean(directManager && (directManager.role === "HOD" || directManager.isHod));
+
+    // A direct HOD relationship is authoritative. Site-level Cluster Head
+    // routing is only a fallback/preceding stage for employees who do not
+    // report directly to an HOD.
+    if (!reportsDirectlyToHod && site?.clusterHeadEmployeeId) {
       const clusterHead = await this.claims.getEmployee(site.clusterHeadEmployeeId);
       if (clusterHead?.role === "ClusterHead") {
         addStep("ClusterHead", clusterHead);
@@ -575,8 +583,16 @@ export class ClaimService {
     const visited = new Set<string>();
     while (managerId && !visited.has(managerId)) {
       visited.add(managerId);
-      const manager = await this.claims.getEmployee(managerId);
+      const manager = managerId === directManager?.employeeId
+        ? directManager
+        : await this.claims.getEmployee(managerId);
       if (!manager) break;
+      if (manager.isHod) {
+        if (manager.role === "HOD") addStep("HOD", manager);
+        if (manager.role === "ClusterHead") addStep("ClusterHead", manager);
+        if (manager.role === "MD") addStep("MD", manager);
+        break;
+      }
       if (manager.role === "ClusterHead") addStep("ClusterHead", manager);
       if (manager.role === "HOD") {
         addStep("HOD", manager);
